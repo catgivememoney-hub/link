@@ -6,4 +6,5 @@ window.MEOW_LINKS = [
   { title: "MDN Web Docs", url: "https://developer.mozilla.org/", tag: "learn" },
   { title: "Claude", url: "https://claude.ai/", tag: "tools" },
   { title: "cat", url: "https://popcat.click/", tag: "learn" },
+  { title: "cat", url: "https://www.youtube.com/", tag: "cat" },
 ];
