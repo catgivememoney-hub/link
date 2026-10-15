@@ -1409,7 +1409,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     },
     _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
     _toggleDoor() { props.cabin.door.toggle(performance.now()); },
-    _pos() { return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on }; },
+    _pos() { const d = new THREE.Vector3(); camera.getWorldDirection(d); return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on, pitch: ex.pitch, lookY: d.y }; },
     _sites() { return { cabin: props.cabinAt, circle: props.circleAt }; },
     _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
     // back to the home view (used by the back button)
