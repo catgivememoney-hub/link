@@ -3,50 +3,61 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LinkNest</title>
-  <meta name="description" content="A tiny, free link board. Save, search, and share links. No login, no server.">
+  <title>MEOW</title>
+  <meta name="description" content="MEOW: a tiny link board. Save, search, and share links. No login, no server.">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="bg" aria-hidden="true"><span></span><span></span><span></span></div>
-
   <header class="top">
-    <div class="brand"><span class="logo" aria-hidden="true">🪺</span><h1>LinkNest</h1></div>
-    <button id="themeBtn" class="icon" type="button" aria-label="Toggle light/dark theme">🌓</button>
+    <div class="brand">
+      <img class="logo" src="cat.png" alt="" width="52" height="52">
+      <h1>MEOW</h1>
+    </div>
+    <button id="themeBtn" class="icon" type="button" aria-label="Toggle light/dark theme"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
   </header>
 
   <main>
     <section class="hero">
-      <h2>Your links, all in one nest.</h2>
+      <h2>All your links. One list.</h2>
       <p>Save, search, and share links. No login. No server.</p>
     </section>
 
-    <section class="card">
-      <form id="addForm" autocomplete="off">
-        <input id="title" placeholder="Title" maxlength="80" required aria-label="Title">
-        <input id="url" type="url" placeholder="https://example.com" required aria-label="URL">
-        <input id="tag" placeholder="Tag (e.g. school)" maxlength="20" aria-label="Tag">
-        <button class="primary" type="submit">Add link</button>
-      </form>
-    </section>
+    <form id="addForm" class="add" autocomplete="off">
+      <input id="title" placeholder="Title" maxlength="80" required aria-label="Title">
+      <input id="url" type="url" placeholder="https://example.com" required aria-label="URL">
+      <input id="tag" placeholder="Tag" maxlength="20" aria-label="Tag">
+      <button class="primary" type="submit">Add</button>
+    </form>
 
     <section class="toolbar">
       <input id="search" type="search" placeholder="Search links…" aria-label="Search links">
       <div id="tags" class="tags" role="group" aria-label="Filter by tag"></div>
     </section>
 
-    <section id="grid" class="grid"></section>
-    <p id="empty" class="empty" hidden>No links yet. Add your first one above! ✨</p>
+    <ul id="list" class="list"></ul>
+    <p id="empty" class="empty" hidden>No links yet. Add your first one above.</p>
 
-    <section class="card tools">
-      <button id="shareBtn" type="button">🔗 Copy share link</button>
-      <button id="exportBtn" type="button">⬇️ Export JSON</button>
-      <label class="btn">⬆️ Import JSON<input id="importFile" type="file" accept="application/json" hidden></label>
+    <section class="tools">
+      <button id="shareBtn" type="button">Copy share link</button>
+      <button id="exportBtn" type="button">Export JSON</button>
+      <label class="btn">Import JSON<input id="importFile" type="file" accept="application/json" hidden></label>
     </section>
-    <p class="note">Links you add are saved <strong>in this browser only</strong>. Use “Copy share link” or Export to move them elsewhere.</p>
+    <p class="note">Links you add are saved <strong>in this browser only</strong>. Use “Copy share link” or Export to move them.</p>
   </main>
 
-  <footer>Made with ♥ · Hosted free on GitHub Pages</footer>
+  <footer>MEOW · hosted free on GitHub Pages</footer>
+
+  <!-- Hover preview card (filled in by app.js) -->
+  <div id="preview" class="preview" aria-hidden="true">
+    <div class="shot"><img id="previewImg" alt=""><span id="previewMsg">Loading preview…</span></div>
+    <div class="cap"><strong id="previewTitle"></strong><small id="previewHost"></small></div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>

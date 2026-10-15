@@ -1,8 +1,9 @@
 (() => {
   'use strict';
 
-  const KEY = 'linknest.links.v1';
-  const THEME_KEY = 'linknest.theme';
+  const KEY = 'meow.links.v1';
+  const OLD_KEY = 'linknest.links.v1'; // v1 name, migrated once
+  const THEME_KEY = 'meow.theme';
   const MAX_IMPORT = 200;
   const $ = (id) => document.getElementById(id);
 
@@ -37,12 +38,6 @@
 
   const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
 
-  const color = (s) => {
-    let h = 0;
-    for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360;
-    return `linear-gradient(135deg, hsl(${h} 80% 60%), hsl(${(h + 50) % 360} 80% 55%))`;
-  };
-
   const enc = (s) => {
     let r = '';
     new TextEncoder().encode(s).forEach((b) => { r += String.fromCharCode(b); });
@@ -71,7 +66,7 @@
   /* ---------- storage ---------- */
   const load = () => {
     try {
-      const raw = JSON.parse(localStorage.getItem(KEY) || '[]');
+      const raw = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || '[]');
       mine = Array.isArray(raw) ? raw.map(clean).filter(Boolean) : [];
     } catch { mine = []; }
   };
@@ -108,9 +103,77 @@
     });
   };
 
-  const card = (l) => {
-    const item = document.createElement('article');
-    item.className = 'item';
+  /* ---------- hover preview ---------- */
+  // Free screenshot service (WordPress mShots). The first request for a new
+  // site returns a "generating" placeholder, so we retry a couple of times.
+  const shotUrl = (url, n) =>
+    'https://s.wordpress.com/mshots/v1/' + encodeURIComponent(url) + '?w=680&h=425' + (n ? '&r=' + n : '');
+
+  let hoverUrl = null;
+  let retryTimer;
+
+  // Put the card next to the mouse (or next to the row when using the keyboard),
+  // flipping sides so it never goes off screen.
+  const placeAt = (x, y) => {
+    const p = $('preview');
+    const w = p.offsetWidth || 340;
+    const h = p.offsetHeight || 270;
+    let left = x + 22;
+    let top = y + 22;
+    if (left + w > innerWidth - 12) left = x - w - 22;
+    if (top + h > innerHeight - 12) top = y - h - 22;
+    p.style.left = Math.max(12, left) + 'px';
+    p.style.top = Math.max(12, top) + 'px';
+  };
+
+  const seen = new Set();
+
+  const showPreview = (l, x, y) => {
+    hoverUrl = l.url;
+    clearTimeout(retryTimer);
+    const img = $('previewImg');
+    const msg = $('previewMsg');
+    $('previewTitle').textContent = l.title;
+    $('previewHost').textContent = host(l.url);
+    img.classList.remove('ready');
+    msg.textContent = 'Loading preview…';
+    let tries = 0;
+    const loadShot = () => {
+      if (hoverUrl !== l.url) return;
+      img.onload = () => {
+        if (hoverUrl !== l.url) return;
+        img.classList.add('ready');
+        // A brand-new site first gets a "generating" image; refresh it shortly.
+        if ((!seen.has(l.url) || img.naturalWidth < 600) && tries < 3) {
+          tries++;
+          retryTimer = setTimeout(loadShot, 3000);
+        } else {
+          seen.add(l.url);
+        }
+      };
+      img.onerror = () => { if (hoverUrl === l.url) msg.textContent = 'No preview for this site'; };
+      img.src = shotUrl(l.url, tries);
+    };
+    loadShot();
+    placeAt(x, y);
+    $('preview').classList.add('show');
+  };
+
+  const hidePreview = () => {
+    hoverUrl = null;
+    clearTimeout(retryTimer);
+    $('preview').classList.remove('show');
+  };
+
+  /* ---------- one row in the list ---------- */
+  const card = (l, i) => {
+    const row = document.createElement('li');
+    row.className = 'row';
+    row.style.animationDelay = Math.min(i * 25, 300) + 'ms';
+
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = String(i + 1).padStart(2, '0');
 
     const a = document.createElement('a');
     a.className = 'link';
@@ -118,22 +181,37 @@
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
 
-    const av = document.createElement('div');
-    av.className = 'avatar';
-    av.style.background = color(host(l.url));
-    av.textContent = (l.title[0] || '?').toUpperCase();
+    // Site icon, with the first letter as a fallback.
+    const fav = document.createElement('span');
+    fav.className = 'fav';
+    const letter = (l.title[0] || '?').toUpperCase();
+    const ico = document.createElement('img');
+    ico.alt = '';
+    ico.loading = 'lazy';
+    ico.src = 'https://www.google.com/s2/favicons?sz=64&domain=' + encodeURIComponent(host(l.url));
+    ico.onerror = () => { fav.textContent = letter; };
+    fav.appendChild(ico);
 
-    const meta = document.createElement('div');
+    const meta = document.createElement('span');
     meta.className = 'meta';
     const strong = document.createElement('strong');
     strong.textContent = l.title;
     const small = document.createElement('small');
     small.textContent = host(l.url);
     meta.append(strong, small);
-    a.append(av, meta);
+    a.append(fav, meta);
 
-    const row = document.createElement('div');
-    row.className = 'row';
+    a.addEventListener('mouseenter', (e) => showPreview(l, e.clientX, e.clientY));
+    a.addEventListener('mousemove', (e) => placeAt(e.clientX, e.clientY));
+    a.addEventListener('mouseleave', hidePreview);
+    a.addEventListener('focus', () => {
+      const r = a.getBoundingClientRect();
+      showPreview(l, r.left + 120, r.bottom);
+    });
+    a.addEventListener('blur', hidePreview);
+
+    row.append(num, a);
+
     if (l.tag) {
       const badge = document.createElement('span');
       badge.className = 'badge';
@@ -142,20 +220,21 @@
     }
     if (l.pinned) {
       const pin = document.createElement('span');
-      pin.className = 'pinned';
-      pin.textContent = '📌 featured';
+      pin.className = 'pin';
+      pin.textContent = 'Featured';
       row.appendChild(pin);
     }
-    const sp = document.createElement('span');
-    sp.className = 'spacer';
-    row.appendChild(sp);
+
+    const actions = document.createElement('span');
+    actions.className = 'actions';
+    row.appendChild(actions);
 
     const cp = document.createElement('button');
     cp.type = 'button';
     cp.textContent = 'Copy';
     cp.setAttribute('aria-label', 'Copy link for ' + l.title);
     cp.addEventListener('click', () => copy(l.url, 'Link copied!'));
-    row.appendChild(cp);
+    actions.appendChild(cp);
 
     if (!l.pinned) {
       const del = document.createElement('button');
@@ -168,11 +247,10 @@
         render();
         toast('Link deleted');
       });
-      row.appendChild(del);
+      actions.appendChild(del);
     }
 
-    item.append(a, row);
-    return item;
+    return row;
   };
 
   const render = () => {
@@ -181,8 +259,8 @@
     const list = all()
       .filter((l) => activeTag === 'all' || l.tag === activeTag)
       .filter((l) => !q || (l.title + ' ' + l.url + ' ' + l.tag).toLowerCase().includes(q));
-    const grid = $('grid');
-    grid.replaceChildren(...list.map(card));
+    hidePreview();
+    $('list').replaceChildren(...list.map(card));
     $('empty').hidden = list.length > 0;
   };
 
@@ -223,7 +301,7 @@
     const blob = new Blob([JSON.stringify(plain(), null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'linknest-links.json';
+    a.download = 'meow-links.json';
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
@@ -281,6 +359,7 @@
     $('shareBtn').addEventListener('click', share);
     $('exportBtn').addEventListener('click', exportJson);
     $('importFile').addEventListener('change', importJson);
+    addEventListener('scroll', hidePreview, { passive: true });
     await loadCurated();
     render();
     handleShareHash();
