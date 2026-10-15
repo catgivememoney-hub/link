@@ -140,7 +140,6 @@
     cards = list.map(makeCard);
     focus = target = Math.max(0, Math.floor((list.length - 1) / 2)); // start in the middle
     $('galleryEmpty').hidden = list.length > 0;
-    $('galleryCount').textContent = list.length;
     if (!motionOK()) cards.forEach((c) => { c.appear = 1; });
   };
 
@@ -307,8 +306,6 @@
   });
 
   $('galleryClose').addEventListener('click', close);
-  $('galleryPrev').addEventListener('click', () => { target = Math.max(0, Math.round(target) - 1); });
-  $('galleryNext').addEventListener('click', () => { target = Math.min(cards.length - 1, Math.round(target) + 1); });
 
   document.addEventListener('meow:lang', () => { if (isOpen) buildRail(); });
 

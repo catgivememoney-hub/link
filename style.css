@@ -408,14 +408,15 @@ input[type="range"]:disabled { opacity: 0.35; }
 @keyframes launch { 50% { transform: scale(1.1); filter: brightness(1.08); } 100% { transform: scale(1); } }
 .g-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--float-ink); opacity: 0.6; letter-spacing: 0.2em; }
 
-.g-stage, .rail-wrap, .g-controls { transition: transform 0.9s var(--ease); }
+.g-stage, .rail-wrap { transition: transform 0.9s var(--ease); }
+.g-controls { transition: margin 0.9s var(--ease); }
 @media (min-width: 1000px) {
   body:not(.side-closed) .g-stage { transform: translateX(150px); }
-  body:not(.side-closed) .rail-wrap, body:not(.side-closed) .g-controls { transform: translateX(150px); }
+  body:not(.side-closed) .rail-wrap { transform: translateX(150px); }
+  body:not(.side-closed) .g-controls { margin-left: 300px; } /* its entrance animation uses transform, so shift with margin */
 }
 .g-controls { position: absolute; bottom: 22px; display: flex; align-items: center; gap: 10px; animation: rise 1s var(--ease) both; animation-delay: 0.3s; }
 .g-count { min-width: 30px; text-align: center; font-size: 0.85rem; letter-spacing: 0.1em; color: var(--float-ink); }
-#galleryClose { margin-left: 10px; }
 
 /* ================= options ================= */
 html.no-hints .hint { display: none !important; }
