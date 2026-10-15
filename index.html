@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <canvas id="rain" class="rain" aria-hidden="true"></canvas>
@@ -24,6 +24,13 @@
     </div>
     <input id="search" type="search" placeholder="Search meows…" aria-label="Search links">
     <div id="tags" class="tags" role="group" aria-label="Filter by tag"></div>
+    <div id="moveNotice" class="move" hidden>
+      <span id="moveText"></span>
+      <div class="move-actions">
+        <button id="moveBtn" type="button">Move to links.js</button>
+        <button id="moveDismiss" type="button">Dismiss</button>
+      </div>
+    </div>
     <ul id="list" class="list"></ul>
     <p id="empty" class="empty" hidden>No meows yet. 🐾</p>
   </aside>
@@ -50,7 +57,7 @@
     <main>
       <section class="hero">
         <h2>All your meows. One place.</h2>
-        <p>Drop a link below and it lands in the litter box on the left.</p>
+        <p>Add a link below, paste it into links.js, and it lands in the litter box on the left.</p>
       </section>
 
       <form id="addForm" class="add" autocomplete="off">
@@ -61,14 +68,11 @@
       </form>
 
       <section class="tools">
-        <button id="shareBtn" type="button">Share my meows</button>
+        <a id="editBtn" class="btn" href="#" target="_blank" rel="noopener noreferrer">Edit links.js on GitHub</a>
         <button id="exportBtn" type="button">Export JSON</button>
-        <label class="btn">Import JSON<input id="importFile" type="file" accept="application/json" hidden></label>
       </section>
-      <p class="note">Your meows are saved <strong>in this browser only</strong>. Use “Share my meows” or Export to move them.</p>
+      <p class="note">All meows live in <strong>links.js</strong> in the GitHub repo, so everyone sees the same list. “Meow it” copies the new line and opens links.js for you to paste and commit.</p>
     </main>
-
-    <footer>MEOW · purring free on GitHub Pages</footer>
   </div>
 
   <!-- Hover preview card (filled in by app.js) -->
@@ -78,7 +82,7 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=7"></script>
-  <script src="rain.js?v=7"></script>
+  <script src="app.js?v=8"></script>
+  <script src="rain.js?v=8"></script>
 </body>
 </html>

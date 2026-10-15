@@ -1,15 +1,13 @@
 (() => {
   'use strict';
 
-  const KEY = 'meow.links.v1';
-  const OLD_KEY = 'linknest.links.v1'; // v1 name, migrated once
+  const OLD_STORE = 'meow.links.v1';       // old: links kept in the browser
+  const OLDER_STORE = 'linknest.links.v1';
   const THEME_KEY = 'meow.theme';
   const SIDE_KEY = 'meow.sidebar';
-  const MAX_IMPORT = 200;
   const $ = (id) => document.getElementById(id);
 
-  let mine = [];     // links saved in this browser (localStorage)
-  let curated = [];  // links shipped in links.json (same for every visitor)
+  let links = [];    // every link, read from links.js in the repo
   let activeTag = 'all';
 
   /* ---------- helpers ---------- */
@@ -39,13 +37,6 @@
 
   const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
 
-  const enc = (s) => {
-    let r = '';
-    new TextEncoder().encode(s).forEach((b) => { r += String.fromCharCode(b); });
-    return btoa(r);
-  };
-  const dec = (s) => new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0)));
-
   let toastTimer;
   const toast = (msg) => {
     const t = $('toast');
@@ -64,30 +55,47 @@
     }
   };
 
-  /* ---------- storage ---------- */
-  const load = () => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || '[]');
-      mine = Array.isArray(raw) ? raw.map(clean).filter(Boolean) : [];
-    } catch { mine = []; }
+  /* ---------- links come from links.js in the repo ---------- */
+  // links.js sets window.MEOW_LINKS. We add a timestamp so the browser always
+  // gets the newest version instead of an old cached copy.
+  const loadRepoLinks = () => new Promise((resolve) => {
+    const sc = document.createElement('script');
+    sc.src = 'links.js?t=' + Date.now();
+    sc.onload = sc.onerror = () => {
+      const data = Array.isArray(window.MEOW_LINKS) ? window.MEOW_LINKS : [];
+      links = data.map(clean).filter(Boolean);
+      resolve();
+    };
+    document.head.appendChild(sc);
+  });
+
+  // Where to edit links.js on GitHub (works out the repo from the site address).
+  const repoInfo = () => {
+    const m = location.hostname.match(/^([^.]+)\.github\.io$/i);
+    const repo = location.pathname.split('/').filter(Boolean)[0];
+    if (m && repo) return { owner: m[1], repo };
+    return { owner: 'catgivememoney-hub', repo: 'link' };
   };
-  const save = () => {
-    try { localStorage.setItem(KEY, JSON.stringify(mine)); }
-    catch { toast('Could not save (browser storage is blocked).'); }
+  const editUrl = () => {
+    const { owner, repo } = repoInfo();
+    return `https://github.com/${owner}/${repo}/edit/main/links.js`;
   };
 
-  const loadCurated = async () => {
+  // One line of links.js for a link.
+  const toLine = (l) =>
+    `  { title: ${JSON.stringify(l.title)}, url: ${JSON.stringify(l.url)}, tag: ${JSON.stringify(l.tag || '')} },`;
+
+  // Links people added in older versions were kept only in their browser.
+  const browserOnly = () => {
     try {
-      const res = await fetch('links.json', { cache: 'no-cache' });
-      if (!res.ok) return;
-      const data = await res.json();
-      curated = (Array.isArray(data) ? data : []).map(clean).filter(Boolean);
-      curated.forEach((l) => { l.pinned = true; });
-    } catch { /* opened from a file:// URL or offline; that's fine */ }
+      const raw = JSON.parse(localStorage.getItem(OLD_STORE) || localStorage.getItem(OLDER_STORE) || '[]');
+      const have = new Set(links.map((l) => l.url));
+      return (Array.isArray(raw) ? raw : []).map(clean).filter((l) => l && !have.has(l.url));
+    } catch { return []; }
   };
 
   /* ---------- rendering ---------- */
-  const all = () => [...curated, ...mine];
+  const all = () => links;
 
   const renderTags = () => {
     const box = $('tags');
@@ -169,7 +177,7 @@
   /* ---------- one row in the list ---------- */
   const card = (l, i) => {
     const row = document.createElement('li');
-    row.className = 'row' + (l.pinned ? ' featured' : '');
+    row.className = 'row';
     row.style.animationDelay = Math.min(i * 25, 300) + 'ms';
 
     const num = document.createElement('span');
@@ -219,12 +227,6 @@
       badge.textContent = '#' + l.tag;
       row.appendChild(badge);
     }
-    if (l.pinned) {
-      const pin = document.createElement('span');
-      pin.className = 'pin';
-      pin.textContent = 'Featured';
-      row.appendChild(pin);
-    }
 
     const actions = document.createElement('span');
     actions.className = 'actions';
@@ -236,20 +238,6 @@
     cp.setAttribute('aria-label', 'Copy link for ' + l.title);
     cp.addEventListener('click', () => copy(l.url, 'Copied! 🐾'));
     actions.appendChild(cp);
-
-    if (!l.pinned) {
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.textContent = 'Delete';
-      del.setAttribute('aria-label', 'Delete ' + l.title);
-      del.addEventListener('click', () => {
-        mine = mine.filter((x) => x.id !== l.id);
-        save();
-        render();
-        toast('Meow deleted');
-      });
-      actions.appendChild(del);
-    }
 
     return row;
   };
@@ -267,41 +255,21 @@
   };
 
   /* ---------- actions ---------- */
+  // A static site can't write to GitHub by itself, so "Meow it" copies the new
+  // line and opens links.js in GitHub's editor. Paste it in and commit.
   const addLink = (e) => {
     e.preventDefault();
     const l = clean({ title: $('title').value, url: $('url').value, tag: $('tag').value });
     if (!l) { toast('Please enter a title and a valid http(s) URL.'); return; }
-    if (all().some((x) => x.url === l.url)) { toast('That meow is already here.'); return; }
-    mine.unshift(l);
-    save();
+    if (links.some((x) => x.url === l.url)) { toast('That meow is already here.'); return; }
+    window.open(editUrl(), '_blank', 'noopener');
+    copy(toLine(l), 'Line copied 🐾 Paste it into links.js and commit');
     $('addForm').reset();
-    render();
-    toast('Meow saved 🐾');
-    if (!sidebarOpen()) setSidebar(true, false);
-  };
-
-  const mergeIn = (incoming) => {
-    const have = new Set(all().map((l) => l.url));
-    let added = 0;
-    incoming.slice(0, MAX_IMPORT).map(clean).filter(Boolean).forEach((l) => {
-      if (!have.has(l.url)) { l.id = uid(); mine.push(l); have.add(l.url); added++; }
-    });
-    save();
-    render();
-    return added;
-  };
-
-  const plain = () => mine.map(({ title, url, tag }) => ({ title, url, tag }));
-
-  const share = () => {
-    if (!mine.length) { toast('Add some meows first.'); return; }
-    const link = location.origin + location.pathname + '#share=' + enc(JSON.stringify(plain()));
-    if (link.length > 8000) { toast('Too many meows for a share link. Use Export instead.'); return; }
-    copy(link, 'Share link copied!');
   };
 
   const exportJson = () => {
-    const blob = new Blob([JSON.stringify(plain(), null, 2)], { type: 'application/json' });
+    const data = links.map(({ title, url, tag }) => ({ title, url, tag }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'meow-links.json';
@@ -309,34 +277,21 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
-  const importJson = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 1_000_000) { toast('File too large.'); return; }
-    const r = new FileReader();
-    r.onload = () => {
-      try {
-        const data = JSON.parse(r.result);
-        if (!Array.isArray(data)) throw new Error('not a list');
-        toast(`Imported ${mergeIn(data)} new meow(s)`);
-      } catch { toast('That file is not a valid links JSON.'); }
+  // Offer to move links that were only saved in this browser into links.js.
+  const showMoveNotice = () => {
+    const extra = browserOnly();
+    const box = $('moveNotice');
+    if (!extra.length) { box.hidden = true; return; }
+    box.hidden = false;
+    $('moveText').textContent = `${extra.length} older link(s) are only in this browser.`;
+    $('moveBtn').onclick = () => {
+      window.open(editUrl(), '_blank', 'noopener');
+      copy(extra.map(toLine).join('\n'), 'Lines copied 🐾 Paste them into links.js and commit');
     };
-    r.readAsText(file);
-    e.target.value = '';
-  };
-
-  // Someone opened a share link: ask before importing anything.
-  const handleShareHash = () => {
-    if (!location.hash.startsWith('#share=')) return;
-    try {
-      const data = JSON.parse(dec(location.hash.slice(7)));
-      if (!Array.isArray(data)) throw new Error('bad');
-      const valid = data.slice(0, MAX_IMPORT).map(clean).filter(Boolean);
-      if (valid.length && window.confirm(`Add ${valid.length} shared meow(s) to your board?`)) {
-        toast(`Imported ${mergeIn(valid)} new meow(s)`);
-      }
-    } catch { toast('That share link looks broken.'); }
-    history.replaceState(null, '', location.pathname + location.search);
+    $('moveDismiss').onclick = () => {
+      try { localStorage.removeItem(OLD_STORE); localStorage.removeItem(OLDER_STORE); } catch { /* ignore */ }
+      box.hidden = true;
+    };
   };
 
   /* ---------- theme ---------- */
@@ -386,16 +341,14 @@
   const init = async () => {
     initTheme();
     initSidebar();
-    load();
     $('addForm').addEventListener('submit', addLink);
     $('search').addEventListener('input', render);
-    $('shareBtn').addEventListener('click', share);
+    $('editBtn').href = editUrl();
     $('exportBtn').addEventListener('click', exportJson);
-    $('importFile').addEventListener('change', importJson);
     addEventListener('scroll', hidePreview, { passive: true });
-    await loadCurated();
+    await loadRepoLinks();
     render();
-    handleShareHash();
+    showMoveNotice();
   };
 
   init();

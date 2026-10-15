@@ -31,7 +31,7 @@ body {
   transition: background 0.25s, color 0.25s;
 }
 
-.top, main, footer { width: min(760px, 100% - 32px); margin-inline: auto; }
+.top, main { width: min(760px, 100% - 32px); margin-inline: auto; }
 
 /* Header */
 .top { display: flex; justify-content: space-between; align-items: center; padding: 26px 0 8px; }
@@ -193,7 +193,7 @@ body.side-closed .content { margin-left: 0; }
 .empty, .note { text-align: center; color: var(--muted); }
 .empty { padding: 28px 0; }
 .note { font-size: 0.85rem; font-weight: 300; }
-footer { text-align: center; color: var(--muted); padding: 34px 0 40px; font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; }
+main { margin-bottom: 40px; }
 
 .toast {
   position: fixed; left: 50%; bottom: 28px;
@@ -250,3 +250,13 @@ main {
   .top .icon { width: 40px; height: 40px; }
   .top-actions { gap: 6px; }
 }
+
+/* notice for links that were only saved in this browser */
+.move {
+  font-size: 0.85rem; color: var(--muted);
+  border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.move-actions { display: flex; gap: 6px; }
+.move-actions button { padding: 5px 10px; font-size: 0.8rem; }
+a.btn { text-decoration: none; display: inline-block; }

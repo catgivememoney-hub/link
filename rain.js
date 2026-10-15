@@ -216,14 +216,13 @@
   }
 
   /* ================= Sound (all generated, no audio files) ================= */
-  // One shared audio engine for the light rain and the click sounds.
+  // Audio engine for the light rain.
   // Browsers only allow sound after the visitor clicks/taps/presses a key,
   // so nothing is created until then.
   const SOUND_KEY = 'meow.rainSound';
   const btn = document.getElementById('soundBtn');
   let ac = null;          // AudioContext
   let rainGain = null;    // volume of the rain (0 = off)
-  let clickGain = null;   // volume of click sounds
   let rainBuilt = false;
   let patterTimer = null;
   let rainOn = false;
@@ -237,7 +236,6 @@
     comp.threshold.value = -18; comp.ratio.value = 3;
     comp.connect(ac.destination);
     rainGain = ac.createGain(); rainGain.gain.value = 0; rainGain.connect(comp);
-    clickGain = ac.createGain(); clickGain.gain.value = 0.9; clickGain.connect(comp);
     return ac;
   };
 
@@ -321,35 +319,6 @@
     patter();
   };
 
-  /* ---- soft click: a short, rounded "tok", neither crisp nor dull ---- */
-  const playClick = () => {
-    if (!getAudio()) return;
-    if (ac.state !== 'running') ac.resume();
-    const t = ac.currentTime + 0.005;
-    const k = rand(0.96, 1.04); // tiny pitch variation so repeats feel natural
-
-    const o = ac.createOscillator(); o.type = 'triangle';
-    o.frequency.setValueAtTime(520 * k, t);
-    o.frequency.exponentialRampToValueAtTime(330 * k, t + 0.06);
-    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700; lp.Q.value = 0.7;
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.26, t + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-    o.connect(lp); lp.connect(g); g.connect(clickGain);
-    o.start(t); o.stop(t + 0.12);
-
-    // a whisper of texture so it feels like a real button, not a beep
-    if (!playClick.buf) playClick.buf = noiseBuffer(0.02, 'white');
-    const n = ac.createBufferSource(); n.buffer = playClick.buf;
-    const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 2200; nf.Q.value = 1.2;
-    const ng = ac.createGain();
-    ng.gain.setValueAtTime(0.05, t);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.015);
-    n.connect(nf); nf.connect(ng); ng.connect(clickGain);
-    n.start(t); n.stop(t + 0.02);
-  };
-
   /* ---- rain on/off button ---- */
   const setIcon = () => {
     if (!btn) return;
@@ -376,12 +345,10 @@
 
   if (btn) btn.addEventListener('click', () => setRain(!rainOn));
 
-  // Every click/tap gets the soft click sound. The first one also starts the rain
-  // (unless the visitor turned it off before).
+  // The first click/tap starts the rain (unless the visitor turned it off before).
   let started = false;
   addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    playClick();
     if (!started) {
       started = true;
       const onBtn = e.target && e.target.closest && e.target.closest('#soundBtn');
