@@ -14,7 +14,7 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `sound.js` | Light rain sound, generated in the browser (no audio files). |
 | `app.js` | The link list, search, tags, hover previews. |
 | `fx.js` | Interaction effects: magnetic buttons, click ripples, input-bar spotlight, MEOW letter parallax. |
-| `forest.js` | Walk into the world (two-finger swipe / wheel, drag to look). Every tree does something: holds a link, switches the scene (every 7th), tells a cat fact (every 11th), opens a random link (every 13th), and rings its own chime. |
+| `forest.js` | Walk into the world with W A S D / arrow keys (Shift runs, drag to look). Every tree does something: holds a link, switches the scene (every 7th), tells a cat fact (every 11th), opens a random link (every 13th), and rings its own chime. |
 | `cinema.js` | Film layer: grain, letterbox bars with scene titles, rack focus (what you're not looking at softens). |
 | `gallery.js` | 3D floating gallery: pick a category and its links float in the middle as cards (drag, wheel, ← →, Enter, Esc). |
 

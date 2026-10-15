@@ -743,3 +743,13 @@ html.looking, html.looking body { cursor: grabbing; }
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   color: var(--ink) !important; text-shadow: none !important;
 }
+
+/* keycaps in the walking hint */
+.walk-hint { margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+kbd {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  border: 1px solid var(--ring-hi); border-radius: 6px;
+  font: inherit; font-size: 0.6rem; letter-spacing: 0; color: var(--float-ink);
+  background: color-mix(in srgb, var(--glass) 70%, transparent);
+}
+.walk-hint kbd:last-of-type { margin-right: 8px; }

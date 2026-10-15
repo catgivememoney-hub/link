@@ -163,32 +163,92 @@ import * as THREE from 'three';
   const water = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), wMat);
   scene.add(water);
 
-  /* ---------- pine forest (instanced cones that can grow and shrink) ---------- */
-  const treeU = { uTree: { value: 1 } };
-  const coneGeo = new THREE.ConeGeometry(1, 3.4, 7, 1).translate(0, 1.7, 0);
-  const treeMat = new THREE.MeshLambertMaterial({ color: 0x334033 });
+  /* ---------- pine forest ----------
+     Each tree: a thin trunk and four tiers of branches with ragged edges,
+     lighter tips and soft rounded shading. Every tree gets its own turn,
+     size and shade, and they all sway a little in the wind. */
+  const treeU = { uTree: { value: 1 }, uTime: U.uTime };
+  const pineGeo = (() => {
+    const parts = [];
+    const push = (geo, colorAt, normalAt) => {
+      const g = geo.toNonIndexed();
+      const p = g.attributes.position;
+      const col = new Float32Array(p.count * 3), nor = new Float32Array(p.count * 3);
+      const v = new THREE.Vector3(), n = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        const c = colorAt(v); col.set([c, c * 1.0, c * 0.96], i * 3);
+        normalAt(v, n); nor.set([n.x, n.y, n.z], i * 3);
+      }
+      parts.push({ pos: p.array, col, nor });
+    };
+    // trunk
+    const trunk = new THREE.CylinderGeometry(0.09, 0.16, 1.1, 6, 1, true).translate(0, 0.55, 0);
+    push(trunk, () => 0.55, (v, n) => n.set(v.x, 0, v.z).normalize());
+    // four tiers, each a little smaller, with a ragged, drooping rim
+    for (let t = 0; t < 4; t++) {
+      const r = 1.0 - t * 0.21, h = 1.35 - t * 0.14, base = 0.62 + t * 0.6;
+      const cone = new THREE.ConeGeometry(r, h, 11, 2, false);
+      const p = cone.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        const rad = Math.hypot(x, z);
+        if (rad > 0.001) {
+          const a = Math.atan2(z, x);
+          const jag = 1 + Math.sin(a * 5 + t * 1.7) * 0.07 + Math.sin(a * 11 + t) * 0.05; // irregular rim
+          const rim = y < -h / 2 + 0.01 ? 1 : 0;
+          p.setXYZ(i, x * jag, y - rim * 0.12 * jag, z * jag);                          // tips droop a little
+        }
+      }
+      cone.translate(0, base + h / 2, 0);
+      push(cone,
+        (v) => 0.8 + 0.6 * Math.min(1, Math.max(0, (v.y - base) / h)) + (t * 0.05),  // darker inside, lighter tips
+        (v, n) => n.set(v.x, Math.hypot(v.x, v.z) * 0.55 + 0.25, v.z).normalize());      // soft, rounded light
+    }
+    const total = parts.reduce((s, q) => s + q.pos.length, 0);
+    const pos = new Float32Array(total), col = new Float32Array(total), nor = new Float32Array(total);
+    let o = 0;
+    parts.forEach((q) => { pos.set(q.pos, o); col.set(q.col, o); nor.set(q.nor, o); o += q.pos.length; });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    return g;
+  })();
+  const treeMat = new THREE.MeshLambertMaterial({ color: 0x334033, vertexColors: true });
   treeMat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, treeU);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTree;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed *= uTree;');
+      .replace('#include <common>', '#include <common>\nuniform float uTree; uniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        transformed *= uTree;
+        // wind: the higher the point, the more it moves; each tree has its own rhythm
+        float seed = instanceMatrix[3].x * 0.051 + instanceMatrix[3].z * 0.073;
+        float sway = (sin(uTime * 0.9 + seed) + 0.4 * sin(uTime * 2.3 + seed * 1.7)) * 0.022 * position.y * position.y;
+        transformed.x += sway; transformed.z += sway * 0.6;`);
   };
   const TREE_N = 1400;
-  const treeBase = [];                  // base position + size of every tree (for swaying)
+  const treeBase = [];                  // base position, size, turn and shade of every tree
   const WHITE = new THREE.Color(1, 1, 1);
-  const trees = new THREE.InstancedMesh(coneGeo, treeMat, TREE_N);
+  const trees = new THREE.InstancedMesh(pineGeo, treeMat, TREE_N);
   {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), pos = new THREE.Vector3();
+    const tint = new THREE.Color();
     let n = 0, guard = 0;
     while (n < TREE_N && guard++ < 60000) {
       const x = rnd(-650, 650), z = rnd(-700, 260);
       const h = heightAt(x, z);
       if (h < 3 || h > 85) continue;
       if (fbm(x * 0.02, z * 0.02, 3) < 0.42) continue; // natural clumps
-      const k = rnd(2.2, 4.8);
-      pos.set(x, h - 0.6, z); s.set(k, k * rnd(1.3, 1.9), k);
-      treeBase.push({ p: pos.clone(), s: s.clone() });
-      m.compose(pos, q, s); trees.setColorAt(n, WHITE); trees.setMatrixAt(n++, m);
+      const k = rnd(2.0, 4.6);
+      pos.set(x, h - 0.4, z);
+      s.set(k * rnd(0.8, 0.95), k * rnd(1.5, 2.1), k * rnd(0.8, 0.95));
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd(0, Math.PI * 2));
+      const shade = rnd(0.82, 1.12);
+      tint.setRGB(shade, shade * rnd(0.97, 1.03), shade * rnd(0.94, 1.0));
+      treeBase.push({ p: pos.clone(), s: s.clone(), q: q.clone(), c: tint.clone() });
+      m.compose(pos, q, s); trees.setColorAt(n, tint); trees.setMatrixAt(n++, m);
     }
     trees.count = n;
   }
@@ -422,10 +482,11 @@ import * as THREE from 'three';
     pointer.y = (e.clientY / innerHeight) * 2 - 1;
   }, { passive: true });
 
-  /* ---------- explore: two-finger swipe / wheel walks forward, drag looks around ---------- */
-  const WALK = 340;   // how far you can walk from the home view
-  const EYE = 7.5;    // eye height above ground or water
-  const ex = { depth: 0, depthTo: 0, yaw: 0, yawTo: 0, pitch: 0, pitchTo: 0, ground: 0, on: false };
+  /* ---------- explore: W A S D / arrow keys walk, drag looks around ---------- */
+  const EYE = 7.5;      // eye height above ground or water
+  const SPEED = 24;     // walking speed (units per second); Shift runs
+  const ex = { px: 0, pz: 0, vx: 0, vz: 0, homing: false, yaw: 0, yawTo: 0, pitch: 0, pitchTo: 0, ground: 0, on: false };
+  const keys = new Set();
   const fwd = new THREE.Vector3(), flat = new THREE.Vector3(), lookDir = new THREE.Vector3();
   const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -446,18 +507,21 @@ import * as THREE from 'three';
     lookTmp.copy(cur.look);
     lookTmp.x += pointer.sx * 3 * drift;
     // explore: walk over the land (staying at eye height), turn and tilt the view
-    const e = ex.depth;
-    if (e > 0.0005 || Math.abs(ex.yaw) > 0.0005 || Math.abs(ex.pitch) > 0.0005) {
+    const away = Math.hypot(ex.px, ex.pz);
+    if (away > 0.01 || Math.abs(ex.yaw) > 0.0005 || Math.abs(ex.pitch) > 0.0005) {
       fwd.copy(cur.look).sub(cur.cam);
       const viewDist = fwd.length();
       fwd.normalize();
-      flat.set(fwd.x, 0, fwd.z).normalize();
-      const dist = e * WALK;
-      const px = camera.position.x + flat.x * dist, pz = camera.position.z + flat.z * dist;
-      const ground = Math.max(heightAt(px, pz), water.position.y) + EYE;
-      ex.ground += (ground - ex.ground) * 0.08; // glide over bumps instead of jolting
-      const hb = smooth(0, 0.3, e);
-      camera.position.set(px, camera.position.y * (1 - hb) + ex.ground * hb, pz);
+      const px = camera.position.x + ex.px, pz = camera.position.z + ex.pz;
+      // ground under and just around you (so small bumps between terrain points can't poke through)
+      let floor = heightAt(px, pz);
+      for (let a = 0; a < 6.28; a += 1.57) floor = Math.max(floor, heightAt(px + Math.cos(a) * 4, pz + Math.sin(a) * 4));
+      floor = Math.max(floor, water.position.y);
+      const ground = floor + EYE;
+      ex.ground += (ground - ex.ground) * 0.12;   // glide over bumps instead of jolting…
+      ex.ground = Math.max(ex.ground, floor + 3); // …but never sink below the ground
+      const hb = smooth(0, 35, away);
+      camera.position.set(px, Math.max(camera.position.y * (1 - hb) + ex.ground * hb, hb > 0.5 ? floor + 3 : -1e9), pz);
       lookDir.copy(fwd).applyAxisAngle(Y_AXIS, ex.yaw);
       lookDir.y = lookDir.y * (1 - hb) - 0.04 * hb + ex.pitch;
       lookDir.normalize();
@@ -492,14 +556,20 @@ import * as THREE from 'three';
   const overUI = (t) => t && t.closest && t.closest('.sidebar, .modal, .gallery, .top, .composer, .tools, .tree-card, .home-btn, .backdrop, input, button, a, label');
   const wake = () => { if (!running) renderOnce(); };
 
-  addEventListener('wheel', (e) => {
-    if (busy() || overUI(e.target)) return;
-    e.preventDefault();
-    let d = e.deltaY * (e.deltaMode === 1 ? 30 : 1);
-    if (e.ctrlKey) d = -d * 3;               // trackpad pinch: spread fingers = forward
-    ex.depthTo = clamp(ex.depthTo + d * 0.0016, 0, 1);
-    wake();
-  }, { passive: false });
+  // keyboard walking: W/↑ forward, S/↓ back, A/← left, D/→ right, Shift to run
+  const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'];
+  const typing = (t) => t && (/INPUT|TEXTAREA|SELECT/.test(t.tagName) || t.isContentEditable);
+  let tempRun = false;
+  addEventListener('keydown', (e) => {
+    if (!MOVE_KEYS.includes(e.code) || typing(e.target) || busy() || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (document.querySelector('.modal:not([hidden])')) return;
+    if (!e.code.startsWith('Shift')) e.preventDefault();
+    keys.add(e.code);
+    ex.homing = false;
+    if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+  });
+  addEventListener('keyup', (e) => keys.delete(e.code));
+  addEventListener('blur', () => keys.clear());
 
   let drag = null;
   const hover = { x: 0, y: 0, pending: false, id: -1 };
@@ -552,7 +622,7 @@ import * as THREE from 'three';
   const GLOW = new THREE.Color(2.6, 2.6, 2.4);
   const setHover = (id) => {
     if (id === hover.id) return;
-    if (hover.id >= 0) trees.setColorAt(hover.id, WHITE);
+    if (hover.id >= 0) trees.setColorAt(hover.id, treeBase[hover.id] ? treeBase[hover.id].c : WHITE);
     hover.id = id;
     if (id >= 0) trees.setColorAt(id, GLOW);
     trees.instanceColor.needsUpdate = true;
@@ -572,7 +642,7 @@ import * as THREE from 'three';
       if (!b) { shakes.delete(id); return; }
       const a = t > 2.6 ? 0 : Math.sin(t * 15) * Math.exp(-t * 2.1) * 0.17;
       swayE.set(a * 0.6, 0, a);
-      swayQ.setFromEuler(swayE);
+      swayQ.setFromEuler(swayE).multiply(b.q);
       swayM.compose(b.p, swayQ, b.s);
       trees.setMatrixAt(id, swayM);
       if (t > 2.6) shakes.delete(id);
@@ -674,11 +744,53 @@ import * as THREE from 'three';
     // time-based smoothing: same feel at any frame rate
     const fdt = Math.min(0.1, Math.max(0.001, (now - (lastNow || now)) / 1000)) * 60;
     const k60 = (k) => (fullMo ? 1 - Math.pow(1 - k, fdt) : 1);
-    ex.depth += (ex.depthTo - ex.depth) * k60(0.07);
-    if (!drag && ex.depthTo === 0 && ex.depth < 0.05) { const r = Math.pow(0.96, fdt); ex.yawTo *= r; ex.pitchTo *= r; }
+    // walking: keys set where we want to go; velocity eases toward it
+    {
+      const dtS = fdt / 60;
+      const fx = cur.look.x - cur.cam.x, fz = cur.look.z - cur.cam.z;
+      const fl = Math.hypot(fx, fz) || 1;
+      const c = Math.cos(ex.yaw), sn = Math.sin(ex.yaw);
+      // facing direction on the ground (turned by how far you've looked left/right)
+      const hx = (fx / fl) * c + (fz / fl) * sn, hz = -(fx / fl) * sn + (fz / fl) * c;
+      const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+      const r = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+      let wx = hx * f - hz * r, wz = hz * f + hx * r;
+      const wl = Math.hypot(wx, wz);
+      const sp = SPEED * (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 2.4 : 1);
+      if (wl > 0) { wx = (wx / wl) * sp; wz = (wz / wl) * sp; }
+      const acc = 1 - Math.pow(1 - (wl > 0 ? 0.08 : 0.12), fdt);
+      ex.vx += (wx - ex.vx) * acc; ex.vz += (wz - ex.vz) * acc;
+      // stay in the valley: don't climb above the tree line or wander off the map
+      const ROAM = 70; // highest ground you can walk on
+      const tryMove = (nx, nz) => {
+        const wx2 = cur.cam.x + nx, wz2 = cur.cam.z + nz;
+        if (!(Math.abs(wx2) < 820 && wz2 > -900 && wz2 < 420 && heightAt(wx2, wz2) < ROAM)) return false;
+        // trees are solid: keep a little distance from every trunk
+        if (trees.visible && treeU.uTree.value > 0.5) {
+          for (let i = 0; i < treeBase.length; i++) {
+            const b = treeBase[i], dx = b.p.x - wx2, dz = b.p.z - wz2, rr = b.s.x * 0.75 + 1.2;
+            if (dx * dx + dz * dz < rr * rr) return false;
+          }
+        }
+        return true;
+      };
+      const nx = ex.px + ex.vx * dtS, nz = ex.pz + ex.vz * dtS;
+      if (tryMove(nx, nz)) { ex.px = nx; ex.pz = nz; }
+      else if (tryMove(nx, ex.pz)) { ex.px = nx; ex.vz *= 0.5; }      // slide along the slope
+      else if (tryMove(ex.px, nz)) { ex.pz = nz; ex.vx *= 0.5; }
+      else { ex.vx *= 0.3; ex.vz *= 0.3; }
+      if (ex.homing) {                       // back button: glide home
+        const k = 1 - Math.pow(1 - 0.06, fdt);
+        ex.px -= ex.px * k; ex.pz -= ex.pz * k; ex.vx = ex.vz = 0;
+        if (Math.hypot(ex.px, ex.pz) < 0.05) { ex.px = ex.pz = 0; ex.homing = false; }
+      }
+      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing) { tempRun = false; running = motion === 'full'; }
+    }
+    const away = Math.hypot(ex.px, ex.pz);
+    if (!drag && away < 2) { const rr = Math.pow(0.96, fdt); ex.yawTo *= rr; ex.pitchTo *= rr; }
     ex.yaw += (ex.yawTo - ex.yaw) * k60(0.12);
     ex.pitch += (ex.pitchTo - ex.pitch) * k60(0.12);
-    const exploring = ex.depth > 0.04;
+    const exploring = away > 3;
     if (exploring !== ex.on) { ex.on = exploring; root.classList.toggle('exploring', exploring); }
     updateShakes(now);
     renderer.toneMappingExposure = exposure;
@@ -690,7 +802,7 @@ import * as THREE from 'three';
     const full = motion === 'full';
     const shotPull = k < 1 ? Math.sin(Math.PI * ease(k)) * 6 : 0;          // focus breathes during scene changes
     const enter = full ? Math.max(0, 1 - (now - entranceAt) / 3600) : 0;    // entrance: from blur into focus
-    const walk = smooth(0, 0.4, ex.depth);   // in the forest everything near you stays sharp
+    const walk = smooth(0, 60, Math.hypot(ex.px, ex.pz));   // in the forest everything near you stays sharp
     LU.uBlur.value = 2.6 * dpr * (1 + gal.focus * 2.6) * (1 - walk * 0.7);
     LU.uBand.value = 0.22 - gal.focus * 0.1 + walk * 0.12;
     LU.uPull.value = (shotPull * (full ? 1 : 0) + Math.pow(enter, 1.6) * 18 + gal.pulse * 3) * dpr;
@@ -748,10 +860,12 @@ import * as THREE from 'three';
     },
     setMotion(m) { motion = m === 'reduced' ? 'reduced' : 'full'; startLoop(); },
     // called by gallery.js
-    focus(on) { gal.focusTo = on ? 1 : 0; if (on) { ex.depthTo = 0; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
+    focus(on) { gal.focusTo = on ? 1 : 0; if (on) { ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
     // back to the home view (used by the back button)
-    home() { ex.depthTo = 0; ex.yawTo = 0; ex.pitchTo = 0; if (!running) renderOnce(); },
-    walk(delta) { ex.depthTo = clamp(ex.depthTo + delta, 0, 1); if (!running) renderOnce(); },
+    home() {
+      ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
+      if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+    },
     pan(x) { gal.panTo = Math.max(-1, Math.min(1, x || 0)); },
     pulse() { if (motion === 'full') gal.pulse = 1; },
     start() {
