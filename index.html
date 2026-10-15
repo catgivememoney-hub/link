@@ -4,35 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MEOW</title>
-  <meta name="description" content="MEOW: all your meows in one place. A tiny link board. Save, search, and share links. No login, no server.">
+  <meta name="description" content="MEOW: all your meows in one place.">
   <link rel="icon" type="image/png" href="favicon.png?v=5">
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=5">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
+  <!-- password check runs first, before anything else shows -->
+  <script src="password.js?v=9"></script>
+  <script src="gate.js?v=9"></script>
 </head>
 <body>
-  <canvas id="rain" class="rain" aria-hidden="true"></canvas>
+  <!-- Password screen: one input, nothing else -->
+  <div id="gate" class="gate"><input id="gateInput" type="password" autocomplete="current-password" aria-label="Password"></div>
+
+  <canvas id="bg" class="bg-canvas" aria-hidden="true"></canvas>
   <!-- Left sidebar: saved links -->
   <aside id="sidebar" class="sidebar" aria-label="Saved meows">
     <div class="side-head">
-      <h2>Saved meows <span id="count" class="count">0</span></h2>
-      <button id="closeSide" class="icon small" type="button" aria-label="Close sidebar">
+      <h2><span data-i18n="saved">Saved meows</span> <span id="count" class="count">0</span></h2>
+      <button id="closeSide" class="icon small" type="button" aria-label="Close sidebar" data-i18n-aria="closeSidebar">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
-    <input id="search" type="search" placeholder="Search meows…" aria-label="Search links">
+    <input id="search" type="search" placeholder="Search meows…" aria-label="Search links" data-i18n-ph="search" data-i18n-aria="search">
     <div id="tags" class="tags" role="group" aria-label="Filter by tag"></div>
     <div id="moveNotice" class="move" hidden>
       <span id="moveText"></span>
       <div class="move-actions">
-        <button id="moveBtn" type="button">Move to links.js</button>
-        <button id="moveDismiss" type="button">Dismiss</button>
+        <button id="moveBtn" type="button" data-i18n="moveBtn">Move to links.js</button>
+        <button id="moveDismiss" type="button" data-i18n="dismiss">Dismiss</button>
       </div>
     </div>
     <ul id="list" class="list"></ul>
-    <p id="empty" class="empty" hidden>No meows yet. 🐾</p>
+    <p id="empty" class="empty" hidden data-i18n="empty">No meows yet. 🐾</p>
   </aside>
   <div id="backdrop" class="backdrop" hidden></div>
 
@@ -46,43 +52,127 @@
         <h1>MEOW</h1>
       </div>
       <div class="top-actions">
-        <button id="soundBtn" class="icon sound" type="button" aria-pressed="false" aria-label="Turn rain sound on" title="Rain sound: off">
-          <svg class="s-on" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <svg class="s-off" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <button id="themeBtn" class="icon" type="button" aria-label="Toggle light/dark theme" data-i18n-aria="toggleTheme"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
+        <button id="settingsBtn" class="icon" type="button" aria-label="Settings" data-i18n-aria="settings" aria-controls="settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
         </button>
-        <button id="themeBtn" class="icon" type="button" aria-label="Toggle light/dark theme"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
       </div>
     </header>
 
     <main>
       <section class="hero">
-        <h2>All your meows. One place.</h2>
-        <p>Add a link below, paste it into links.js, and it lands in the litter box on the left.</p>
+        <h2 data-i18n="heroTitle">All your meows. One place.</h2>
+        <p class="hint" data-i18n="heroHint">Add a link below, paste it into links.js, and it lands in the litter box on the left.</p>
       </section>
 
       <form id="addForm" class="add" autocomplete="off">
-        <input id="title" placeholder="Title" maxlength="80" required aria-label="Title">
+        <input id="title" placeholder="Title" data-i18n-ph="phTitle" maxlength="80" required aria-label="Title">
         <input id="url" type="url" placeholder="https://example.com" required aria-label="URL">
-        <input id="tag" placeholder="Tag" maxlength="20" aria-label="Tag">
-        <button class="primary" type="submit">Meow it</button>
+        <input id="tag" placeholder="Tag" data-i18n-ph="phTag" maxlength="20" aria-label="Tag">
+        <button class="primary" type="submit" data-i18n="meowIt">Meow it</button>
       </form>
 
       <section class="tools">
-        <a id="editBtn" class="btn" href="#" target="_blank" rel="noopener noreferrer">Edit links.js on GitHub</a>
-        <button id="exportBtn" type="button">Export JSON</button>
+        <a id="editBtn" class="btn" href="#" target="_blank" rel="noopener noreferrer" data-i18n="editLinks">Edit links.js on GitHub</a>
+        <button id="exportBtn" type="button" data-i18n="exportJson">Export JSON</button>
       </section>
-      <p class="note">All meows live in <strong>links.js</strong> in the GitHub repo, so everyone sees the same list. “Meow it” copies the new line and opens links.js for you to paste and commit.</p>
+      <p class="note hint" data-i18n-html="note">All meows live in <strong>links.js</strong> in the GitHub repo, so everyone sees the same list. “Meow it” copies the new line and opens links.js for you to paste and commit.</p>
     </main>
   </div>
 
   <!-- Hover preview card (filled in by app.js) -->
   <div id="preview" class="preview" aria-hidden="true">
-    <div class="shot"><img id="previewImg" alt=""><span id="previewMsg">Loading preview…</span></div>
+    <div class="shot"><img id="previewImg" alt=""><span id="previewMsg" data-i18n="loadingPreview">Loading preview…</span></div>
     <div class="cap"><strong id="previewTitle"></strong><small id="previewHost"></small></div>
   </div>
 
+
+  <!-- Settings panel -->
+  <div id="settings" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="panel">
+      <div class="panel-head">
+        <h2 id="setTitle" data-i18n="settings">Settings</h2>
+        <button id="setClose" class="icon small" type="button" aria-label="Close" data-i18n-aria="close">
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <section>
+        <h3 data-i18n="sLanguage">Language</h3>
+        <div id="langSeg" class="seg">
+          <button type="button" data-val="en">English</button>
+          <button type="button" data-val="zh">中文</button>
+        </div>
+      </section>
+
+      <section>
+        <h3 data-i18n="sBackground">Background</h3>
+        <div id="sceneGrid" class="scenes"></div>
+      </section>
+
+      <section>
+        <h3 data-i18n="sSound">Sound</h3>
+        <div class="set-row">
+          <span data-i18n="sSoundOn">Sound effects</span>
+          <button id="soundSwitch" class="switch" type="button" role="switch" aria-checked="true"><b></b><span class="sw-label"></span></button>
+        </div>
+        <label class="set-row">
+          <span data-i18n="sVolume">Volume</span>
+          <input id="volume" type="range" min="0" max="100" step="1">
+        </label>
+        <p class="hint small" data-i18n="sSoundHint">Light rain. Starts after your first click.</p>
+      </section>
+
+      <section>
+        <h3 data-i18n="sHints">Hints</h3>
+        <div class="set-row">
+          <span data-i18n="sHintsOn">Show small hints</span>
+          <button id="hintSwitch" class="switch" type="button" role="switch" aria-checked="true"><b></b><span class="sw-label"></span></button>
+        </div>
+      </section>
+
+      <section>
+        <h3 data-i18n="sMotion">Animation</h3>
+        <div id="motionSeg" class="seg">
+          <button type="button" data-val="full" data-i18n="sMotionFull">Full</button>
+          <button type="button" data-val="reduced" data-i18n="sMotionReduced">Reduced</button>
+        </div>
+      </section>
+
+      <section>
+        <h3 data-i18n="sPassword">Password</h3>
+        <div class="pw-row">
+          <input id="newPw" type="password" autocomplete="new-password" placeholder="New password" data-i18n-ph="sNewPw" aria-label="New password" data-i18n-aria="sNewPw">
+          <button id="copyCode" type="button" data-i18n="sCopyCode">Copy code</button>
+        </div>
+        <!-- opens password.js on GitHub, at the line marked "CHANGE PASSWORD HERE" -->
+        <a id="changePw" class="btn primary block" href="#" target="_blank" rel="noopener noreferrer" data-i18n="sChangePw">Change password</a>
+        <p class="hint small" data-i18n="sPwHint">Type a new password and click "Copy code", then "Change password" and paste the code on GitHub.</p>
+        <button id="lockNow" type="button" class="block" data-i18n="sLock">Lock now</button>
+      </section>
+
+      <section>
+        <button id="resetSettings" type="button" class="block danger" data-i18n="sReset">Reset settings</button>
+      </section>
+    </div>
+  </div>
+
+  <!-- Confirmation before anything is deleted -->
+  <div id="confirm" class="modal center" hidden role="alertdialog" aria-modal="true" aria-describedby="confirmMsg">
+    <div class="panel small">
+      <p id="confirmMsg"></p>
+      <div class="confirm-actions">
+        <button id="confirmNo" type="button">Cancel</button>
+        <button id="confirmYes" type="button" class="primary">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=8"></script>
-  <script src="rain.js?v=8"></script>
+  <script src="i18n.js?v=9"></script>
+  <script src="bg.js?v=9"></script>
+  <script src="sound.js?v=9"></script>
+  <script src="app.js?v=9"></script>
+  <script src="settings.js?v=9"></script>
 </body>
 </html>

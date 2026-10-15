@@ -1,16 +1,21 @@
 # MEOW
 
-A tiny black-and-white link board. Pure static site: HTML, CSS, JavaScript. No backend, no database, no login.
+A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted free on GitHub Pages.
 
-## Features
-- Links shown in a vertical list. Hover a link to see a screenshot preview of the website.
-- **All links live in `links.js`** in this repo, so every visitor sees the same list.
-- To add one: use the form (it copies the new line and opens `links.js` on GitHub), paste, commit. Or edit `links.js` directly.
-- **Backup**: Export JSON.
-- Rain background and light rain sound (on/off button, starts after the first click).
-- Light / dark toggle, Josefin Sans font.
+## Files
+| File | What it does |
+|---|---|
+| `links.js` | **The list of links.** Edit this to add or remove links. |
+| `password.js` | **The password** (stored as a SHA-256 hash). Read the comments inside to change it. |
+| `gate.js` | The password screen (one input box). |
+| `settings.js` | ⚙ Settings: language, background, sound, hints, animation, password. |
+| `i18n.js` | English / 中文 text. |
+| `bg.js` | Animated backgrounds: rainy window, frosted mono, aurora, misty mountains, starry night, snowy forest, sunset sea. |
+| `sound.js` | Light rain sound, generated in the browser (no audio files). |
+| `app.js` | The link list, search, tags, hover previews. |
 
 ## Notes
-- The homepage file must be named `index.html` (all lowercase). GitHub Pages is case-sensitive.
-- Previews come from the free WordPress mShots service and icons from Google's favicon service, so those services see the link addresses. The first preview of a new site can take a few seconds.
-- Everything in a public repo is public. Don't put private links in `links.js`.
+- The homepage must be named `index.html` (all lowercase). GitHub Pages is case-sensitive.
+- **The password only keeps casual visitors out.** This repo and the site are public, so anyone who knows how can open `links.js` directly. Don't put private links here.
+- Settings are saved per browser. The password is asked again in every new tab.
+- Previews come from WordPress mShots and icons from Google's favicon service, so those services see the link addresses.

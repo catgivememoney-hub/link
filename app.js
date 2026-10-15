@@ -6,6 +6,7 @@
   const THEME_KEY = 'meow.theme';
   const SIDE_KEY = 'meow.sidebar';
   const $ = (id) => document.getElementById(id);
+  const t = (k, v) => window.MEOW_I18N.t(k, v);
 
   let links = [];    // every link, read from links.js in the repo
   let activeTag = 'all';
@@ -51,7 +52,7 @@
       await navigator.clipboard.writeText(text);
       toast(okMsg);
     } catch {
-      window.prompt('Copy this:', text);
+      window.prompt(t('copy'), text);
     }
   };
 
@@ -102,12 +103,12 @@
     box.replaceChildren();
     const tags = ['all', ...new Set(all().map((l) => l.tag).filter(Boolean))];
     if (!tags.includes(activeTag)) activeTag = 'all';
-    tags.forEach((t) => {
+    tags.forEach((tag) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'chip' + (t === activeTag ? ' active' : '');
-      b.textContent = t === 'all' ? 'All' : '#' + t;
-      b.addEventListener('click', () => { activeTag = t; render(); });
+      b.className = 'chip' + (tag === activeTag ? ' active' : '');
+      b.textContent = tag === 'all' ? t('all') : '#' + tag;
+      b.addEventListener('click', () => { activeTag = tag; render(); });
       box.appendChild(b);
     });
   };
@@ -145,7 +146,7 @@
     $('previewTitle').textContent = l.title;
     $('previewHost').textContent = host(l.url);
     img.classList.remove('ready');
-    msg.textContent = 'Loading preview…';
+    msg.textContent = t('loadingPreview');
     let tries = 0;
     const loadShot = () => {
       if (hoverUrl !== l.url) return;
@@ -160,7 +161,7 @@
           seen.add(l.url);
         }
       };
-      img.onerror = () => { if (hoverUrl === l.url) msg.textContent = 'No preview for this site'; };
+      img.onerror = () => { if (hoverUrl === l.url) msg.textContent = t('noPreview'); };
       img.src = shotUrl(l.url, tries);
     };
     loadShot();
@@ -234,9 +235,9 @@
 
     const cp = document.createElement('button');
     cp.type = 'button';
-    cp.textContent = 'Copy';
-    cp.setAttribute('aria-label', 'Copy link for ' + l.title);
-    cp.addEventListener('click', () => copy(l.url, 'Copied! 🐾'));
+    cp.textContent = t('copy');
+    cp.setAttribute('aria-label', t('copy') + ': ' + l.title);
+    cp.addEventListener('click', () => copy(l.url, t('copied')));
     actions.appendChild(cp);
 
     return row;
@@ -260,10 +261,10 @@
   const addLink = (e) => {
     e.preventDefault();
     const l = clean({ title: $('title').value, url: $('url').value, tag: $('tag').value });
-    if (!l) { toast('Please enter a title and a valid http(s) URL.'); return; }
-    if (links.some((x) => x.url === l.url)) { toast('That meow is already here.'); return; }
+    if (!l) { toast(t('invalidLink')); return; }
+    if (links.some((x) => x.url === l.url)) { toast(t('dupLink')); return; }
     window.open(editUrl(), '_blank', 'noopener');
-    copy(toLine(l), 'Line copied 🐾 Paste it into links.js and commit');
+    copy(toLine(l), t('lineCopied'));
     $('addForm').reset();
   };
 
@@ -283,12 +284,14 @@
     const box = $('moveNotice');
     if (!extra.length) { box.hidden = true; return; }
     box.hidden = false;
-    $('moveText').textContent = `${extra.length} older link(s) are only in this browser.`;
+    $('moveText').textContent = t('olderLinks', { n: extra.length });
     $('moveBtn').onclick = () => {
       window.open(editUrl(), '_blank', 'noopener');
-      copy(extra.map(toLine).join('\n'), 'Lines copied 🐾 Paste them into links.js and commit');
+      copy(extra.map(toLine).join('\n'), t('linesCopied'));
     };
-    $('moveDismiss').onclick = () => {
+    $('moveDismiss').onclick = async () => {
+      // deleting needs a confirmation first
+      if (!(await window.MEOW_CONFIRM(t('cDismiss', { n: extra.length })))) return;
       try { localStorage.removeItem(OLD_STORE); localStorage.removeItem(OLDER_STORE); } catch { /* ignore */ }
       box.hidden = true;
     };
@@ -314,7 +317,7 @@
   const setSidebar = (open, remember) => {
     document.body.classList.toggle('side-closed', !open);
     $('menuBtn').setAttribute('aria-expanded', String(open));
-    $('menuBtn').setAttribute('aria-label', open ? 'Close sidebar' : 'Open sidebar');
+    $('menuBtn').setAttribute('aria-label', open ? t('closeSidebar') : t('openSidebar'));
     $('backdrop').hidden = !(open && isSmall());
     $('sidebar').inert = !open;
     hidePreview();
@@ -339,6 +342,7 @@
 
   /* ---------- start ---------- */
   const init = async () => {
+    await window.MEOW_READY; // wait for the password screen
     initTheme();
     initSidebar();
     $('addForm').addEventListener('submit', addLink);
@@ -349,6 +353,8 @@
     await loadRepoLinks();
     render();
     showMoveNotice();
+    // redraw text when the language changes in Settings
+    document.addEventListener('meow:lang', () => { render(); showMoveNotice(); setSidebar(sidebarOpen(), false); });
   };
 
   init();

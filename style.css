@@ -1,4 +1,5 @@
 /* MEOW — black & white theme, Josefin Sans */
+[hidden] { display: none !important; }
 :root {
   --bg: #ffffff;
   --text: #0a0a0a;
@@ -215,14 +216,11 @@ main { margin-bottom: 40px; }
 }
 
 /* Rainy frosted window (drawn by rain.js) */
-.rain { position: fixed; inset: 0; z-index: -1; display: block; pointer-events: none; }
+.bg-canvas { position: fixed; inset: 0; z-index: -1; display: block; pointer-events: none; }
 body { background: transparent; }
 html { background: var(--bg); }
 
 .top-actions { display: flex; gap: 10px; align-items: center; }
-.sound .s-on { display: none; }
-.sound.on .s-on { display: block; }
-.sound.on .s-off { display: none; }
 
 /* soft frosted panels so text stays readable over the rain */
 .hero, .add, .tools, .note {
@@ -260,3 +258,134 @@ main {
 .move-actions { display: flex; gap: 6px; }
 .move-actions button { padding: 5px 10px; font-size: 0.8rem; }
 a.btn { text-decoration: none; display: inline-block; }
+
+/* ================= Password gate: one input, nothing else ================= */
+.gate { display: none; }
+html.locked .gate {
+  display: grid; place-items: center;
+  position: fixed; inset: 0; z-index: 1000;
+  background: var(--bg);
+}
+html.locked .sidebar, html.locked .content, html.locked .bg-canvas,
+html.locked .backdrop, html.locked .preview, html.locked .modal { display: none !important; }
+.gate input {
+  width: min(260px, 70vw);
+  text-align: center;
+  font-size: 1.1rem;
+  letter-spacing: 0.2em;
+  border: 0; border-bottom: 1.5px solid var(--text);
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 4px;
+}
+.gate input:focus { border-color: var(--text); box-shadow: none; }
+.gate input.shake { animation: shake 0.35s ease; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-9px); } 40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); } 80% { transform: translateX(4px); }
+}
+
+/* ================= Settings panel ================= */
+.modal {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex; justify-content: flex-end;
+}
+.modal[hidden] { display: none; }
+.modal.center { justify-content: center; align-items: center; z-index: 300; }
+.panel {
+  width: min(380px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  border-left: 1.5px solid var(--text);
+  padding: 20px 20px 32px;
+  animation: slideIn 0.25s ease;
+}
+.panel.small {
+  height: auto; width: min(360px, calc(100% - 32px));
+  border: 1.5px solid var(--text); border-radius: 18px;
+  animation: pop 0.2s ease;
+}
+@keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pop { from { transform: scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.panel-head h2 { margin: 0; font-size: 1.2rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.panel section { padding: 14px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.panel section:last-child { border-bottom: 0; }
+.panel h3 { margin: 0; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.hint.small { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.block { width: 100%; text-align: center; }
+.btn.primary { background: var(--invert-bg); color: var(--invert-text); }
+.btn.primary:hover { background: var(--bg); color: var(--text); }
+.danger { border-color: var(--line); color: var(--muted); }
+
+/* segmented choice */
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1.5px solid var(--text); border-radius: 12px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 9px; }
+.seg button + button { border-left: 1.5px solid var(--text); }
+.seg button[aria-pressed="true"] { background: var(--invert-bg); color: var(--invert-text); }
+
+/* on/off switch */
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.switch { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border-radius: 999px; }
+.switch b {
+  width: 38px; height: 22px; border-radius: 999px; position: relative;
+  background: var(--line); transition: background 0.2s;
+}
+.switch b::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--bg); box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  transition: transform 0.2s;
+}
+.switch[aria-checked="true"] b { background: var(--text); }
+.switch[aria-checked="true"] b::after { transform: translateX(16px); }
+.switch:hover { background: var(--hover); color: var(--text); }
+.sw-label { font-size: 0.8rem; min-width: 2.2em; text-align: left; }
+input[type="range"] { width: 55%; accent-color: var(--text); padding: 0; border: 0; }
+input[type="range"]:disabled { opacity: 0.4; }
+
+/* background picker */
+.scenes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.scene { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-color: var(--line); text-align: left; font-size: 0.8rem; }
+.scene i { display: block; height: 52px; border-radius: 8px; border: 1px solid var(--line); }
+.scene[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1.5px var(--text); }
+.scene:hover { background: var(--hover); color: var(--text); }
+
+.pw-row { display: flex; gap: 8px; }
+.pw-row input { flex: 1; min-width: 0; }
+
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+#confirmMsg { margin: 4px 0 16px; line-height: 1.5; }
+
+/* ================= Hints on/off ================= */
+html.no-hints .hint { display: none !important; }
+
+/* ================= Reduced animation ================= */
+html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
+  animation: none !important; transition: none !important;
+}
+
+/* ================= Cat-paw cursor ================= */
+html, body, button, a, label, .btn, .chip, .scene, .switch, [role="switch"], input[type="range"] {
+  cursor: url("paw.png") 12 4, auto;
+  cursor: -webkit-image-set(url("paw.png") 1x, url("paw@2x.png") 2x) 12 4, auto;
+}
+button:active, a:active, .btn:active { cursor: url("paw-press.png") 12 4, pointer; }
+input[type="text"], input[type="url"], input[type="search"], input[type="password"], input:not([type]) { cursor: text; }
+
+/* frosted strip behind the header so it reads on every background */
+.top {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  margin-bottom: 14px;
+}
