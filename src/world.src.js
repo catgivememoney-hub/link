@@ -8,6 +8,7 @@
 
    API used by settings.js:  window.MEOW_BG.setScene(name), setMotion('full'|'reduced'), start() */
 import * as THREE from 'three';
+import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMaterial, Parts } from './props.js';
 
 (() => {
   'use strict';
@@ -55,6 +56,16 @@ import * as THREE from 'three';
     h += Math.pow(smooth(120, 650, -z), 1.3) * ridged(x * 0.0028, z * 0.0028) * 260;
     h += smooth(160, 520, Math.abs(x)) * fbm(x * 0.004, z * 0.004 + 11) * 130;
     h -= (1 - shore) * 9;
+    h += (fbm(x * 0.035 + 17, z * 0.035 + 5, 2) - 0.5) * 3.2 * (0.3 + shore);   // small hummocks underfoot
+    // a low grassy point reaching into the lake from the east shore (the cabin stands on it)
+    {
+      const ax = 205, az = -130, bx = 92, bz = -116;
+      const t = Math.min(1, Math.max(0, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / ((bx - ax) ** 2 + (bz - az) ** 2)));
+      const d = Math.hypot(x - (ax + (bx - ax) * t), z - (az + (bz - az) * t));
+      const k = smooth(34, 12, d) * smooth(1.04, 0.9, t);
+      const top = 4.6 + (fbm(x * 0.05, z * 0.05, 2) - 0.5) * 1.6 - t * 0.6;
+      if (k > 0) h = h + (Math.max(h, top) - h) * k;
+    }
     return h;
   };
 
@@ -124,7 +135,7 @@ import * as THREE from 'three';
 
   /* ---------- terrain ---------- */
   const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 } };
-  const tGeo = new THREE.PlaneGeometry(2200, 1800, 230, 190);
+  const tGeo = new THREE.PlaneGeometry(2200, 1800, 300, 245);
   tGeo.rotateX(-Math.PI / 2);
   tGeo.translate(0, 0, -400);
   {
@@ -152,7 +163,40 @@ import * as THREE from 'three';
         float d1 = tn(vXZ * 0.08), d2 = tn(vXZ * 0.45), d3 = tn(vXZ * 2.2);
         land *= 0.82 + 0.22 * d1 + 0.12 * d2 + 0.08 * d3;
         land = mix(land, land * vec3(0.92, 0.88, 0.84), smoothstep(0.35, 0.75, vSlope));   // rocky on slopes
-        diffuseColor.rgb = mix(land, uSnow * (0.94 + 0.06 * d2), snow);`);
+        // snow: soft wind ripples and a faint cool tint in the hollows
+        float drift = sin(vXZ.x * 0.55 + vXZ.y * 0.18 + d1 * 7.0) * 0.5 + 0.5;
+        vec3 snowCol = uSnow * (0.93 + 0.05 * d2 + 0.04 * drift) * mix(vec3(0.94, 0.97, 1.0), vec3(1.0), d1);
+        diffuseColor.rgb = mix(land, snowCol, snow);`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          // small bumps of the ground (and drifts in the snow) catch the light up close
+          vec3 wpos = vec3(vXZ.x, vH, vXZ.y);
+          float dist = length(wpos - cameraPosition);
+          float near = smoothstep(260.0, 25.0, dist);
+          if (near > 0.0) {
+            float e = 0.3;
+            #define BMP(p) (tn((p) * 0.35) * 0.9 + tn((p) * 1.6) * 0.3 + snowK * sin((p).x * 0.55 + (p).y * 0.18 + d1 * 7.0) * 0.35)
+            float snowK = smoothstep(uSnowLine - 12.0, uSnowLine + 12.0, vH);
+            float b0 = BMP(vXZ);
+            float bx = BMP(vXZ + vec2(e, 0.0)) - b0;
+            float bz = BMP(vXZ + vec2(0.0, e)) - b0;
+            vec3 bw = vec3(-bx, 0.0, -bz) / e * 0.55 * near;
+            normal = normalize(normal + (viewMatrix * vec4(bw, 0.0)).xyz);
+          }
+        }`)
+      .replace('#include <opaque_fragment>', `
+        if (snow > 0.01) {
+          // sparkle: tiny ice crystals glint in the light as you move
+          vec3 wpos = vec3(vXZ.x, vH, vXZ.y);
+          float dist = length(wpos - cameraPosition);
+          vec2 cell = floor(vXZ * 2.6);
+          float pick = step(0.982, th(cell));
+          float star = smoothstep(0.22, 0.0, length(fract(vXZ * 2.6) - 0.5));
+          float glint = pow(max(0.0, sin(dot(normalize(cameraPosition - wpos), vec3(37.0, 11.0, 23.0)) * 3.0 + th(cell + 7.0) * 40.0)), 24.0);
+          float lit = dot(reflectedLight.directDiffuse, vec3(0.33)) + 0.25 * dot(reflectedLight.indirectDiffuse, vec3(0.33));
+          outgoingLight += vec3(pick * star * glint * snow * smoothstep(90.0, 6.0, dist) * lit * 5.0);
+        }
+        #include <opaque_fragment>`);
   };
   const terrain = new THREE.Mesh(tGeo, tMat);
   terrain.receiveShadow = true;
@@ -181,65 +225,77 @@ import * as THREE from 'three';
      size and shade, and they all sway a little in the wind. */
   const treeU = { uTree: { value: 1 }, uTime: U.uTime };
   const pineGeo = (() => {
-    const parts = [];
-    const push = (geo, colorAt, normalAt) => {
-      const g = geo.toNonIndexed();
-      const p = g.attributes.position;
-      const col = new Float32Array(p.count * 3), nor = new Float32Array(p.count * 3);
-      const v = new THREE.Vector3(), n = new THREE.Vector3();
-      for (let i = 0; i < p.count; i++) {
-        v.fromBufferAttribute(p, i);
-        const c = colorAt(v); col.set([c, c * 1.0, c * 0.96], i * 3);
-        normalAt(v, n); nor.set([n.x, n.y, n.z], i * 3);
+    const parts = new Parts();
+    // trunk: tapered, rough bark, roots flaring into the ground, running up into the crown
+    const trunk = new THREE.CylinderGeometry(0.05, 0.16, 2.9, 8, 5, true).translate(0, 1.45, 0);
+    {
+      const P = trunk.attributes.position, v = new THREE.Vector3();
+      for (let i = 0; i < P.count; i++) {
+        v.fromBufferAttribute(P, i);
+        const a = Math.atan2(v.z, v.x);
+        const flare = v.y < 0.4 ? 1 + (0.4 - v.y) * 2.6 * (0.55 + 0.45 * Math.max(0, Math.sin(a * 4 + 1))) : 1;
+        const lean = Math.sin(v.y * 1.7) * 0.03;
+        P.setXYZ(i, v.x * flare + lean, v.y, v.z * flare);
       }
-      parts.push({ pos: p.array, col, nor });
-    };
-    // trunk
-    const trunk = new THREE.CylinderGeometry(0.09, 0.16, 1.1, 6, 1, true).translate(0, 0.55, 0);
-    push(trunk, () => 0.55, (v, n) => n.set(v.x, 0, v.z).normalize());
-    // four tiers, each a little smaller, with a ragged, drooping rim
-    for (let t = 0; t < 4; t++) {
-      const r = 1.0 - t * 0.21, h = 1.35 - t * 0.14, base = 0.62 + t * 0.6;
-      const cone = new THREE.ConeGeometry(r, h, 11, 2, false);
-      const p = cone.attributes.position;
-      for (let i = 0; i < p.count; i++) {
-        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-        const rad = Math.hypot(x, z);
-        if (rad > 0.001) {
-          const a = Math.atan2(z, x);
-          const jag = 1 + Math.sin(a * 5 + t * 1.7) * 0.07 + Math.sin(a * 11 + t) * 0.05; // irregular rim
-          const rim = y < -h / 2 + 0.01 ? 1 : 0;
-          p.setXYZ(i, x * jag, y - rim * 0.12 * jag, z * jag);                          // tips droop a little
-        }
-      }
-      cone.translate(0, base + h / 2, 0);
-      push(cone,
-        (v) => 0.8 + 0.6 * Math.min(1, Math.max(0, (v.y - base) / h)) + (t * 0.05),  // darker inside, lighter tips
-        (v, n) => n.set(v.x, Math.hypot(v.x, v.z) * 0.55 + 0.25, v.z).normalize());      // soft, rounded light
     }
-    const total = parts.reduce((s, q) => s + q.pos.length, 0);
-    const pos = new Float32Array(total), col = new Float32Array(total), nor = new Float32Array(total);
-    let o = 0;
-    parts.forEach((q) => { pos.set(q.pos, o); col.set(q.col, o); nor.set(q.nor, o); o += q.pos.length; });
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-    g.computeBoundingSphere(); g.computeBoundingBox();
-    return g;
+    parts.add(trunk, {
+      color: (v) => { const c = 0.42 + 0.16 * vnoise(v.y * 7, Math.atan2(v.z, v.x) * 2.5); return [c * 1.35, c * 0.98, c * 0.72]; },
+      normal: (v, n) => n.set(v.x, 0.12, v.z).normalize()
+    });
+    // six tiers of branches; each tier has lobes (branch clusters) that droop at the tips,
+    // a lighter top and a dark, hollow underside you see when you stand under it
+    const TIERS = 6;
+    let topY = 0;
+    for (let t = 0; t < TIERS; t++) {
+      const k = t / (TIERS - 1);
+      const r = 1.1 - k * 0.8, h = 1.02 - k * 0.42, base = 0.5 + k * 2.5;
+      const lobes = 5 + (t % 3), ph = t * 1.93;
+      const shape = (geo, under) => {
+        const P = geo.attributes.position, v = new THREE.Vector3();
+        for (let i = 0; i < P.count; i++) {
+          v.fromBufferAttribute(P, i);
+          const rad = Math.hypot(v.x, v.z);
+          if (rad < 0.001) continue;
+          const a = Math.atan2(v.z, v.x);
+          const lobe = Math.pow(0.5 + 0.5 * Math.sin(a * lobes + ph), 2);
+          const jag = 0.82 + 0.32 * lobe + 0.06 * Math.sin(a * 17 + t * 3) + 0.04 * Math.sin(a * 31 + t);
+          const rim = rad / r;                          // 0 at the stem, 1 at the tips
+          const droop = (0.1 + 0.16 * lobe) * r * rim * rim;
+          P.setXYZ(i, v.x * jag, v.y - droop - (under ? 0.02 : 0), v.z * jag);
+        }
+      };
+      const cone = new THREE.ConeGeometry(r, h, 14, 3, true);
+      shape(cone, false);
+      cone.translate(0, base + h / 2, 0);
+      parts.add(cone, {
+        color: (v) => {
+          const up = (v.y - base) / h, rad = Math.min(1, Math.hypot(v.x, v.z) / r);
+          const c = 0.55 + 0.5 * rad + 0.22 * up + 0.08 * (hash2(v.x * 9.1, v.z * 7.3 + v.y) - 0.5) + t * 0.03;
+          return [c * 0.98, c, c * 0.94];
+        },
+        normal: (v, n) => { const rad = Math.hypot(v.x, v.z); n.set(v.x, rad * 0.55 + 0.32, v.z).normalize(); },
+        // where snow settles: the upper part of each tier, broken up by the branch clusters
+        tip: (v) => { const up = (v.y - base) / h; const a = Math.atan2(v.z, v.x); const lobe = 0.5 + 0.5 * Math.sin(a * lobes + ph); return Math.min(1, Math.max(0, (up - 0.08) * 1.5) * (0.45 + 0.55 * lobe) + 0.25 * hash2(v.x * 5.3, v.z * 4.1)); }
+      });
+      const under = new THREE.ConeGeometry(r * 0.97, h * 0.38, 14, 1, true);
+      shape(under, true);
+      under.translate(0, base + h * 0.19 - 0.02, 0);
+      parts.add(under, {
+        flip: true,
+        color: (v) => { const rad = Math.min(1, Math.hypot(v.x, v.z) / r); const c = 0.42 + 0.3 * rad; return [c * 0.95, c, c * 0.9]; },
+        normal: (v, n) => n.set(v.x * 0.3, -1, v.z * 0.3).normalize()
+      });
+      topY = base + h;
+    }
+    // the leader: a thin spike at the very top
+    parts.add(new THREE.ConeGeometry(0.05, 0.5, 5, 1, true).translate(0, topY + 0.18, 0), { color: () => [1.0, 1.02, 0.95], tip: () => 0.7 });
+    return parts.geometry();
   })();
-  const treeMat = new THREE.MeshLambertMaterial({ color: 0x334033, vertexColors: true });
-  treeMat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, treeU);
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTree; uniform float uTime;')
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        transformed *= uTree;
-        // wind: the higher the point, the more it moves; each tree has its own rhythm
-        float seed = instanceMatrix[3].x * 0.051 + instanceMatrix[3].z * 0.073;
-        float sway = (sin(uTime * 0.9 + seed) + 0.4 * sin(uTime * 2.3 + seed * 1.7)) * 0.022 * position.y * position.y;
-        transformed.x += sway; transformed.z += sway * 0.6;`);
-  };
+  // the spots the home views look from stay clear of rocks and grass
+  const CAM_SPOTS = [[0, 105], [0, 140], [-38, 112], [24, 78], [0, 92], [30, 102], [0, 125]].map(([x, z]) => ({ x, z, r: 42 }));
+  const props = createProps({ scene, heightAt, U, snowColor: TU.uSnow, clear: CAM_SPOTS });
+  // trees share the snow cover with everything else (no moss or frost on the needles)
+  const treeMat = coverMaterial({ ...props.shared, uMoss: { value: 0 }, uFrost: props.shared.uSnowCover }, treeU.uTree, { sway: 0.022, color: 0x334033, snowBias: -0.3, crisp: true });
   const TREE_N = 1400;
   const treeBase = [];                  // base position, size, turn and shade of every tree
   const WHITE = new THREE.Color(1, 1, 1);
@@ -253,6 +309,7 @@ import * as THREE from 'three';
       const h = heightAt(x, z);
       if (h < 3 || h > 85) continue;
       if (fbm(x * 0.02, z * 0.02, 3) < 0.42) continue; // natural clumps
+      if (props.blocked(x, z)) continue;               // clearings (cabin, stone circle)
       const k = rnd(2.0, 4.6);
       pos.set(x, h - 0.4, z);
       s.set(k * rnd(0.8, 0.95), k * rnd(1.5, 2.1), k * rnd(0.8, 0.95));
@@ -267,6 +324,9 @@ import * as THREE from 'three';
   trees.castShadow = true;
   trees.receiveShadow = true;
   scene.add(trees);
+  props.plant(treeBase, 0);
+  const ripples = createRipples(scene, U);
+  const prints = createFootprints(scene, U);
 
   /* ---------- hand-held light: flashlight or warm lantern (F) ----------
      No hands are drawn, only the light. The flashlight is held low and to the
@@ -501,6 +561,8 @@ import * as THREE from 'three';
     }
   };
 
+  for (const name in PRESETS) SHOW_KEYS.forEach((k, i) => { PRESETS[name][k] = SHOW[name][i]; });
+
   // Which values are colours / vectors (everything else is a plain number).
   const COLORS = ['skyTop', 'skyHorizon', 'skyBottom', 'fog', 'low', 'high', 'snowC', 'waterC', 'sunC', 'lightC', 'hemiSky', 'hemiGround', 'treeC', 'aur1', 'aur2'];
   const VECS = ['sunDir', 'lightDir', 'cam', 'look'];
@@ -567,6 +629,10 @@ import * as THREE from 'three';
   const ex = { px: 0, pz: 0, vx: 0, vz: 0, homing: false, yaw: 0, yawTo: 0, pitch: 0, pitchTo: 0, ground: 0, on: false };
   const keys = new Set();
   const bob = { phase: 0, amp: 0, run: 0, lastStep: 0 };   // walking camera motion
+  const ROAM = 70;      // highest ground you can walk on
+  // entering the forest: a smooth glide over the water and down between the trees,
+  // then you walk on your own
+  const fly = { on: false, t0: 0, dur: 1, tx: 0, tz: 0, sy: 0, ty: 0, yaw0: 0, yaw1: 0, lift: 10, y: 0, roll: 0 };
   let frameDt = 1 / 60;
   const fwd = new THREE.Vector3(), flat = new THREE.Vector3(), lookDir = new THREE.Vector3();
   const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -603,6 +669,7 @@ import * as THREE from 'three';
       ex.ground = Math.max(ex.ground, floor + 3); // …but never sink below the ground
       const hb = smooth(0, 35, away);
       camera.position.set(px, Math.max(camera.position.y * (1 - hb) + ex.ground * hb, hb > 0.5 ? floor + 3 : -1e9), pz);
+      if (fly.on) { camera.position.y = Math.max(fly.y, floor + 3); ex.ground = camera.position.y; }
       lookDir.copy(fwd).applyAxisAngle(Y_AXIS, ex.yaw);
       lookDir.y = lookDir.y * (1 - hb) - 0.04 * hb + ex.pitch;
       lookDir.normalize();
@@ -622,7 +689,7 @@ import * as THREE from 'three';
     }
     // walking: two soft dips per stride, a gentle side sway and a tiny tilt.
     // The eyes stay steadier than the head, so the look point moves only half as much.
-    let roll = 0;
+    let roll = fly.on ? fly.roll : 0;
     if (bob.amp > 0.001 && motion === 'full') {
       const s1 = Math.sin(bob.phase), s2 = Math.sin(bob.phase * 2);
       const a = bob.amp * (1 + bob.run * 0.8);
@@ -632,7 +699,7 @@ import * as THREE from 'three';
       dirTmp.copy(lookTmp).sub(camera.position); dirTmp.y = 0; dirTmp.normalize();
       camera.position.x += -dirTmp.z * side; camera.position.z += dirTmp.x * side;
       lookTmp.y += up * 0.5;
-      roll = s1 * 0.006 * a + s2 * 0.0015 * a;
+      roll += s1 * 0.006 * a + s2 * 0.0015 * a;
     }
     camera.lookAt(lookTmp);
     if (roll) camera.rotateZ(roll);
@@ -753,11 +820,88 @@ import * as THREE from 'three';
     dispatchEvent(new CustomEvent('meow:light', { detail: { state: light.state } }));
   };
 
+  /* ---------- the glide into the forest ---------- */
+  const freeAt = (x, z, pad) => {
+    if (trees.visible && treeU.uTree.value > 0.5) {
+      for (let i = 0; i < treeBase.length; i++) {
+        const b = treeBase[i], dx = b.p.x - x, dz = b.p.z - z, r = b.s.x * 0.75 + 1.2 + pad;
+        if (dx * dx + dz * dz < r * r) return false;
+      }
+    }
+    for (const c of props.solids) {
+      if (cur[c.key] < 0.5) continue;
+      const dx = c.x - x, dz = c.z - z, r = c.r + pad;
+      if (dx * dx + dz * dz < r * r) return false;
+    }
+    return true;
+  };
+  const startFly = () => {
+    const sx = cur.cam.x, sz = cur.cam.z;
+    const fx = cur.look.x - cur.cam.x, fz = cur.look.z - cur.cam.z, fl = Math.hypot(fx, fz) || 1;
+    const baseAng = Math.atan2(fz / fl, fx / fl);
+    const treesOn = trees.visible && treeU.uTree.value > 0.5;
+    const wy = water.position.y;
+    const cands = [];
+    for (let a = -0.7; a <= 0.701; a += 0.05) for (let d = 70; d <= 380; d += 10) {
+      const ang = baseAng + a, x = sx + Math.cos(ang) * d, z = sz + Math.sin(ang) * d;
+      const h = heightAt(x, z);
+      if (h < wy + 1.5 || h > ROAM - 6) continue;
+      let count = 0;
+      if (treesOn) for (let i = 0; i < treeBase.length; i++) { const dx = treeBase[i].p.x - x, dz = treeBase[i].p.z - z; if (dx * dx + dz * dz < 1600) count++; }
+      const score = (treesOn ? Math.min(count, 22) * 2 : 30) - Math.abs(a) * 34 - d * 0.045;
+      cands.push({ x, z, a, d, score });
+    }
+    cands.sort((p, q) => q.score - p.score);
+    let pick = null;
+    for (const c of cands.slice(0, 60)) {
+      if (!freeAt(c.x, c.z, 4)) continue;
+      // the last stretch is low among the trees: it must be clear
+      let ok = true;
+      const ux = (sx - c.x) / c.d, uz = (sz - c.z) / c.d;
+      for (let t = 2; t < 70 && ok; t += 2.5) ok = freeAt(c.x + ux * t, c.z + uz * t, 1.5);
+      // and room to keep walking forward once we land
+      for (let t = 3; t < 30 && ok; t += 3) ok = freeAt(c.x - ux * t, c.z - uz * t, 1);
+      if (ok) { pick = c; break; }
+    }
+    if (!pick) pick = { x: sx + Math.cos(baseAng) * 60, z: sz + Math.sin(baseAng) * 60, a: 0, d: 60 };
+    const full = motion === 'full';
+    fly.on = true; fly.t0 = performance.now();
+    fly.dur = full ? 2300 + pick.d * 5.2 : 700;
+    fly.sx = ex.px; fly.sz = ex.pz;
+    fly.tx = pick.x - sx; fly.tz = pick.z - sz;
+    fly.sy = camera.position.y;
+    fly.ty = Math.max(heightAt(pick.x, pick.z), wy) + EYE;
+    fly.yaw0 = ex.yaw; fly.yaw1 = -pick.a;
+    fly.lift = full ? 9 + pick.d * 0.02 : 0;
+    ex.vx = ex.vz = 0; ex.homing = false;
+    if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+  };
+  const smoother = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * x * (x * (x * 6 - 15) + 10); };
+  const updateFly = (now) => {
+    const k = Math.min(1, (now - fly.t0) / fly.dur);
+    const e = smoother(k);
+    ex.px = fly.sx + (fly.tx - fly.sx) * e;
+    ex.pz = fly.sz + (fly.tz - fly.sz) * e;
+    ex.vx = ex.vz = 0;
+    // turn toward where we're going early, so we glide in looking ahead
+    const turn = smoother(k / 0.55);
+    ex.yaw = ex.yawTo = fly.yaw0 + (fly.yaw1 - fly.yaw0) * turn;
+    ex.pitch = ex.pitchTo = -0.07 * Math.sin(Math.PI * k) * (1 - k * 0.5);
+    // height: a gentle rise, then sink down between the trees to eye level
+    const wx = cur.cam.x + ex.px, wz = cur.cam.z + ex.pz;
+    const down = smoother((k - 0.3) / 0.7);
+    let y = fly.sy + (fly.ty - fly.sy) * down + fly.lift * Math.pow(Math.sin(Math.PI * Math.min(1, k * 1.15)), 1.4);
+    y = Math.max(y, Math.max(heightAt(wx, wz), water.position.y) + 4);
+    fly.y = y;
+    fly.roll = (fly.yaw1 - fly.yaw0) * 0.22 * Math.sin(Math.PI * Math.min(1, k * 1.3));
+    if (k >= 1) { fly.on = false; fly.roll = 0; ex.ground = fly.ty; }
+  };
+
   /* ---------- input for exploring and for the trees ---------- */
   const root = document.documentElement;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const busy = () => !started || root.classList.contains('locked') || gal.focusTo > 0;
-  const overUI = (t) => t && t.closest && t.closest('.sidebar, .modal, .gallery, .top, .composer, .tools, .tree-card, .home-btn, .backdrop, input, button, a, label');
+  const overUI = (t) => t && t.closest && t.closest('.sidebar, .modal, .gallery, .top, .composer, .tools, .tree-card, .home-btn, .backdrop, .walk-hint, input, button, a, label');
   const wake = () => { if (!running) renderOnce(); };
 
   // keyboard walking: W/↑ forward, S/↓ back, A/← left, D/→ right, Shift to run
@@ -770,6 +914,7 @@ import * as THREE from 'three';
     if (!e.code.startsWith('Shift')) e.preventDefault();
     keys.add(e.code);
     ex.homing = false;
+    if (!fly.on && !e.code.startsWith('Shift') && Math.hypot(ex.px, ex.pz) < 3) startFly();
     if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
   });
   addEventListener('keyup', (e) => keys.delete(e.code));
@@ -785,7 +930,7 @@ import * as THREE from 'three';
   let drag = null;
   const hover = { x: 0, y: 0, pending: false, id: -1 };
   addEventListener('pointerdown', (e) => {
-    if (busy() || e.button !== 0 || overUI(e.target)) return;
+    if (busy() || e.button !== 0 || overUI(e.target) || fly.on) return;
     drag = { x: e.clientX, y: e.clientY, yaw: ex.yawTo, pitch: ex.pitchTo, moved: false };
     e.preventDefault(); // dragging to look must not select text or images
   });
@@ -964,8 +1109,9 @@ import * as THREE from 'three';
       const c = Math.cos(ex.yaw), sn = Math.sin(ex.yaw);
       // facing direction on the ground (turned by how far you've looked left/right)
       const hx = (fx / fl) * c + (fz / fl) * sn, hz = -(fx / fl) * sn + (fz / fl) * c;
-      const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-      const r = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+      const ctl = fly.on ? 0 : 1;
+      const f = ctl * ((keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0));
+      const r = ctl * ((keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0));
       let wx = hx * f - hz * r, wz = hz * f + hx * r;
       const wl = Math.hypot(wx, wz);
       const sp = SPEED * (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 2.4 : 1);
@@ -973,7 +1119,6 @@ import * as THREE from 'three';
       const acc = 1 - Math.pow(1 - (wl > 0 ? 0.08 : 0.12), fdt);
       ex.vx += (wx - ex.vx) * acc; ex.vz += (wz - ex.vz) * acc;
       // stay in the valley: don't climb above the tree line or wander off the map
-      const ROAM = 70; // highest ground you can walk on
       const tryMove = (nx, nz) => {
         const wx2 = cur.cam.x + nx, wz2 = cur.cam.z + nz;
         if (!(Math.abs(wx2) < 820 && wz2 > -900 && wz2 < 420 && heightAt(wx2, wz2) < ROAM)) return false;
@@ -984,10 +1129,16 @@ import * as THREE from 'three';
             if (dx * dx + dz * dz < rr * rr) return false;
           }
         }
+        for (const c of props.solids) {
+          if (cur[c.key] < 0.5) continue;
+          const dx = c.x - wx2, dz = c.z - wz2;
+          if (dx * dx + dz * dz < c.r * c.r) return false;
+        }
         return true;
       };
       const nx = ex.px + ex.vx * dtS, nz = ex.pz + ex.vz * dtS;
-      if (tryMove(nx, nz)) { ex.px = nx; ex.pz = nz; }
+      if (fly.on) updateFly(now);
+      else if (tryMove(nx, nz)) { ex.px = nx; ex.pz = nz; }
       else if (tryMove(nx, ex.pz)) { ex.px = nx; ex.vz *= 0.5; }      // slide along the slope
       else if (tryMove(ex.px, nz)) { ex.pz = nz; ex.vx *= 0.5; }
       else { ex.vx *= 0.3; ex.vz *= 0.3; }
@@ -997,7 +1148,7 @@ import * as THREE from 'three';
         if (Math.hypot(ex.px, ex.pz) < 0.05) { ex.px = ex.pz = 0; ex.homing = false; }
       }
       const lightBusy = (now - Math.max(light.torch.since, light.lamp.since)) < 1200;
-      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy) { tempRun = false; running = motion === 'full'; }
+      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy && !fly.on) { tempRun = false; running = motion === 'full'; }
     }
     frameDt = fdt / 60;
     {
@@ -1017,10 +1168,16 @@ import * as THREE from 'three';
           const surface = gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
           window.MEOW_SOUND.step(surface, Math.min(1.5, sp / SPEED));
         }
+        const gh2 = heightAt(camera.position.x, camera.position.z);
+        if (sp > SPEED * 0.25 && gh2 > water.position.y + 0.6 && (sceneName === 'snow' || gh2 > TU.uSnowLine.value + 4)) {
+          const x = camera.position.x, z = camera.position.z, e = 1.5;
+          const n = new THREE.Vector3(heightAt(x - e, z) - heightAt(x + e, z), 2 * e, heightAt(x, z - e) - heightAt(x, z + e)).normalize();
+          prints.place(x, heightAt(x, z), z, Math.atan2(-ex.vx, -ex.vz), n);
+        }
       }
     }
     const away = Math.hypot(ex.px, ex.pz);
-    if (!drag && away < 2) { const rr = Math.pow(0.96, fdt); ex.yawTo *= rr; ex.pitchTo *= rr; }
+    if (!drag && away < 2 && !fly.on) { const rr = Math.pow(0.96, fdt); ex.yawTo *= rr; ex.pitchTo *= rr; }
     ex.yaw += (ex.yawTo - ex.yaw) * k60(0.12);
     ex.pitch += (ex.pitchTo - ex.pitch) * k60(0.12);
     const exploring = away > 3;
@@ -1029,6 +1186,9 @@ import * as THREE from 'three';
     renderer.toneMappingExposure = exposure;
     applyState();
     placeCamera(time);
+    props.update(cur, time, camera.position, water.position.y);
+    ripples.update(cur.pRipples, camera.position, water.position.y);
+    prints.update(Math.min(1, Math.max(0, (100 - cur.snowLine) / 80)));
     updateLight(now, time);
     if (hover.pending) { hover.pending = false; setHover(pick(hover.x, hover.y)); }
     // rack focus
@@ -1048,9 +1208,24 @@ import * as THREE from 'three';
     lastNow = now;
   };
 
+  // if this computer struggles, draw fewer pixels (keeps walking smooth)
+  const perf = { last: 0, sum: 0, n: 0, level: 0, since: 0 };
+  const PR = [Math.min(window.devicePixelRatio || 1, 1.5), 1.1, 0.85, 0.7];
+  const watchPerf = (now) => {
+    if (!perf.since) perf.since = now;
+    const dt = now - (perf.last || now); perf.last = now;
+    if (now - perf.since < 5000 || dt > 250 || document.hidden) return;   // skip the entrance and tab switches
+    perf.sum += dt; perf.n++;
+    if (perf.n >= 90) {
+      const avg = perf.sum / perf.n; perf.sum = perf.n = 0;
+      if (avg > 30 && perf.level < PR.length - 1 && PR[perf.level + 1] < renderer.getPixelRatio()) {
+        perf.level++; renderer.setPixelRatio(PR[perf.level]); resize();
+      }
+    }
+  };
   const frame = (now) => {
     if (!running) return;
-    if (!document.hidden) step(now);
+    if (!document.hidden) { step(now); watchPerf(now); }
     requestAnimationFrame(frame);
   };
 
@@ -1094,14 +1269,25 @@ import * as THREE from 'three';
     },
     setMotion(m) { motion = m === 'reduced' ? 'reduced' : 'full'; startLoop(); },
     // called by gallery.js
-    focus(on) { gal.focusTo = on ? 1 : 0; if (on) { ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
+    focus(on) { gal.focusTo = on ? 1 : 0; if (on) { fly.on = false; ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
     toggleLight() { toggleLight(); },
     // for testing: stand at an exact spot (world x, z)
     _standAt(x, z) { ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0; if (!running) renderOnce(); },
+    _look(x, z) {
+      const bx = cur.look.x - cur.cam.x, bz = cur.look.z - cur.cam.z;
+      const px = cur.cam.x + ex.px, pz = cur.cam.z + ex.pz;
+      let y = Math.atan2(bz, bx) - Math.atan2(z - pz, x - px);
+      y = Math.atan2(Math.sin(y), Math.cos(y));
+      ex.yaw = ex.yawTo = y; if (!running) renderOnce();
+    },
+    _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
+    _pos() { return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on }; },
+    _sites() { return { cabin: props.cabinAt, circle: props.circleAt }; },
     _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
     // back to the home view (used by the back button)
+    enter() { if (started && !fly.on && !busy() && Math.hypot(ex.px, ex.pz) < 3) startFly(); },
     home() {
-      ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
+      fly.on = false; ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
       if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
     },
     pan(x) { gal.panTo = Math.max(-1, Math.min(1, x || 0)); },
@@ -1124,6 +1310,7 @@ import * as THREE from 'three';
     }
   };
 
+  { const hint = document.querySelector('.walk-hint'); if (hint) hint.addEventListener('click', () => window.MEOW_BG.enter()); }
   addEventListener('resize', () => { clearTimeout(resize.t); resize.t = setTimeout(resize, 120); });
   new MutationObserver(() => { exposureTo = themeExposure(); if (!running) renderOnce(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

@@ -745,7 +745,8 @@ html.looking, html.looking body { cursor: grabbing; }
 }
 
 /* keycaps in the walking hint */
-.walk-hint { margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+.walk-hint { margin-top: 2px; display: flex; align-items: center; gap: 4px; cursor: pointer; transition: opacity .4s; }
+.walk-hint:hover { opacity: 0.9; }
 kbd {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
   border: 1px solid var(--ring-hi); border-radius: 6px;
