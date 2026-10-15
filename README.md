@@ -13,6 +13,7 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `world.js` | The quiet 3D nature world (built from `src/world.src.js` with three.js 0.186.1). Scenes: rain, frost, mist, snow, night, aurora, sea. Edit the source file, then rebuild: `npx esbuild src/world.src.js --bundle --minify --format=iife --outfile=world.js` |
 | `sound.js` | Light rain sound, generated in the browser (no audio files). |
 | `app.js` | The link list, search, tags, hover previews. |
+| `cinema.js` | Film layer: grain, letterbox bars with scene titles, rack focus (what you're not looking at softens). |
 | `gallery.js` | 3D floating gallery: pick a category and its links float in the middle as cards (drag, wheel, ← →, Enter, Esc). |
 
 ## Notes

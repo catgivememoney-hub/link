@@ -43,9 +43,11 @@
     $('confirmYes').textContent = yesLabel || t('cDelete');
     $('confirmNo').textContent = t('cCancel');
     box.hidden = false;
+    root.classList.add('confirm-open');
     $('confirmNo').focus(); // safest choice is focused first
     const done = (ok) => {
       box.hidden = true;
+      root.classList.remove('confirm-open');
       $('confirmYes').onclick = $('confirmNo').onclick = null;
       box.onkeydown = box.onclick = null;
       if (prev && prev.focus) prev.focus();
@@ -122,12 +124,14 @@
   const openPanel = () => {
     const m = $('settings');
     m.classList.remove('closing'); m.hidden = false;
+    root.classList.add('panel-open'); // the page behind goes out of focus
     requestAnimationFrame(() => m.classList.add('open'));
     $('setClose').focus();
   };
   const closePanel = () => {
     const m = $('settings');
     m.classList.remove('open'); m.classList.add('closing');
+    root.classList.remove('panel-open');
     setTimeout(() => { if (m.classList.contains('closing')) { m.hidden = true; m.classList.remove('closing'); } }, 320);
     $('settingsBtn').focus();
   };

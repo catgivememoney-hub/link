@@ -418,6 +418,63 @@ input[type="range"]:disabled { opacity: 0.35; }
 .g-controls { position: absolute; bottom: 22px; display: flex; align-items: center; gap: 10px; animation: rise 1s var(--ease) both; animation-delay: 0.3s; }
 .g-count { min-width: 30px; text-align: center; font-size: 0.85rem; letter-spacing: 0.1em; color: var(--float-ink); }
 
+
+/* ================= film layer ================= */
+/* letterbox bars: slide in for each shot and while the gallery is open */
+.bars { position: fixed; inset: 0; z-index: 14; pointer-events: none; }
+.bar {
+  position: absolute; left: 0; right: 0; height: 8.5vh;
+  background: #050506;
+  transition: transform 1.5s var(--ease);
+}
+.bar.top { top: 0; transform: translateY(-101%); }
+.bar.bottom { bottom: 0; transform: translateY(101%); display: grid; place-items: center; }
+html.shot .bar, html.gallery-open .bar { transform: none; }
+.caption {
+  color: rgba(238, 236, 230, 0.82);
+  font-size: 0.74rem; font-weight: 300; letter-spacing: 0.7em; margin-right: -0.7em;
+  text-transform: uppercase;
+  opacity: 0; transform: translateY(8px); filter: blur(8px);
+  transition: opacity 1.1s var(--ease) 0.45s, transform 1.3s var(--ease) 0.45s, filter 1.1s var(--ease) 0.45s;
+}
+html.shot .caption { opacity: 1; transform: none; filter: none; }
+
+/* moving film grain over the whole page */
+.grain {
+  position: fixed; inset: -60%; z-index: 950; pointer-events: none;
+  background-size: 220px 220px;
+  opacity: 0.07; mix-blend-mode: overlay;
+  animation: grain 0.8s steps(5) infinite;
+}
+:root[data-theme="dark"] .grain { opacity: 0.09; }
+@keyframes grain {
+  0% { transform: translate(0, 0); } 20% { transform: translate(-6%, 4%); } 40% { transform: translate(5%, -7%); }
+  60% { transform: translate(-3%, 8%); } 80% { transform: translate(7%, 2%); } 100% { transform: translate(0, 0); }
+}
+
+/* opening: fade up from black with a faint projector flicker */
+.curtain { position: fixed; inset: 0; z-index: 990; background: #050506; opacity: 0; pointer-events: none; }
+html.entering .curtain { animation: curtain 2.5s var(--ease) both; }
+@keyframes curtain { 0% { opacity: 1; } 28% { opacity: 0.94; } 31% { opacity: 1; } 36% { opacity: 0.82; } 40% { opacity: 0.9; } 100% { opacity: 0; } }
+
+/* rack focus: whatever you're not looking at softens */
+.top, .sidebar, .stage, .gallery { transition-property: transform, opacity, filter; }
+.top { transition: filter 0.9s var(--ease); }
+.gallery { transition: filter 0.9s var(--ease); }
+html.panel-open .stage, html.panel-open .sidebar, html.panel-open .top, html.panel-open .gallery,
+html.confirm-open .stage, html.confirm-open .sidebar, html.confirm-open .top, html.confirm-open .gallery {
+  filter: blur(6px) brightness(0.94);
+}
+html.confirm-open #settings .panel { filter: blur(4px); }
+html.focus-side:not(.panel-open) .stage { filter: blur(2.5px); opacity: 0.8; }
+html.focus-side:not(.panel-open) .gallery { filter: blur(2px); }
+html.focus-stage:not(.panel-open) .sidebar { filter: blur(2px); opacity: 0.8; }
+html.gallery-open:not(.panel-open) .sidebar:not(:hover) { filter: blur(2.5px); opacity: 0.72; }
+html.gallery-open.focus-side .stage { filter: blur(10px); opacity: 0; }
+
+html.reduce-motion .grain { animation: none; }
+html.reduce-motion .curtain { display: none; }
+
 /* ================= options ================= */
 html.no-hints .hint { display: none !important; }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
