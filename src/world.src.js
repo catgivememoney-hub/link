@@ -1067,7 +1067,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.hypot(dx, dy) > 5) drag.moved = true;
       ex.yawTo = drag.yaw + dx * 0.0035;
-      ex.pitchTo = clamp(drag.pitch + dy * 0.0025, PITCH_MIN, PITCH_MAX);
+      ex.pitchTo = clamp(drag.pitch - dy * 0.0025, PITCH_MIN, PITCH_MAX);
       root.classList.add('looking');
       wake();
       return;
@@ -1075,7 +1075,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (locked()) {
       if (ex.on && !fly.on && !busy()) {
         ex.yawTo += e.movementX * 0.0024;
-        ex.pitchTo = clamp(ex.pitchTo + e.movementY * 0.002, PITCH_MIN, PITCH_MAX);
+        ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.002, PITCH_MIN, PITCH_MAX);
         wake();
       }
       return;
@@ -1083,10 +1083,10 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     look.x = e.clientX; look.y = e.clientY; look.inside = true; look.ui = !!overUI(e.target);
     if (busy() || overUI(e.target)) { if (hover.id >= 0) setHover(-1); return; }
     // in the forest, just moving the mouse / one finger on the trackpad turns the view:
-    // slide right → turn left, slide up → look down (like pulling the world along)
+    // slide right → turn left, slide up → look up
     if (ex.on && !fly.on && e.pointerType !== 'touch' && (e.movementX || e.movementY)) {
       ex.yawTo += e.movementX * 0.0028;
-      ex.pitchTo = clamp(ex.pitchTo + e.movementY * 0.0022, PITCH_MIN, PITCH_MAX);
+      ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.0022, PITCH_MIN, PITCH_MAX);
       wake();
     }
     hover.x = e.clientX; hover.y = e.clientY; hover.pending = true;
