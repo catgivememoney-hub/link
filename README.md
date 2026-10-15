@@ -11,7 +11,7 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `settings.js` | ⚙ Settings: language, background, sound, hints, animation, password. |
 | `i18n.js` | English / 中文 text. |
 | `world.js` | The quiet 3D nature world (built from `src/world.src.js` with three.js 0.186.1). Scenes: rain, frost, mist, snow, night, aurora, sea. Edit the source file, then rebuild: `npx esbuild src/world.src.js --bundle --minify --format=iife --outfile=world.js` |
-| `sound.js` | Light rain sound, generated in the browser (no audio files). |
+| `sound.js` | Sound effects generated in the browser (no audio files): tree chimes, footsteps, flashlight click, lantern flame. No background sound. |
 | `app.js` | The link list, search, tags, hover previews. |
 | `fx.js` | Interaction effects: magnetic buttons, click ripples, input-bar spotlight, MEOW letter parallax. |
 | `src/props.js` | Things in the landscape (no animals): rocks, fallen logs, stumps, ferns, grass, reeds, a log cabin with a dock and boat (warm windows and chimney smoke at night), a stone circle (frost, aurora), sea stacks and a lighthouse (sea), rain rings on the water, snow on trees and roofs, footprints in the snow. `SHOW` at the top sets how much of each appears in every scene. Bundled into `world.js`. |
