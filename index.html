@@ -4,27 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MEOW</title>
-  <meta name="description" content="MEOW: a tiny link board. Save, search, and share links. No login, no server.">
+  <meta name="description" content="MEOW: all your meows in one place. A tiny link board. Save, search, and share links. No login, no server.">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
+  <div class="xray" aria-hidden="true"></div>
   <!-- Left sidebar: saved links -->
-  <aside id="sidebar" class="sidebar" aria-label="Saved links">
+  <aside id="sidebar" class="sidebar" aria-label="Saved meows">
     <div class="side-head">
-      <h2>Saved links <span id="count" class="count">0</span></h2>
+      <h2>Saved meows <span id="count" class="count">0</span></h2>
       <button id="closeSide" class="icon small" type="button" aria-label="Close sidebar">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
-    <input id="search" type="search" placeholder="Search links…" aria-label="Search links">
+    <input id="search" type="search" placeholder="Search meows…" aria-label="Search links">
     <div id="tags" class="tags" role="group" aria-label="Filter by tag"></div>
     <ul id="list" class="list"></ul>
-    <p id="empty" class="empty" hidden>No links yet.</p>
+    <p id="empty" class="empty" hidden>No meows yet. 🐾</p>
   </aside>
   <div id="backdrop" class="backdrop" hidden></div>
 
@@ -42,26 +43,26 @@
 
     <main>
       <section class="hero">
-        <h2>All your links. One place.</h2>
-        <p>Add a link below. It shows up in the sidebar on the left.</p>
+        <h2>All your meows. One place.</h2>
+        <p>Drop a link below and it lands in the litter box on the left.</p>
       </section>
 
       <form id="addForm" class="add" autocomplete="off">
         <input id="title" placeholder="Title" maxlength="80" required aria-label="Title">
         <input id="url" type="url" placeholder="https://example.com" required aria-label="URL">
         <input id="tag" placeholder="Tag" maxlength="20" aria-label="Tag">
-        <button class="primary" type="submit">Add</button>
+        <button class="primary" type="submit">Meow it</button>
       </form>
 
       <section class="tools">
-        <button id="shareBtn" type="button">Copy share link</button>
+        <button id="shareBtn" type="button">Share my meows</button>
         <button id="exportBtn" type="button">Export JSON</button>
         <label class="btn">Import JSON<input id="importFile" type="file" accept="application/json" hidden></label>
       </section>
-      <p class="note">Links you add are saved <strong>in this browser only</strong>. Use “Copy share link” or Export to move them.</p>
+      <p class="note">Your meows are saved <strong>in this browser only</strong>. Use “Share my meows” or Export to move them.</p>
     </main>
 
-    <footer>MEOW · hosted free on GitHub Pages</footer>
+    <footer>MEOW · purring free on GitHub Pages</footer>
   </div>
 
   <!-- Hover preview card (filled in by app.js) -->
@@ -71,6 +72,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

@@ -213,3 +213,13 @@ footer { text-align: center; color: var(--muted); padding: 34px 0 40px; font-siz
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* X-ray background (faint, behind everything) */
+.xray {
+  position: fixed; inset: 0; z-index: -1;
+  background: url("bg.jpg?v=4") center / cover no-repeat;
+  opacity: 0.14;
+  filter: invert(1) grayscale(1) contrast(1.2);
+  pointer-events: none;
+}
+:root[data-theme="dark"] .xray { opacity: 0.22; filter: grayscale(1); }

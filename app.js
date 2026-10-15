@@ -234,7 +234,7 @@
     cp.type = 'button';
     cp.textContent = 'Copy';
     cp.setAttribute('aria-label', 'Copy link for ' + l.title);
-    cp.addEventListener('click', () => copy(l.url, 'Link copied!'));
+    cp.addEventListener('click', () => copy(l.url, 'Copied! 🐾'));
     actions.appendChild(cp);
 
     if (!l.pinned) {
@@ -246,7 +246,7 @@
         mine = mine.filter((x) => x.id !== l.id);
         save();
         render();
-        toast('Link deleted');
+        toast('Meow deleted');
       });
       actions.appendChild(del);
     }
@@ -271,12 +271,12 @@
     e.preventDefault();
     const l = clean({ title: $('title').value, url: $('url').value, tag: $('tag').value });
     if (!l) { toast('Please enter a title and a valid http(s) URL.'); return; }
-    if (all().some((x) => x.url === l.url)) { toast('That link is already here.'); return; }
+    if (all().some((x) => x.url === l.url)) { toast('That meow is already here.'); return; }
     mine.unshift(l);
     save();
     $('addForm').reset();
     render();
-    toast('Link added ✨');
+    toast('Meow saved 🐾');
     if (!sidebarOpen()) setSidebar(true, false);
   };
 
@@ -294,9 +294,9 @@
   const plain = () => mine.map(({ title, url, tag }) => ({ title, url, tag }));
 
   const share = () => {
-    if (!mine.length) { toast('Add some links first.'); return; }
+    if (!mine.length) { toast('Add some meows first.'); return; }
     const link = location.origin + location.pathname + '#share=' + enc(JSON.stringify(plain()));
-    if (link.length > 8000) { toast('Too many links for a share link. Use Export instead.'); return; }
+    if (link.length > 8000) { toast('Too many meows for a share link. Use Export instead.'); return; }
     copy(link, 'Share link copied!');
   };
 
@@ -318,7 +318,7 @@
       try {
         const data = JSON.parse(r.result);
         if (!Array.isArray(data)) throw new Error('not a list');
-        toast(`Imported ${mergeIn(data)} new link(s)`);
+        toast(`Imported ${mergeIn(data)} new meow(s)`);
       } catch { toast('That file is not a valid links JSON.'); }
     };
     r.readAsText(file);
@@ -332,8 +332,8 @@
       const data = JSON.parse(dec(location.hash.slice(7)));
       if (!Array.isArray(data)) throw new Error('bad');
       const valid = data.slice(0, MAX_IMPORT).map(clean).filter(Boolean);
-      if (valid.length && window.confirm(`Add ${valid.length} shared link(s) to your board?`)) {
-        toast(`Imported ${mergeIn(valid)} new link(s)`);
+      if (valid.length && window.confirm(`Add ${valid.length} shared meow(s) to your board?`)) {
+        toast(`Imported ${mergeIn(valid)} new meow(s)`);
       }
     } catch { toast('That share link looks broken.'); }
     history.replaceState(null, '', location.pathname + location.search);
