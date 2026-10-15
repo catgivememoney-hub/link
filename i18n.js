@@ -34,6 +34,10 @@
       toggleTheme: 'Toggle light/dark theme',
       settings: 'Settings',
       gallery: 'Gallery',
+      lbLinks: 'Links',
+      lbTheme: 'Theme',
+      lbEdit: 'Edit',
+      lbExport: 'Export',
       close: 'Close',
       // settings panel
       sLanguage: 'Language',
@@ -102,6 +106,10 @@
       toggleTheme: '切换深色/浅色',
       settings: '设置',
       gallery: '画廊',
+      lbLinks: '链接',
+      lbTheme: '主题',
+      lbEdit: '编辑',
+      lbExport: '导出',
       close: '关闭',
       sLanguage: '语言',
       sBackground: '场景',
@@ -156,6 +164,7 @@
     document.querySelectorAll('[data-i18n-aria]').forEach((el) => { el.setAttribute('aria-label', t(el.dataset.i18nAria)); });
     document.querySelectorAll('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml); });
     document.querySelectorAll('[data-i18n-title]').forEach((el) => { el.title = t(el.dataset.i18nTitle); });
+    document.querySelectorAll('[data-i18n-label]').forEach((el) => { el.dataset.label = t(el.dataset.i18nLabel); });
     document.dispatchEvent(new CustomEvent('meow:lang', { detail: lang }));
   };
 
