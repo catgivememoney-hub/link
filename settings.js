@@ -18,18 +18,20 @@
     motion: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'
   };
 
+  // [value, label key, preview swatch] — muted colours, black & white to soft colour
   const SCENES = [
-    ['rain', 'bgRain', 'linear-gradient(160deg,#f2f2f2,#bdbdbd)'],
-    ['frost', 'bgFrost', 'linear-gradient(160deg,#fafafa,#8a8a8a)'],
-    ['aurora', 'bgAurora', 'linear-gradient(135deg,#7fe3cc,#b9a0ff 55%,#ffaad2)'],
-    ['mist', 'bgMist', 'linear-gradient(180deg,#e9eef2 0%,#b9c3cc 55%,#5f6e7c 100%)'],
-    ['night', 'bgNight', 'radial-gradient(circle at 78% 22%,#fbf7e8 0 7%,transparent 8%),linear-gradient(180deg,#02030a,#1b2347)'],
-    ['snow', 'bgSnow', 'linear-gradient(180deg,#dfe5ec 0%,#f4f6f8 60%,#6f7f8f 61%,#6f7f8f 100%)'],
-    ['ocean', 'bgOcean', 'radial-gradient(circle at 50% 56%,#fff1d6 0 9%,transparent 10%),linear-gradient(180deg,#ffd3a5 0%,#fd9f88 55%,#3d3f73 56%,#3d3f73 100%)']
+    ['rain', 'bgRain', 'linear-gradient(180deg,#8f959a,#c6c9cb 55%,#6c7175)'],
+    ['frost', 'bgFrost', 'linear-gradient(180deg,#d7d9db,#eceded 55%,#a9adb0)'],
+    ['mist', 'bgMist', 'linear-gradient(180deg,#93a4b1,#d6dcdf 55%,#56645c)'],
+    ['snow', 'bgSnow', 'linear-gradient(180deg,#a3afba,#e1e5e8 55%,#e7ebee)'],
+    ['night', 'bgNight', 'radial-gradient(circle at 30% 30%,#d8d4c6 0 6%,transparent 7%),linear-gradient(180deg,#04060d,#1a2238 60%,#141a24)'],
+    ['aurora', 'bgAurora', 'linear-gradient(170deg,#03060a 20%,#4f8f80 45%,#6f6595 60%,#122029 75%,#1b2429)'],
+    ['ocean', 'bgOcean', 'radial-gradient(circle at 50% 58%,#ecd0b2 0 7%,transparent 8%),linear-gradient(180deg,#4a4e68,#d4a28b 58%,#585d77 59%)']
   ];
 
   let s = { ...DEFAULTS };
   try { s = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { /* ignore */ }
+  window.MEOW_STATE = s;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } };
 
   /* ---------- confirm dialog (used before anything is deleted) ---------- */
@@ -57,6 +59,7 @@
 
   /* ---------- apply settings to the page ---------- */
   const apply = () => {
+    window.MEOW_STATE = s; // the 3D world reads this when it loads
     I.apply(s.lang);
     root.classList.toggle('no-hints', !s.hints);
     root.classList.toggle('reduce-motion', s.motion === 'reduced');
@@ -66,10 +69,7 @@
   };
 
   /* ---------- panel controls ---------- */
-  const setSwitch = (el, on) => {
-    el.setAttribute('aria-checked', String(on));
-    el.querySelector('.sw-label').textContent = on ? t('sOn') : t('sOff');
-  };
+  const setSwitch = (el, on) => { el.setAttribute('aria-checked', String(on)); };
   const setSeg = (box, val) => box.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === val)));
 
   const syncPanel = () => {
@@ -118,8 +118,19 @@
     toast.t = setTimeout(() => el.classList.remove('show'), 2600);
   };
 
-  const openPanel = () => { $('settings').hidden = false; $('setClose').focus(); };
-  const closePanel = () => { $('settings').hidden = true; $('settingsBtn').focus(); };
+  // open / close with a soft slide (the CSS handles the motion)
+  const openPanel = () => {
+    const m = $('settings');
+    m.classList.remove('closing'); m.hidden = false;
+    requestAnimationFrame(() => m.classList.add('open'));
+    $('setClose').focus();
+  };
+  const closePanel = () => {
+    const m = $('settings');
+    m.classList.remove('open'); m.classList.add('closing');
+    setTimeout(() => { if (m.classList.contains('closing')) { m.hidden = true; m.classList.remove('closing'); } }, 320);
+    $('settingsBtn').focus();
+  };
 
   const init = () => {
     buildScenes();
@@ -158,7 +169,7 @@
 
     $('resetSettings').addEventListener('click', async () => {
       if (!(await window.MEOW_CONFIRM(t('cResetMsg'), t('cReset')))) return;
-      s = { ...DEFAULTS }; save(); apply();
+      s = { ...DEFAULTS }; window.MEOW_STATE = s; save(); apply();
     });
 
     apply();

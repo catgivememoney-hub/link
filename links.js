@@ -1,4 +1,4 @@
-https://popcat.click/// MEOW links: this file is the list shown on the website.
+// MEOW links: this file is the list shown on the website.
 // To add a link, copy a line, change the words inside the quotes, and commit.
 // Every line needs a title and a url (starting with https://). The tag is optional.
 window.MEOW_LINKS = [

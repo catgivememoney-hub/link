@@ -61,10 +61,13 @@
 
   const expected = () => String(window.MEOW_PASSWORD_HASH || '').trim().toLowerCase();
 
+  // Fade the password screen away while the 3D world flies in behind it.
   const unlock = () => {
     root.classList.remove('locked');
+    root.classList.add('entering');
     const g = document.getElementById('gate');
-    if (g) g.remove();
+    if (g) { g.classList.add('leaving'); setTimeout(() => g.remove(), 1400); }
+    setTimeout(() => root.classList.remove('entering'), 2600);
     resolveReady();
   };
 
@@ -76,7 +79,13 @@
 
   let already = false;
   try { already = sessionStorage.getItem(SESSION_KEY) === expected() && !!expected(); } catch { /* ignore */ }
-  if (already) { resolveReady(); return; }
+  if (already) {
+    root.classList.add('entering');
+    document.addEventListener('DOMContentLoaded', () => { const el = document.getElementById('gate'); if (el) el.remove(); });
+    setTimeout(() => root.classList.remove('entering'), 2600);
+    resolveReady();
+    return;
+  }
   root.classList.add('locked');
 
   document.addEventListener('DOMContentLoaded', () => {

@@ -10,7 +10,7 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `gate.js` | The password screen (one input box). |
 | `settings.js` | ⚙ Settings: language, background, sound, hints, animation, password. |
 | `i18n.js` | English / 中文 text. |
-| `bg.js` | Animated backgrounds: rainy window, frosted mono, aurora, misty mountains, starry night, snowy forest, sunset sea. |
+| `world.js` | The quiet 3D nature world (built from `src/world.src.js` with three.js 0.186.1). Scenes: rain, frost, mist, snow, night, aurora, sea. Edit the source file, then rebuild: `npx esbuild src/world.src.js --bundle --minify --format=iife --outfile=world.js` |
 | `sound.js` | Light rain sound, generated in the browser (no audio files). |
 | `app.js` | The link list, search, tags, hover previews. |
 

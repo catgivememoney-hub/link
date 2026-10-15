@@ -179,11 +179,7 @@
   const card = (l, i) => {
     const row = document.createElement('li');
     row.className = 'row';
-    row.style.animationDelay = Math.min(i * 25, 300) + 'ms';
-
-    const num = document.createElement('span');
-    num.className = 'num';
-    num.textContent = String(i + 1).padStart(2, '0');
+    row.style.setProperty('--i', Math.min(i, 14)); // staggered slide-in
 
     const a = document.createElement('a');
     a.className = 'link';
@@ -211,16 +207,19 @@
     meta.append(strong, small);
     a.append(fav, meta);
 
-    a.addEventListener('mouseenter', (e) => showPreview(l, e.clientX, e.clientY));
-    a.addEventListener('mousemove', (e) => placeAt(e.clientX, e.clientY));
+    // the preview sits beside the sidebar, lined up with this row
+    const beside = () => {
+      const side = $('sidebar').getBoundingClientRect();
+      const r = row.getBoundingClientRect();
+      const wide = innerWidth > 700;
+      return wide ? [side.right - 8, r.top - 22] : [r.left + 20, r.bottom - 12];
+    };
+    a.addEventListener('mouseenter', () => showPreview(l, ...beside()));
     a.addEventListener('mouseleave', hidePreview);
-    a.addEventListener('focus', () => {
-      const r = a.getBoundingClientRect();
-      showPreview(l, r.left + 120, r.bottom);
-    });
+    a.addEventListener('focus', () => showPreview(l, ...beside()));
     a.addEventListener('blur', hidePreview);
 
-    row.append(num, a);
+    row.append(a);
 
     if (l.tag) {
       const badge = document.createElement('span');
@@ -235,8 +234,10 @@
 
     const cp = document.createElement('button');
     cp.type = 'button';
-    cp.textContent = t('copy');
+    cp.className = 'icon tiny';
+    cp.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>';
     cp.setAttribute('aria-label', t('copy') + ': ' + l.title);
+    cp.title = t('copy');
     cp.addEventListener('click', () => copy(l.url, t('copied')));
     actions.appendChild(cp);
 

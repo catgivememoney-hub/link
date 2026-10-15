@@ -9,170 +9,176 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=5">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@200;300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=10">
   <!-- password check runs first, before anything else shows -->
-  <script src="password.js?v=9"></script>
-  <script src="gate.js?v=9"></script>
+  <script src="password.js?v=10"></script>
+  <script src="gate.js?v=10"></script>
 </head>
 <body>
   <!-- Password screen: one input, nothing else -->
   <div id="gate" class="gate"><input id="gateInput" type="password" autocomplete="current-password" aria-label="Password"></div>
 
+  <!-- 3D nature world (world.js) -->
   <canvas id="bg" class="bg-canvas" aria-hidden="true"></canvas>
-  <!-- Left sidebar: saved links -->
-  <aside id="sidebar" class="sidebar" aria-label="Saved meows">
+  <div class="veil" aria-hidden="true"></div>
+
+  <!-- ================= Sidebar: saved links ================= -->
+  <aside id="sidebar" class="sidebar glass" aria-label="Links">
     <div class="side-head">
-      <h2><span data-i18n="saved">Saved meows</span> <span id="count" class="count">0</span></h2>
-      <button id="closeSide" class="icon small" type="button" aria-label="Close sidebar" data-i18n-aria="closeSidebar">
-        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span id="count" class="count">0</span>
+      <input id="search" type="search" placeholder="Search" data-i18n-ph="search" aria-label="Search" data-i18n-aria="search">
+      <button id="closeSide" class="icon" type="button" aria-label="Close sidebar" data-i18n-aria="closeSidebar">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
-    <input id="search" type="search" placeholder="Search meows…" aria-label="Search links" data-i18n-ph="search" data-i18n-aria="search">
-    <div id="tags" class="tags" role="group" aria-label="Filter by tag"></div>
+    <div id="tags" class="tags" role="group" aria-label="Tags"></div>
     <div id="moveNotice" class="move" hidden>
       <span id="moveText"></span>
       <div class="move-actions">
-        <button id="moveBtn" type="button" data-i18n="moveBtn">Move to links.js</button>
-        <button id="moveDismiss" type="button" data-i18n="dismiss">Dismiss</button>
+        <button id="moveBtn" type="button" data-i18n="moveBtn">Move</button>
+        <button id="moveDismiss" type="button" data-i18n="dismiss">Delete</button>
       </div>
     </div>
     <ul id="list" class="list"></ul>
-    <p id="empty" class="empty" hidden data-i18n="empty">No meows yet. 🐾</p>
+    <p id="empty" class="empty" hidden data-i18n="empty">Empty</p>
   </aside>
   <div id="backdrop" class="backdrop" hidden></div>
 
-  <div class="content">
-    <header class="top">
-      <div class="brand">
-        <button id="menuBtn" class="icon" type="button" aria-label="Open sidebar" aria-controls="sidebar" aria-expanded="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-        </button>
-        <img class="logo" src="logo.png?v=6" alt="" width="56" height="56">
-        <h1>MEOW</h1>
-      </div>
-      <div class="top-actions">
-        <button id="themeBtn" class="icon" type="button" aria-label="Toggle light/dark theme" data-i18n-aria="toggleTheme"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
-        <button id="settingsBtn" class="icon" type="button" aria-label="Settings" data-i18n-aria="settings" aria-controls="settings">
-          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-        </button>
-      </div>
-    </header>
+  <!-- ================= Top bar ================= -->
+  <header class="top">
+    <div class="cluster enter" style="--d:0">
+      <button id="menuBtn" class="icon glass" type="button" aria-label="Open sidebar" aria-controls="sidebar" aria-expanded="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h10M5 17h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <img class="logo" src="logo.png?v=6" alt="MEOW" width="44" height="44">
+    </div>
+    <div class="cluster enter" style="--d:1">
+      <button id="themeBtn" class="icon glass" type="button" aria-label="Theme" data-i18n-aria="toggleTheme">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+      </button>
+      <button id="settingsBtn" class="icon glass" type="button" aria-label="Settings" data-i18n-aria="settings" aria-controls="settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+      </button>
+    </div>
+  </header>
 
-    <main>
-      <section class="hero">
-        <h2 data-i18n="heroTitle">All your meows. One place.</h2>
-        <p class="hint" data-i18n="heroHint">Add a link below, paste it into links.js, and it lands in the litter box on the left.</p>
-      </section>
+  <!-- ================= Center ================= -->
+  <main class="stage">
+    <h1 class="wordmark enter" style="--d:2" aria-label="MEOW"><span>M</span><span>E</span><span>O</span><span>W</span></h1>
 
-      <form id="addForm" class="add" autocomplete="off">
-        <input id="title" placeholder="Title" data-i18n-ph="phTitle" maxlength="80" required aria-label="Title">
-        <input id="url" type="url" placeholder="https://example.com" required aria-label="URL">
-        <input id="tag" placeholder="Tag" data-i18n-ph="phTag" maxlength="20" aria-label="Tag">
-        <button class="primary" type="submit" data-i18n="meowIt">Meow it</button>
-      </form>
+    <form id="addForm" class="composer glass enter" style="--d:3" autocomplete="off">
+      <input id="title" placeholder="Title" data-i18n-ph="phTitle" maxlength="80" required aria-label="Title" data-i18n-aria="phTitle">
+      <span class="sep" aria-hidden="true"></span>
+      <input id="url" type="url" placeholder="https://" required aria-label="URL">
+      <span class="sep" aria-hidden="true"></span>
+      <input id="tag" placeholder="#tag" data-i18n-ph="phTag" maxlength="20" aria-label="Tag" data-i18n-aria="phTag">
+      <button class="icon add-btn" type="submit" aria-label="Add" data-i18n-aria="meowIt" title="Add" data-i18n-title="meowIt">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      </button>
+    </form>
 
-      <section class="tools">
-        <a id="editBtn" class="btn" href="#" target="_blank" rel="noopener noreferrer" data-i18n="editLinks">Edit links.js on GitHub</a>
-        <button id="exportBtn" type="button" data-i18n="exportJson">Export JSON</button>
-      </section>
-      <p class="note hint" data-i18n-html="note">All meows live in <strong>links.js</strong> in the GitHub repo, so everyone sees the same list. “Meow it” copies the new line and opens links.js for you to paste and commit.</p>
-    </main>
-  </div>
+    <p class="hint enter" style="--d:4" data-i18n="heroHint">+ copies a line → paste into links.js</p>
+
+    <div class="tools enter" style="--d:5">
+      <a id="editBtn" class="icon glass" href="#" target="_blank" rel="noopener noreferrer" aria-label="Edit links.js" data-i18n-aria="editLinks" title="links.js" data-i18n-title="editLinks">
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </a>
+      <button id="exportBtn" class="icon glass" type="button" aria-label="Export JSON" data-i18n-aria="exportJson" title="JSON" data-i18n-title="exportJson">
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </main>
 
   <!-- Hover preview card (filled in by app.js) -->
-  <div id="preview" class="preview" aria-hidden="true">
-    <div class="shot"><img id="previewImg" alt=""><span id="previewMsg" data-i18n="loadingPreview">Loading preview…</span></div>
+  <div id="preview" class="preview glass" aria-hidden="true">
+    <div class="shot"><img id="previewImg" alt=""><span id="previewMsg" data-i18n="loadingPreview">…</span></div>
     <div class="cap"><strong id="previewTitle"></strong><small id="previewHost"></small></div>
   </div>
 
-
-  <!-- Settings panel -->
+  <!-- ================= Settings ================= -->
   <div id="settings" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="setTitle">
-    <div class="panel">
+    <div class="panel glass">
       <div class="panel-head">
         <h2 id="setTitle" data-i18n="settings">Settings</h2>
-        <button id="setClose" class="icon small" type="button" aria-label="Close" data-i18n-aria="close">
-          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <button id="setClose" class="icon" type="button" aria-label="Close" data-i18n-aria="close">
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </button>
       </div>
 
-      <section>
-        <h3 data-i18n="sLanguage">Language</h3>
-        <div id="langSeg" class="seg">
-          <button type="button" data-val="en">English</button>
-          <button type="button" data-val="zh">中文</button>
-        </div>
-      </section>
-
-      <section>
-        <h3 data-i18n="sBackground">Background</h3>
+      <section class="p-sec" style="--d:0">
+        <h3 data-i18n="sBackground">Scene</h3>
         <div id="sceneGrid" class="scenes"></div>
       </section>
 
-      <section>
-        <h3 data-i18n="sSound">Sound</h3>
+      <section class="p-sec" style="--d:1">
         <div class="set-row">
-          <span data-i18n="sSoundOn">Sound effects</span>
-          <button id="soundSwitch" class="switch" type="button" role="switch" aria-checked="true"><b></b><span class="sw-label"></span></button>
+          <h3 data-i18n="sSoundOn">Sound</h3>
+          <button id="soundSwitch" class="switch" type="button" role="switch" aria-checked="true" aria-label="Sound" data-i18n-aria="sSoundOn"><b></b></button>
         </div>
-        <label class="set-row">
-          <span data-i18n="sVolume">Volume</span>
-          <input id="volume" type="range" min="0" max="100" step="1">
-        </label>
-        <p class="hint small" data-i18n="sSoundHint">Light rain. Starts after your first click.</p>
+        <input id="volume" type="range" min="0" max="100" step="1" aria-label="Volume" data-i18n-aria="sVolume">
+        <p class="hint small" data-i18n="sSoundHint">Starts on first click</p>
       </section>
 
-      <section>
-        <h3 data-i18n="sHints">Hints</h3>
+      <section class="p-sec two" style="--d:2">
         <div class="set-row">
-          <span data-i18n="sHintsOn">Show small hints</span>
-          <button id="hintSwitch" class="switch" type="button" role="switch" aria-checked="true"><b></b><span class="sw-label"></span></button>
+          <h3 data-i18n="sHintsOn">Hints</h3>
+          <button id="hintSwitch" class="switch" type="button" role="switch" aria-checked="true" aria-label="Hints" data-i18n-aria="sHintsOn"><b></b></button>
+        </div>
+        <div class="set-row">
+          <h3 data-i18n="sMotion">Motion</h3>
+          <div id="motionSeg" class="seg">
+            <button type="button" data-val="full" data-i18n="sMotionFull">Full</button>
+            <button type="button" data-val="reduced" data-i18n="sMotionReduced">Less</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <h3 data-i18n="sLanguage">Language</h3>
+          <div id="langSeg" class="seg">
+            <button type="button" data-val="en">EN</button>
+            <button type="button" data-val="zh">中</button>
+          </div>
         </div>
       </section>
 
-      <section>
-        <h3 data-i18n="sMotion">Animation</h3>
-        <div id="motionSeg" class="seg">
-          <button type="button" data-val="full" data-i18n="sMotionFull">Full</button>
-          <button type="button" data-val="reduced" data-i18n="sMotionReduced">Reduced</button>
-        </div>
-      </section>
-
-      <section>
+      <section class="p-sec" style="--d:3">
         <h3 data-i18n="sPassword">Password</h3>
         <div class="pw-row">
-          <input id="newPw" type="password" autocomplete="new-password" placeholder="New password" data-i18n-ph="sNewPw" aria-label="New password" data-i18n-aria="sNewPw">
-          <button id="copyCode" type="button" data-i18n="sCopyCode">Copy code</button>
+          <input id="newPw" type="password" autocomplete="new-password" placeholder="New" data-i18n-ph="sNewPw" aria-label="New password" data-i18n-aria="sNewPw">
+          <button id="copyCode" type="button" data-i18n="sCopyCode">Code</button>
         </div>
         <!-- opens password.js on GitHub, at the line marked "CHANGE PASSWORD HERE" -->
-        <a id="changePw" class="btn primary block" href="#" target="_blank" rel="noopener noreferrer" data-i18n="sChangePw">Change password</a>
-        <p class="hint small" data-i18n="sPwHint">Type a new password and click "Copy code", then "Change password" and paste the code on GitHub.</p>
-        <button id="lockNow" type="button" class="block" data-i18n="sLock">Lock now</button>
+        <a id="changePw" class="btn solid" href="#" target="_blank" rel="noopener noreferrer" data-i18n="sChangePw">Change</a>
+        <p class="hint small" data-i18n="sPwHint">Code → Change → paste</p>
       </section>
 
-      <section>
-        <button id="resetSettings" type="button" class="block danger" data-i18n="sReset">Reset settings</button>
+      <section class="p-sec row-actions" style="--d:4">
+        <button id="lockNow" type="button" class="btn" aria-label="Lock" data-i18n-aria="sLock">
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+          <span data-i18n="sLock">Lock</span>
+        </button>
+        <button id="resetSettings" type="button" class="btn quiet" data-i18n="sReset">Reset</button>
       </section>
     </div>
   </div>
 
   <!-- Confirmation before anything is deleted -->
   <div id="confirm" class="modal center" hidden role="alertdialog" aria-modal="true" aria-describedby="confirmMsg">
-    <div class="panel small">
+    <div class="panel small glass">
       <p id="confirmMsg"></p>
       <div class="confirm-actions">
-        <button id="confirmNo" type="button">Cancel</button>
-        <button id="confirmYes" type="button" class="primary">Delete</button>
+        <button id="confirmNo" type="button" class="btn">Cancel</button>
+        <button id="confirmYes" type="button" class="btn solid">Delete</button>
       </div>
     </div>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="i18n.js?v=9"></script>
-  <script src="bg.js?v=9"></script>
-  <script src="sound.js?v=9"></script>
-  <script src="app.js?v=9"></script>
-  <script src="settings.js?v=9"></script>
+
+  <script src="i18n.js?v=10"></script>
+  <script src="sound.js?v=10"></script>
+  <script src="app.js?v=10"></script>
+  <script src="settings.js?v=10"></script>
+  <script src="world.js?v=10"></script>
 </body>
 </html>
