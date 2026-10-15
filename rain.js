@@ -41,6 +41,7 @@
     y: top ? rand(-40, 0) * DPR : rand(0, H),
     r: rand(3, 7.5) * DPR,
     trail: [],
+    maxV: rand(0.018, 0.045), // px per ms: slow, lazy slide
     vy: 0,
     sliding: false,
     wobble: rand(0, Math.PI * 2),
@@ -120,7 +121,7 @@
 
   /* ---------- simulation ---------- */
   const step = (dt) => {
-    const g = 0.0009 * DPR; // pull of gravity once a drop starts sliding
+    const g = 0.00004 * DPR; // gentle pull once a drop starts sliding (very slow)
 
     // slowly add new tiny droplets so the glass never dries out
     const want = Math.round(520 * area());
@@ -134,13 +135,14 @@
         d.r += 0.0009 * dt * DPR;                  // drops slowly collect water
         if (d.r > 6.5 * DPR || Math.random() < 0.0005 * dt) d.sliding = true;
       } else {
-        d.vy = Math.min(d.vy + g * dt, 0.55 * DPR);
+        d.vy = Math.min(d.vy + g * dt, d.maxV * DPR);
         d.y += d.vy * dt;
-        d.wobble += 0.004 * dt;
-        d.x += Math.sin(d.wobble) * 0.05 * dt * DPR; // slight zig-zag
-        d.r = Math.max(2.5 * DPR, d.r - 0.00025 * dt * DPR);
-        d.trail.push(d.x, d.y);
-        if (d.trail.length > 80) d.trail.splice(0, 2);
+        d.wobble += 0.0012 * dt;
+        d.x += Math.sin(d.wobble) * 0.006 * dt * DPR; // slight zig-zag
+        d.r = Math.max(2.5 * DPR, d.r - 0.00004 * dt * DPR);
+        const tl = d.trail.length;
+        if (!tl || Math.abs(d.y - d.trail[tl - 1]) > 2 * DPR) d.trail.push(d.x, d.y);
+        if (d.trail.length > 90) d.trail.splice(0, 2);
         // leave a trail of tiny droplets
         if (d.y - d.lastTrail > rand(10, 22) * DPR) {
           d.lastTrail = d.y;
@@ -191,7 +193,7 @@
       for (let k = 2; k < tr.length; k += 2) ctx.lineTo(tr[k], tr[k + 1]);
       ctx.stroke();
     }
-    for (const d of drops) drawDrop(d.x, d.y, d.r, d.sliding ? 1 + Math.min(d.vy / DPR, 0.4) : 1);
+    for (const d of drops) drawDrop(d.x, d.y, d.r, d.sliding ? 1 + Math.min((d.vy / DPR) * 7, 0.3) : 1);
   };
 
   const frame = (now) => {
@@ -213,17 +215,37 @@
     requestAnimationFrame(frame);
   }
 
-  /* ================= Rain sound (generated, no audio file) ================= */
+  /* ================= Sound (all generated, no audio files) ================= */
+  // One shared audio engine for the light rain and the click sounds.
+  // Browsers only allow sound after the visitor clicks/taps/presses a key,
+  // so nothing is created until then.
   const SOUND_KEY = 'meow.rainSound';
   const btn = document.getElementById('soundBtn');
-  let audio = null;     // { ctx, master, dripTimer }
-  let on = false;
+  let ac = null;          // AudioContext
+  let rainGain = null;    // volume of the rain (0 = off)
+  let clickGain = null;   // volume of click sounds
+  let rainBuilt = false;
+  let patterTimer = null;
+  let rainOn = false;
 
-  const noiseBuffer = (ac, seconds, type) => {
+  const getAudio = () => {
+    if (ac) return ac;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ac = new AC();
+    const comp = ac.createDynamicsCompressor(); // keeps everything smooth, never harsh
+    comp.threshold.value = -18; comp.ratio.value = 3;
+    comp.connect(ac.destination);
+    rainGain = ac.createGain(); rainGain.gain.value = 0; rainGain.connect(comp);
+    clickGain = ac.createGain(); clickGain.gain.value = 0.9; clickGain.connect(comp);
+    return ac;
+  };
+
+  const noiseBuffer = (seconds, type) => {
     const len = Math.floor(ac.sampleRate * seconds);
     const buf = ac.createBuffer(1, len, ac.sampleRate);
     const d = buf.getChannelData(0);
-    let b0 = 0, b1 = 0, b2 = 0, last = 0;
+    let b0 = 0, b1 = 0, b2 = 0;
     for (let i = 0; i < len; i++) {
       const w = Math.random() * 2 - 1;
       if (type === 'pink') {
@@ -231,93 +253,119 @@
         b1 = 0.96300 * b1 + w * 0.2965164;
         b2 = 0.57000 * b2 + w * 1.0526913;
         d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.12;
-      } else if (type === 'brown') {
-        last = (last + 0.02 * w) / 1.02;
-        d[i] = last * 3.2;
-      } else {
-        d[i] = w;
-      }
+      } else d[i] = w;
     }
     return buf;
   };
 
-  const startAudio = () => {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    const ac = new AC();
-    const master = ac.createGain();
-    master.gain.value = 0;
-    master.connect(ac.destination);
-
-    const loop = (buf, filters, gain) => {
-      const src = ac.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      let node = src;
-      for (const [type, freq, q] of filters) {
-        const f = ac.createBiquadFilter();
-        f.type = type; f.frequency.value = freq; if (q) f.Q.value = q;
-        node.connect(f); node = f;
-      }
-      const g = ac.createGain();
-      g.gain.value = gain;
-      node.connect(g); g.connect(master);
-      src.start();
-    };
-
-    // steady rain "shhh"
-    loop(noiseBuffer(ac, 4, 'pink'), [['highpass', 400], ['lowpass', 5200]], 0.9);
-    // soft low body of the rain
-    loop(noiseBuffer(ac, 4, 'brown'), [['lowpass', 500]], 0.5);
-    // fine hiss
-    loop(noiseBuffer(ac, 2, 'white'), [['highpass', 6000]], 0.035);
-
-    // individual drops tapping the window
-    const white = noiseBuffer(ac, 0.05, 'white');
-    const drip = () => {
-      const n = 1 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < n; i++) {
-        const t = ac.currentTime + Math.random() * 0.12;
-        const src = ac.createBufferSource();
-        src.buffer = white;
-        const f = ac.createBiquadFilter();
-        f.type = 'bandpass'; f.frequency.value = rand(1800, 5200); f.Q.value = rand(4, 10);
-        const g = ac.createGain();
-        const peak = rand(0.08, 0.3);
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(peak, t + 0.002);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + rand(0.02, 0.06));
-        src.connect(f); f.connect(g); g.connect(master);
-        src.start(t); src.stop(t + 0.07);
-      }
-    };
-    const dripTimer = setInterval(drip, 90);
-
-    return { ctx: ac, master, dripTimer };
+  const panner = (pan) => {
+    if (ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pan; return p; }
+    return ac.createGain();
   };
 
+  /* ---- light rain: soft drizzle + scattered drip-drop ticks ---- */
+  const buildRain = () => {
+    if (rainBuilt) return;
+    rainBuilt = true;
+
+    // very quiet drizzle in the background
+    const bed = ac.createBufferSource();
+    bed.buffer = noiseBuffer(4, 'pink'); bed.loop = true;
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2800;
+    const bedGain = ac.createGain(); bedGain.gain.value = 0.22;
+    bed.connect(hp); hp.connect(lp); lp.connect(bedGain); bedGain.connect(rainGain);
+    bed.start();
+
+    const tickBuf = noiseBuffer(0.06, 'white');
+
+    // "tick": a small drop landing on glass
+    const tick = (t) => {
+      const src = ac.createBufferSource(); src.buffer = tickBuf;
+      const f = ac.createBiquadFilter(); f.type = 'bandpass';
+      f.frequency.value = rand(1400, 3800); f.Q.value = rand(8, 16);
+      const g = ac.createGain();
+      const peak = rand(0.10, 0.32);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(peak, t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + rand(0.025, 0.06));
+      const p = panner(rand(-0.8, 0.8));
+      src.connect(f); f.connect(g); g.connect(p); p.connect(rainGain);
+      src.start(t); src.stop(t + 0.08);
+    };
+
+    // "plip": a rounder water drip, now and then
+    const plip = (t) => {
+      const o = ac.createOscillator(); o.type = 'sine';
+      const f0 = rand(650, 1250);
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.6, t + 0.05); // drips rise in pitch
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(rand(0.05, 0.11), t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + rand(0.07, 0.12));
+      const p = panner(rand(-0.6, 0.6));
+      o.connect(g); g.connect(p); p.connect(rainGain);
+      o.start(t); o.stop(t + 0.15);
+    };
+
+    // irregular pitter-patter rhythm
+    const patter = () => {
+      if (ac.state === 'running' && rainOn) {
+        const t = ac.currentTime + 0.02;
+        if (Math.random() < 0.12) plip(t); else tick(t);
+        if (Math.random() < 0.25) tick(t + rand(0.03, 0.09)); // occasional double drop
+      }
+      patterTimer = setTimeout(patter, rand(70, 260));
+    };
+    patter();
+  };
+
+  /* ---- soft click: a short, rounded "tok", neither crisp nor dull ---- */
+  const playClick = () => {
+    if (!getAudio()) return;
+    if (ac.state !== 'running') ac.resume();
+    const t = ac.currentTime + 0.005;
+    const k = rand(0.96, 1.04); // tiny pitch variation so repeats feel natural
+
+    const o = ac.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(520 * k, t);
+    o.frequency.exponentialRampToValueAtTime(330 * k, t + 0.06);
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700; lp.Q.value = 0.7;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.26, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(lp); lp.connect(g); g.connect(clickGain);
+    o.start(t); o.stop(t + 0.12);
+
+    // a whisper of texture so it feels like a real button, not a beep
+    if (!playClick.buf) playClick.buf = noiseBuffer(0.02, 'white');
+    const n = ac.createBufferSource(); n.buffer = playClick.buf;
+    const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 2200; nf.Q.value = 1.2;
+    const ng = ac.createGain();
+    ng.gain.setValueAtTime(0.05, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.015);
+    n.connect(nf); nf.connect(ng); ng.connect(clickGain);
+    n.start(t); n.stop(t + 0.02);
+  };
+
+  /* ---- rain on/off button ---- */
   const setIcon = () => {
     if (!btn) return;
-    btn.classList.toggle('on', on);
-    btn.setAttribute('aria-pressed', String(on));
-    btn.setAttribute('aria-label', on ? 'Turn rain sound off' : 'Turn rain sound on');
-    btn.title = on ? 'Rain sound: on' : 'Rain sound: off';
+    btn.classList.toggle('on', rainOn);
+    btn.setAttribute('aria-pressed', String(rainOn));
+    btn.setAttribute('aria-label', rainOn ? 'Turn rain sound off' : 'Turn rain sound on');
+    btn.title = rainOn ? 'Rain sound: on' : 'Rain sound: off';
   };
 
-  const setSound = (want) => {
-    on = want;
-    try { localStorage.setItem(SOUND_KEY, want ? 'on' : 'off'); } catch { /* ignore */ }
-    if (want) {
-      if (!audio) audio = startAudio();
-      if (audio) {
-        audio.ctx.resume();
-        const g = audio.master.gain;
-        g.cancelScheduledValues(audio.ctx.currentTime);
-        g.setTargetAtTime(0.55, audio.ctx.currentTime, 0.6); // gentle fade in
-      }
-    } else if (audio) {
-      audio.master.gain.setTargetAtTime(0, audio.ctx.currentTime, 0.25);
-      setTimeout(() => { if (!on && audio) audio.ctx.suspend(); }, 1200);
+  const setRain = (want, remember = true) => {
+    rainOn = want;
+    if (remember) { try { localStorage.setItem(SOUND_KEY, want ? 'on' : 'off'); } catch { /* ignore */ } }
+    if (getAudio()) {
+      if (want) { buildRain(); ac.resume(); }
+      rainGain.gain.cancelScheduledValues(ac.currentTime);
+      rainGain.gain.setTargetAtTime(want ? 0.7 : 0, ac.currentTime, want ? 0.8 : 0.25); // gentle fades
     }
     setIcon();
   };
@@ -326,25 +374,30 @@
   try { pref = localStorage.getItem(SOUND_KEY) || 'on'; } catch { /* ignore */ }
   setIcon();
 
-  if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); setSound(!on); });
+  if (btn) btn.addEventListener('click', () => setRain(!rainOn));
 
-  // Browsers only allow sound after the visitor interacts with the page,
-  // so start the rain on the first click / tap / key press (unless muted).
-  if (pref === 'on') {
-    const kick = (e) => {
-      if (e.target && e.target.closest && e.target.closest('#soundBtn')) return;
-      removeEventListener('pointerdown', kick, true);
-      removeEventListener('keydown', kick, true);
-      if (!on) setSound(true);
-    };
-    addEventListener('pointerdown', kick, true);
-    addEventListener('keydown', kick, true);
-  }
+  // Every click/tap gets the soft click sound. The first one also starts the rain
+  // (unless the visitor turned it off before).
+  let started = false;
+  addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    playClick();
+    if (!started) {
+      started = true;
+      const onBtn = e.target && e.target.closest && e.target.closest('#soundBtn');
+      if (pref === 'on' && !onBtn) setRain(true, false);
+    }
+  }, true);
+  addEventListener('keydown', (e) => {
+    if (!started && (e.key === 'Enter' || e.key === ' ')) {
+      started = true;
+      if (pref === 'on') setRain(true, false);
+    }
+  }, true);
 
-  // pause audio when the tab is hidden
+  // pause all sound when the tab is hidden
   document.addEventListener('visibilitychange', () => {
-    if (!audio) return;
-    if (document.hidden) audio.ctx.suspend();
-    else if (on) audio.ctx.resume();
+    if (!ac) return;
+    if (document.hidden) ac.suspend(); else ac.resume();
   });
 })();
