@@ -325,6 +325,42 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   trees.receiveShadow = true;
   scene.add(trees);
   props.plant(treeBase, 0);
+
+  /* ---------- grey fruits hanging under the branches ----------
+     Built in the same space as a tree and placed with the same matrices,
+     so they sway, shake and grow with their tree. About half the trees bear fruit. */
+  const fruitGeo = (() => {
+    const parts = new Parts();
+    const rng = (i, k) => hash2(i * 3.17 + k, i * 1.91 - k * 2.3);
+    for (let i = 0; i < 14; i++) {
+      const t = i % 5, k = t / 5;
+      const r = 1.1 - k * 0.8, base = 0.5 + k * 2.5;
+      const a = i * 2.39996 + rng(i, 1) * 0.6, rho = r * (0.62 + 0.28 * rng(i, 2));
+      const x = Math.cos(a) * rho, z = Math.sin(a) * rho;
+      const stem = 0.14 + 0.16 * rng(i, 3), size = 0.11 + 0.05 * rng(i, 4);
+      const top = base - 0.2 * r * (rho / r) * (rho / r);   // just under the drooping branch
+      // thin stem, then a round fruit (squashed in height: trees are stretched upward)
+      parts.add(new THREE.CylinderGeometry(0.006, 0.008, stem, 4, 1), { m: new THREE.Matrix4().makeTranslation(x, top - stem / 2, z), color: () => [0.35, 0.33, 0.3] });
+      const fruit = new THREE.SphereGeometry(size, 10, 7);
+      const P = fruit.attributes.position;
+      for (let j = 0; j < P.count; j++) { const y = P.getY(j); P.setY(j, (y < 0 ? y * 1.25 : y) * 0.5); }   // a little drop-shaped
+      fruit.computeVertexNormals();
+      const g = 0.6 + 0.18 * rng(i, 5);
+      parts.add(fruit, { m: new THREE.Matrix4().makeTranslation(x, top - stem - size * 0.5, z),
+        color: (v) => { const shine = 0.85 + 0.25 * Math.max(0, v.y - (top - stem - size * 0.5)) / size; return [g * shine, g * shine, g * shine * 0.98]; } });
+    }
+    return parts.geometry();
+  })();
+  const fruitMat = coverMaterial({ ...props.shared, uMoss: { value: 0 }, uFrost: { value: 0 } }, treeU.uTree, { sway: 0.022, color: 0xd8d8d8 });
+  const fruits = new THREE.InstancedMesh(fruitGeo, fruitMat, trees.count);
+  const hasFruit = treeBase.map((b, i) => hash2(i * 0.37, 5.1) < 0.5);
+  {
+    const m = new THREE.Matrix4(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    treeBase.forEach((b, i) => fruits.setMatrixAt(i, hasFruit[i] ? m.compose(b.p, b.q, b.s) : zero));
+    fruits.computeBoundingSphere();
+  }
+  fruits.castShadow = true;
+  scene.add(fruits);
   const ripples = createRipples(scene, U);
   const prints = createFootprints(scene, U);
 
@@ -607,7 +643,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     water.position.y = s.water; wMat.color.copy(s.waterC); wMat.roughness = s.waterRough;
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
     hemi.color.copy(s.hemiSky); hemi.groundColor.copy(s.hemiGround); hemi.intensity = s.hemi * 1.6;
-    treeMat.color.copy(s.treeC); treeU.uTree.value = s.trees; trees.visible = s.trees > 0.01;
+    treeMat.color.copy(s.treeC); treeU.uTree.value = s.trees; trees.visible = s.trees > 0.01; fruits.visible = trees.visible;
     rainMat.uniforms.uOpacity.value = s.rain; rain.visible = s.rain > 0.01;
     snow.material.uniforms.uOpacity.value = s.snow; snow.visible = s.snow > 0.01;
     fireflies.material.uniforms.uOpacity.value = s.fire; fireflies.visible = s.fire > 0.01;
@@ -927,13 +963,23 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   });
   addEventListener('blur', () => keys.clear());
 
-  let drag = null;
+  // right mouse button (or a finger on touch screens) drags to look around;
+  // left click is for trees and links
+  let drag = null, press = null;
   const hover = { x: 0, y: 0, pending: false, id: -1 };
   addEventListener('pointerdown', (e) => {
-    if (busy() || e.button !== 0 || overUI(e.target) || fly.on) return;
-    drag = { x: e.clientX, y: e.clientY, yaw: ex.yawTo, pitch: ex.pitchTo, moved: false };
-    e.preventDefault(); // dragging to look must not select text or images
+    if (busy() || overUI(e.target) || fly.on) return;
+    const look = e.button === 2 || (e.pointerType === 'touch' && e.button === 0);
+    if (look) {
+      drag = { x: e.clientX, y: e.clientY, yaw: ex.yawTo, pitch: ex.pitchTo, moved: false, touch: e.pointerType === 'touch' };
+      e.preventDefault(); // dragging to look must not select text or images
+    } else if (e.button === 0) {
+      press = { x: e.clientX, y: e.clientY };
+      e.preventDefault();
+    }
   });
+  // no right-click menu over the 3D world (right button looks around)
+  addEventListener('contextmenu', (e) => { if (started && !overUI(e.target) && !root.classList.contains('locked')) e.preventDefault(); });
   addEventListener('pointermove', (e) => {
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -948,10 +994,15 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     hover.x = e.clientX; hover.y = e.clientY; hover.pending = true;
   }, { passive: true });
   addEventListener('pointerup', (e) => {
-    if (!drag) return;
-    const wasClick = !drag.moved;
-    drag = null;
-    root.classList.remove('looking');
+    let wasClick = false;
+    if (drag) {
+      wasClick = drag.touch && !drag.moved;           // a tap on a touch screen is a click
+      drag = null;
+      root.classList.remove('looking');
+    } else if (press && e.button === 0) {
+      wasClick = Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8;
+    }
+    press = null;
     if (wasClick) {
       // use the tree that is already lit up under the mouse, so label and click always match
       const id = hover.id >= 0 ? hover.id : pick(e.clientX, e.clientY);
@@ -973,7 +1024,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (!trees.visible || treeU.uTree.value < 0.5) return -1;
     ndc.set((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObject(trees, false)[0];
+    const hit = ray.intersectObjects([trees, fruits], false)[0];   // a fruit counts as its tree
     return hit ? hit.instanceId : -1;
   };
   const GLOW = new THREE.Color(2.6, 2.6, 2.4);
@@ -1002,9 +1053,11 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       swayQ.setFromEuler(swayE).multiply(b.q);
       swayM.compose(b.p, swayQ, b.s);
       trees.setMatrixAt(id, swayM);
+      if (hasFruit[id]) fruits.setMatrixAt(id, swayM);
       if (t > 2.6) shakes.delete(id);
     });
     trees.instanceMatrix.needsUpdate = true;
+    fruits.instanceMatrix.needsUpdate = true;
   };
 
   /* ---------- film lens (post-processing) ----------
