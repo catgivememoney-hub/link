@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LinkNest</title>
+  <meta name="description" content="A tiny, free link board. Save, search, and share links. No login, no server.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <header class="top">
+    <div class="brand"><span class="logo" aria-hidden="true">🪺</span><h1>LinkNest</h1></div>
+    <button id="themeBtn" class="icon" type="button" aria-label="Toggle light/dark theme">🌓</button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h2>Your links, all in one nest.</h2>
+      <p>Save, search, and share links. No login. No server.</p>
+    </section>
+
+    <section class="card">
+      <form id="addForm" autocomplete="off">
+        <input id="title" placeholder="Title" maxlength="80" required aria-label="Title">
+        <input id="url" type="url" placeholder="https://example.com" required aria-label="URL">
+        <input id="tag" placeholder="Tag (e.g. school)" maxlength="20" aria-label="Tag">
+        <button class="primary" type="submit">Add link</button>
+      </form>
+    </section>
+
+    <section class="toolbar">
+      <input id="search" type="search" placeholder="Search links…" aria-label="Search links">
+      <div id="tags" class="tags" role="group" aria-label="Filter by tag"></div>
+    </section>
+
+    <section id="grid" class="grid"></section>
+    <p id="empty" class="empty" hidden>No links yet. Add your first one above! ✨</p>
+
+    <section class="card tools">
+      <button id="shareBtn" type="button">🔗 Copy share link</button>
+      <button id="exportBtn" type="button">⬇️ Export JSON</button>
+      <label class="btn">⬆️ Import JSON<input id="importFile" type="file" accept="application/json" hidden></label>
+    </section>
+    <p class="note">Links you add are saved <strong>in this browser only</strong>. Use “Copy share link” or Export to move them elsewhere.</p>
+  </main>
+
+  <footer>Made with ♥ · Hosted free on GitHub Pages</footer>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
