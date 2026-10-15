@@ -80,7 +80,7 @@ button, .btn {
   transition: transform 0.45s var(--spring), background 0.3s, color 0.3s, box-shadow 0.3s, opacity 0.3s;
 }
 button:focus-visible, .btn:focus-visible, a:focus-visible, input:focus-visible { outline: 1.5px solid var(--ink); outline-offset: 3px; }
-.icon { width: 42px; height: 42px; border-radius: 50%; flex: none; }
+.icon { width: 42px; height: 42px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; } /* links too, not only buttons */
 .icon:hover { transform: translateY(-2px) scale(1.06); }
 .icon:active { transform: scale(0.92); transition-duration: 0.12s; }
 .icon.tiny { width: 30px; height: 30px; opacity: 0.55; }
