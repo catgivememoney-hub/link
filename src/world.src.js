@@ -8,7 +8,7 @@
 
    API used by settings.js:  window.MEOW_BG.setScene(name), setMotion('full'|'reduced'), start() */
 import * as THREE from 'three';
-import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMaterial, Parts } from './props.js';
+import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMaterial, Parts, CABIN } from './props.js';
 
 (() => {
   'use strict';
@@ -66,6 +66,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       const top = 4.6 + (fbm(x * 0.05, z * 0.05, 2) - 0.5) * 1.6 - t * 0.6;
       if (k > 0) h = h + (Math.max(h, top) - h) * k;
     }
+    // level ground where the cabin stands
+    const dc = Math.hypot(x - CABIN.x, z - CABIN.z);
+    if (dc < 36) h += (CABIN.y - 0.12 - h) * smooth(36, 24, dc);
     return h;
   };
 
@@ -632,6 +635,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     }
   };
 
+  let indoorK = 0;   // 1 while you're inside the cabin
   /* ---------- push the current values into the 3D scene ---------- */
   const applyState = () => {
     const s = cur;
@@ -644,10 +648,16 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
     hemi.color.copy(s.hemiSky); hemi.groundColor.copy(s.hemiGround); hemi.intensity = s.hemi * 1.6;
     treeMat.color.copy(s.treeC); treeU.uTree.value = s.trees; trees.visible = s.trees > 0.01; fruits.visible = trees.visible;
-    rainMat.uniforms.uOpacity.value = s.rain; rain.visible = s.rain > 0.01;
-    snow.material.uniforms.uOpacity.value = s.snow; snow.visible = s.snow > 0.01;
+    rainMat.uniforms.uOpacity.value = s.rain * (1 - indoorK); rain.visible = s.rain * (1 - indoorK) > 0.01;
+    snow.material.uniforms.uOpacity.value = s.snow * (1 - indoorK); snow.visible = s.snow * (1 - indoorK) > 0.01;
     fireflies.material.uniforms.uOpacity.value = s.fire; fireflies.visible = s.fire > 0.01;
-    mists.forEach((m) => { m.material.opacity = s.mist * 0.5; m.material.color.copy(s.fog); m.visible = s.mist > 0.01; });
+    // mist banks thin out when you walk right into them, and stay outside the cabin
+    const indoor = s.pCabin > 0.5 && props.cabin.inside(camera.position.x, camera.position.z) ? 1 : 0;
+    indoorK += ((indoor) - indoorK) * 0.12;
+    mists.forEach((m) => {
+      const d = Math.hypot(m.position.x - camera.position.x, m.position.z - camera.position.z);
+      m.material.opacity = s.mist * 0.5 * smooth(12, 80, d) * (1 - indoorK); m.material.color.copy(s.fog); m.visible = s.mist > 0.01 && indoorK < 0.99;
+    });
     // colour amount of the whole picture: 0 = black & white, 1 = full (we stay well below)
     LU.uSat.value = s.sat;
   };
@@ -668,6 +678,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   const ROAM = 70;      // highest ground you can walk on
   // entering the forest: a smooth glide over the water and down between the trees,
   // then you walk on your own
+  const jump = { y: 0, v: 0, air: false };    // Space: a small hop
+  const PITCH_MIN = -1.1, PITCH_MAX = 0.9;    // how far you can look down / up
+  const look = { x: -1, y: -1, inside: false };   // where the mouse is (for turning at the screen edge)
   const fly = { on: false, t0: 0, dur: 1, tx: 0, tz: 0, sy: 0, ty: 0, yaw0: 0, yaw1: 0, lift: 10, y: 0, roll: 0 };
   let frameDt = 1 / 60;
   const fwd = new THREE.Vector3(), flat = new THREE.Vector3(), lookDir = new THREE.Vector3();
@@ -699,13 +712,14 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       // ground under and just around you (so small bumps between terrain points can't poke through)
       let floor = heightAt(px, pz);
       for (let a = 0; a < 6.28; a += 1.57) floor = Math.max(floor, heightAt(px + Math.cos(a) * 4, pz + Math.sin(a) * 4));
-      floor = Math.max(floor, water.position.y);
+      floor = Math.max(floor, water.position.y, props.floorAt(px, pz, cur));
       const ground = floor + EYE;
       ex.ground += (ground - ex.ground) * 0.12;   // glide over bumps instead of jolting…
       ex.ground = Math.max(ex.ground, floor + 3); // …but never sink below the ground
       const hb = smooth(0, 35, away);
       camera.position.set(px, Math.max(camera.position.y * (1 - hb) + ex.ground * hb, hb > 0.5 ? floor + 3 : -1e9), pz);
       if (fly.on) { camera.position.y = Math.max(fly.y, floor + 3); ex.ground = camera.position.y; }
+      camera.position.y += jump.y;
       lookDir.copy(fwd).applyAxisAngle(Y_AXIS, ex.yaw);
       lookDir.y = lookDir.y * (1 - hb) - 0.04 * hb + ex.pitch;
       lookDir.normalize();
@@ -864,12 +878,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         if (dx * dx + dz * dz < r * r) return false;
       }
     }
-    for (const c of props.solids) {
-      if (cur[c.key] < 0.5) continue;
-      const dx = c.x - x, dz = c.z - z, r = c.r + pad;
-      if (dx * dx + dz * dz < r * r) return false;
-    }
-    return true;
+    return !props.blockedAt(x, z, pad, cur);
   };
   const startFly = () => {
     const sx = cur.cam.x, sz = cur.cam.z;
@@ -961,7 +970,47 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     e.preventDefault();
     toggleLight();
   });
-  addEventListener('blur', () => keys.clear());
+  addEventListener('blur', () => { keys.clear(); look.inside = false; door.hold = 0; door.key = false; });
+  document.addEventListener('mouseleave', () => { look.inside = false; });
+  // Space: jump (only out in the world)
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || typing(e.target) || busy() || !ex.on || fly.on) return;
+    if (document.querySelector('.modal:not([hidden])')) return;
+    e.preventDefault();
+    if (e.repeat || jump.air) return;
+    jump.v = 15.5; jump.air = true;
+    if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+  });
+  // E (hold for one second): open / close the cabin door when you're next to it
+  const door = { hold: 0, key: false, done: false };
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyE' || typing(e.target) || busy() || !ex.on || e.repeat) return;
+    door.key = true; door.done = false;
+    if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+  });
+  addEventListener('keyup', (e) => { if (e.code === 'KeyE') { door.key = false; door.hold = 0; } });
+  const actHint = document.createElement('div');
+  actHint.className = 'act-hint';
+  actHint.innerHTML = '<svg viewBox="0 0 40 40" aria-hidden="true"><circle class="trk" cx="20" cy="20" r="16"/><circle class="bar" cx="20" cy="20" r="16"/></svg><kbd>E</kbd><span></span>';
+  document.body.appendChild(actHint);
+  const actBar = actHint.querySelector('.bar'), actTxt = actHint.querySelector('span');
+  const t$ = (k, f) => (window.MEOW_I18N ? window.MEOW_I18N.t(k) : f);
+  let actShown = false;
+  const updateDoor = (dt, now) => {
+    const cab = props.cabin.door;
+    const px = camera.position.x, pz = camera.position.z;
+    const near = ex.on && !fly.on && cur.pCabin > 0.5 && cab.near(px, pz);
+    if (near !== actShown) { actShown = near; actHint.classList.toggle('show', near); }
+    if (near) actTxt.textContent = cab.open ? t$('doorClose', 'Hold E to close') : t$('doorOpen', 'Hold E to open');
+    if (near && door.key && !door.done && cab.canToggle(px, pz)) door.hold = Math.min(1, door.hold + dt);
+    else if (!door.key) door.hold = 0;
+    actBar.style.strokeDashoffset = String(100.5 * (1 - door.hold));
+    if (door.hold >= 1 && !door.done) {
+      door.done = true; door.hold = 0;
+      const opened = cab.toggle(now);
+      if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(opened);
+    }
+  };
 
   // right mouse button (or a finger on touch screens) drags to look around;
   // left click is for trees and links
@@ -984,13 +1033,21 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.hypot(dx, dy) > 5) drag.moved = true;
-      ex.yawTo = clamp(drag.yaw + dx * 0.0035, -1.3, 1.3);
-      ex.pitchTo = clamp(drag.pitch + dy * 0.0025, -0.35, 0.3);
+      ex.yawTo = drag.yaw + dx * 0.0035;
+      ex.pitchTo = clamp(drag.pitch + dy * 0.0025, PITCH_MIN, PITCH_MAX);
       root.classList.add('looking');
       wake();
       return;
     }
+    look.x = e.clientX; look.y = e.clientY; look.inside = true; look.ui = !!overUI(e.target);
     if (busy() || overUI(e.target)) { if (hover.id >= 0) setHover(-1); return; }
+    // in the forest, just moving the mouse / one finger on the trackpad turns the view:
+    // slide right → turn left, slide up → look down (like pulling the world along)
+    if (ex.on && !fly.on && e.pointerType !== 'touch' && (e.movementX || e.movementY)) {
+      ex.yawTo += e.movementX * 0.0028;
+      ex.pitchTo = clamp(ex.pitchTo + e.movementY * 0.0022, PITCH_MIN, PITCH_MAX);
+      wake();
+    }
     hover.x = e.clientX; hover.y = e.clientY; hover.pending = true;
   }, { passive: true });
   addEventListener('pointerup', (e) => {
@@ -1182,11 +1239,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
             if (dx * dx + dz * dz < rr * rr) return false;
           }
         }
-        for (const c of props.solids) {
-          if (cur[c.key] < 0.5) continue;
-          const dx = c.x - wx2, dz = c.z - wz2;
-          if (dx * dx + dz * dz < c.r * c.r) return false;
-        }
+        if (props.blockedAt(wx2, wz2, 0, cur)) return false;
         return true;
       };
       const nx = ex.px + ex.vx * dtS, nz = ex.pz + ex.vz * dtS;
@@ -1201,9 +1254,30 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         if (Math.hypot(ex.px, ex.pz) < 0.05) { ex.px = ex.pz = 0; ex.homing = false; }
       }
       const lightBusy = (now - Math.max(light.torch.since, light.lamp.since)) < 1200;
-      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy && !fly.on) { tempRun = false; running = motion === 'full'; }
+      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy && !fly.on && !jump.air && !door.key) { tempRun = false; running = motion === 'full'; }
     }
     frameDt = fdt / 60;
+    // jump: up, gravity, land (with a soft thump and a little dip of the head)
+    if (jump.air) {
+      jump.v -= 44 * frameDt;
+      jump.y += jump.v * frameDt;
+      if (jump.y <= 0) {
+        jump.y = 0; jump.air = false;
+        bob.amp = Math.min(1.4, bob.amp + 0.5);
+        if (window.MEOW_SOUND && window.MEOW_SOUND.step) {
+          const x = camera.position.x, z = camera.position.z, gh = heightAt(x, z);
+          const surf = props.floorAt(x, z, cur) > gh + 0.2 ? 'wood' : gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
+          window.MEOW_SOUND.step(surf, 1.5); setTimeout(() => window.MEOW_SOUND.step(surf, 1.1), 70);
+        }
+      }
+    }
+    // keep turning while the mouse rests at the left / right edge of the screen
+    if (ex.on && !fly.on && look.inside && !look.ui && !drag && !busy() && motion === 'full' && look.y > innerHeight * 0.15 && look.y < innerHeight * 0.85) {
+      const edge = Math.max(30, innerWidth * 0.04);
+      if (look.x > innerWidth - edge) ex.yawTo += 1.1 * frameDt * (look.x - (innerWidth - edge)) / edge;
+      else if (look.x >= 0 && look.x < edge) ex.yawTo -= 1.1 * frameDt * (edge - look.x) / edge;
+    }
+    updateDoor(Math.min(0.25, (now - (lastNow || now)) / 1000), now);   // real time, so the 1 s hold is 1 s
     {
       const sp = Math.hypot(ex.vx, ex.vz);
       const running = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 1 : 0;
@@ -1218,7 +1292,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         bob.lastStep = stepNo;
         if (sp > SPEED * 0.25 && window.MEOW_SOUND && window.MEOW_SOUND.step) {
           const wx = camera.position.x, wz = camera.position.z, gh = heightAt(wx, wz);
-          const surface = gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
+          const surface = props.floorAt(wx, wz, cur) > gh + 0.2 ? 'wood' : gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
           window.MEOW_SOUND.step(surface, Math.min(1.5, sp / SPEED));
         }
         const gh2 = heightAt(camera.position.x, camera.position.z);
@@ -1334,12 +1408,14 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       ex.yaw = ex.yawTo = y; if (!running) renderOnce();
     },
     _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
+    _toggleDoor() { props.cabin.door.toggle(performance.now()); },
     _pos() { return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on }; },
     _sites() { return { cabin: props.cabinAt, circle: props.circleAt }; },
     _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
     // back to the home view (used by the back button)
     enter() { if (started && !fly.on && !busy() && Math.hypot(ex.px, ex.pz) < 3) startFly(); },
     home() {
+      const turns = Math.round(ex.yaw / (Math.PI * 2)) * Math.PI * 2; ex.yaw -= turns; ex.yawTo -= turns;
       fly.on = false; ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
       if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
     },

@@ -100,6 +100,17 @@
       o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 1.8, t + 0.06);
       og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.035 * v, t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
       o.connect(og); og.connect(out); o.start(t); o.stop(t + 0.1);
+    } else if (surface === 'wood') {
+      // hollow knock on boards, with a faint creak now and then
+      fx(0.14, [['bandpass', rand(180, 260), 2.2]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.42 * v, t + 0.004); g.exponentialRampToValueAtTime(0.0001, t + 0.14); });
+      fx(0.05, [['bandpass', rand(900, 1300), 4]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.08 * v, t + 0.002); g.exponentialRampToValueAtTime(0.0001, t + 0.05); });
+      if (Math.random() < 0.18) {
+        const o = ac.createOscillator(), og = ac.createGain(), t = ac.currentTime + 0.05, f0 = rand(380, 620);
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(f0 * 0.8, t + 0.18);
+        const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f0 * 2; bp.Q.value = 6;
+        og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.012 * v, t + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+        o.connect(bp); bp.connect(og); og.connect(out); o.start(t); o.stop(t + 0.22);
+      }
     } else {
       // heel thud + a little rustle of grass
       fx(0.12, [['lowpass', rand(260, 380)], ['peaking', 120, 1]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.32 * v, t + 0.006); g.exponentialRampToValueAtTime(0.0001, t + 0.11); });
@@ -151,8 +162,29 @@
     fireTimer = setTimeout(tick, 600);
   };
 
+  // the cabin door: a slow creak, then a latch click (open) or a wooden thump (close)
+  const door = (open) => {
+    if (!ready()) return;
+    const v = vol();
+    const t = ac.currentTime + 0.02;
+    const o = ac.createOscillator(), bp = ac.createBiquadFilter(), g = ac.createGain();
+    o.type = 'sawtooth';
+    const f0 = open ? 170 : 210;
+    o.frequency.setValueAtTime(f0, t);
+    for (let i = 1; i <= 8; i++) o.frequency.linearRampToValueAtTime(f0 * (open ? 1 + i * 0.05 : 1 - i * 0.03) + rand(-12, 12), t + i * 0.09);
+    bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 5;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.03 * v, t + 0.1); g.gain.linearRampToValueAtTime(0.022 * v, t + 0.55); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+    o.connect(bp); bp.connect(g); g.connect(out); o.start(t); o.stop(t + 0.85);
+    if (open) {
+      fx(0.015, [['bandpass', 3200, 3]], (gg, tt) => { gg.setValueAtTime(0.0001, tt); gg.linearRampToValueAtTime(0.22 * v, tt + 0.001); gg.exponentialRampToValueAtTime(0.0001, tt + 0.015); });
+    } else {
+      fx(0.2, [['lowpass', 260], ['peaking', 110, 1.2, 6]], (gg, tt) => { gg.setValueAtTime(0, tt); gg.linearRampToValueAtTime(0.5 * v, tt + 0.005); gg.exponentialRampToValueAtTime(0.0001, tt + 0.2); }, 0.78);
+      fx(0.015, [['bandpass', 2800, 3]], (gg, tt) => { gg.setValueAtTime(0.0001, tt); gg.linearRampToValueAtTime(0.18 * v, tt + 0.001); gg.exponentialRampToValueAtTime(0.0001, tt + 0.015); }, 0.86);
+    }
+  };
+
   window.MEOW_SOUND = {
-    chime, step, click, ignite, puff, fire,
+    chime, step, click, ignite, puff, fire, door,
     setEnabled(on) { enabled = !!on; update(); },
     setVolume(v) { volume = Math.max(0, Math.min(1, Number(v) || 0)); update(); }
   };

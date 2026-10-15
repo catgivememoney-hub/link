@@ -1,0 +1,441 @@
+/* MEOW — the log cabin by the lake: a real little house you can walk into.
+   Built in metres (then scaled by S to world units). Its front (+z) faces the lake.
+
+   Outside: notched log walls on a stone footing, shingled roof with a stone chimney,
+   a porch with its own roof, bench, lantern, shutters, rain barrel, firewood and a
+   chopping block, a dock with lanterns and a rowboat.
+   Inside: plank floor, rug, fireplace with a fire, bed, chest, table and chairs
+   (lantern, mug, book, a bowl of grey fruit), shelf with jars and books, beams,
+   curtains, a coat and boots by the door.
+
+   The walls and furniture are solid; floors (inside, porch, dock) can be walked on;
+   the door swings open and shut (hold E). */
+import * as THREE from 'three';
+import { Parts, M, n3, coverMaterial } from './kit.js';
+
+export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
+
+export function createCabin({ scene, shared, U }) {
+  const S = CABIN.S;
+  const W = 6.4, D = 5.0, LR = 0.17, STEP = 0.3145, ROWS = 8;
+  const TOP = 2.62, GH = 1.9;                     // wall plate height, gable height
+  const DX0 = -1.95, DX1 = -0.75, DH = 2.05;      // door opening
+  const dz0 = D / 2 + 2.6, dockLen = 11;          // dock start (local z) and length
+  const FIRE = { x: 1.7, z: -2.0 };
+
+  const ext = new Parts(), inn = new Parts(), glowP = new Parts(), glassP = new Parts();
+  const n = (x, y, z) => n3(x, y, z);
+
+  /* ---------- colours ---------- */
+  const wood = (base, k = 1) => (v) => { const c = base * (0.88 + n(v.x * 3, v.y * 9, v.z * 3) * 0.24) * k; return [c, c * 0.8, c * 0.6]; };
+  const logCol = (axis) => (v, nn) => {
+    const end = axis === 'x' ? Math.abs(nn.x) > 0.9 : Math.abs(nn.z) > 0.9;
+    if (end) { const r = axis === 'x' ? Math.hypot(v.y % 1, v.z) : Math.hypot(v.y % 1, v.x); const c = 0.68 + Math.sin(r * 90) * 0.04; return [c * 1.02, c * 0.86, c * 0.66]; }
+    const c = 0.5 + n(v.x * 2.5, v.y * 8, v.z * 2.5) * 0.2 + Math.sin((axis === 'x' ? v.x : v.z) * 23) * 0.015;
+    return [c, c * 0.79, c * 0.58];
+  };
+  const stone = (v) => { const c = 0.45 + n(v.x * 5, v.y * 5, v.z * 5) * 0.25; return [c * 0.98, c * 0.97, c * 0.95]; };
+  const flat = (r, g, b) => () => [r, g, b];
+  const outward = (axis, fixed) => (v) => ((axis === 'z' ? (v.z - fixed) * Math.sign(fixed) : (v.x - fixed) * Math.sign(fixed)) > 0 ? 1 : 0);
+
+  /* ---------- log walls with openings ---------- */
+  const OPEN = {
+    front: [[DX0, DX1, 0, DH], [0.75, 1.95, 0.95, 1.95]],
+    back: [], left: [],
+    right: [[-0.3, 0.9, 0.95, 1.95]]
+  };
+  const cut = (a, b, y, holes) => {
+    let segs = [[a, b]];
+    holes.forEach(([h0, h1, y0, y1]) => {
+      if (!(y0 < y + LR - 0.02 && y1 > y - LR + 0.02)) return;
+      const next = [];
+      segs.forEach(([s0, s1]) => { if (h1 <= s0 || h0 >= s1) next.push([s0, s1]); else { if (h0 > s0) next.push([s0, h0]); if (h1 < s1) next.push([h1, s1]); } });
+      segs = next;
+    });
+    return segs;
+  };
+  for (let r = 0; r < ROWS; r++) {
+    const yF = LR + r * STEP, yS = LR + STEP / 2 + r * STEP;
+    [['front', D / 2], ['back', -D / 2]].forEach(([wall, z]) => {
+      cut(-W / 2 - 0.3, W / 2 + 0.3, yF, OPEN[wall]).forEach(([a, b]) => {
+        ext.add(new THREE.CylinderGeometry(LR, LR * 0.97, b - a, 9, 1), { m: M((a + b) / 2, yF, z, 0, 0, Math.PI / 2), color: logCol('x'), tip: outward('z', z) });
+      });
+    });
+    if (yS + LR < TOP + 0.12) [['left', -W / 2], ['right', W / 2]].forEach(([wall, x]) => {
+      cut(-D / 2 - 0.3, D / 2 + 0.3, yS, OPEN[wall]).forEach(([a, b]) => {
+        ext.add(new THREE.CylinderGeometry(LR, LR * 0.97, b - a, 9, 1), { m: M(x, yS, (a + b) / 2, Math.PI / 2, 0, 0), color: logCol('z'), tip: outward('x', x) });
+      });
+    });
+  }
+  // stone footing all round (with a wooden sill at the door)
+  for (let i = 0; i < 4; i++) {
+    const along = i < 2 ? W : D, fixed = i < 2 ? (i ? -D / 2 : D / 2) : (i === 2 ? -W / 2 : W / 2);
+    for (let t = -along / 2 - 0.2; t < along / 2 + 0.2; t += 0.42) {
+      if (i === 0 && t > DX0 - 0.2 && t < DX1) continue;
+      const w = 0.38 + n(t, i, 0) * 0.08, h = 0.16 + n(t, i, 3) * 0.08;
+      const m = i < 2 ? M(t + 0.2, -0.02 + h / 2 - 0.06, fixed, 0, (n(t, i, 5) - 0.5) * 0.2, 0, w, h, 0.42) : M(fixed, -0.02 + h / 2 - 0.06, t + 0.2, 0, (n(t, i, 5) - 0.5) * 0.2, 0, 0.42, h, w);
+      ext.add(new THREE.BoxGeometry(1, 1, 1), { m, color: stone, tip: () => 1 });
+    }
+  }
+  ext.add(new THREE.BoxGeometry(DX1 - DX0 + 0.1, 0.08, 0.42), { m: M((DX0 + DX1) / 2, 0.06, D / 2), color: wood(0.5), tip: () => 0 });
+
+  /* ---------- gables (outside and inside faces), roof, chimney ---------- */
+  [-1, 1].forEach((s) => {
+    const z = s * D / 2;
+    const A = [-W / 2 - 0.05, TOP, z], B = [W / 2 + 0.05, TOP, z], C = [0, TOP + GH, z];
+    const boards = (v) => { const c = 0.48 + n(v.x * 9, 0, s) * 0.1; const seam = Math.abs(((v.x + 10) % 0.24) - 0.12) < 0.012 ? 0.75 : 1; return [c * seam, c * 0.8 * seam, c * 0.6 * seam]; };
+    ext.tris(s > 0 ? [A, B, C] : [B, A, C], boards, () => 0);
+    inn.tris(s > 0 ? [B, A, C] : [A, B, C], (v) => { const c = boards(v); return [c[0] * 0.85, c[1] * 0.85, c[2] * 0.85]; });
+  });
+  const run = W / 2 + 0.6, rise = GH + 0.45, ang = Math.atan2(rise, run), slope = Math.hypot(run, rise);
+  [-1, 1].forEach((s) => {
+    // roof deck
+    ext.add(new THREE.BoxGeometry(slope, 0.1, D + 1.3, 3, 1, 6), { m: M(s * run / 2, TOP + GH - rise / 2 + 0.02, 0, 0, 0, -s * ang), color: wood(0.36), tip: (v, nn) => (nn.y > 0 ? 1 : 0) });
+    // overlapping rows of shingles
+    const rows = 9;
+    for (let i = 0; i < rows; i++) {
+      const t0 = i / rows, len = slope / rows + 0.12;
+      const cx = s * (run * (t0 + 0.5 / rows)), cy = TOP + GH - rise * (t0 + 0.5 / rows) + 0.1;
+      ext.add(new THREE.BoxGeometry(len, 0.045, D + 1.3, 1, 1, 10), {
+        m: M(cx, cy, 0, 0, 0, -s * (ang + 0.05)),
+        color: (v) => { const k = Math.floor((v.z + 5) * 3.3); const c = 0.3 + n(k, i, s) * 0.12 + (i % 2) * 0.02; return [c, c * 0.93, c * 0.88]; },
+        tip: () => 1
+      });
+    }
+    // fascia board along the eave
+    ext.add(new THREE.BoxGeometry(0.05, 0.22, D + 1.35), { m: M(s * (run + 0.02), TOP + GH - rise - 0.02, 0), color: wood(0.45), tip: () => 0 });
+    // barge boards along the gable edges
+    [-1, 1].forEach((f) => ext.add(new THREE.BoxGeometry(slope + 0.1, 0.22, 0.05), { m: M(s * run / 2, TOP + GH - rise / 2 + 0.02, f * (D / 2 + 0.66), 0, 0, -s * ang), color: wood(0.45), tip: () => 0 }));
+  });
+  ext.add(new THREE.BoxGeometry(0.34, 0.16, D + 1.4), { m: M(0, TOP + GH + 0.12, 0, 0, 0, Math.PI / 4), color: wood(0.32), tip: () => 1 });   // ridge cap
+  // chimney stack (stone) rising from the fireplace through the roof, with a cap
+  for (let i = 0; i < 8; i++) {
+    ext.add(new THREE.BoxGeometry(0.86 + (i % 2) * 0.04, 0.3, 0.86 + ((i + 1) % 2) * 0.04), { m: M(FIRE.x, TOP + 0.15 + i * 0.3, FIRE.z, 0, (n(i, 1, 1) - 0.5) * 0.08, 0), color: stone, tip: () => 1 });
+  }
+  ext.add(new THREE.BoxGeometry(1.05, 0.08, 1.05), { m: M(FIRE.x, TOP + 0.15 + 8 * 0.3 - 0.06, FIRE.z), color: stone, tip: () => 1 });
+  const smokeFrom = new THREE.Vector3(FIRE.x, TOP + 0.2 + 8 * 0.3, FIRE.z);
+
+  /* ---------- windows: frame, cross bars, sill, shutters, glass, curtains ---------- */
+  const windowAt = (cx, cy, wall) => {
+    // wall: 'front' (z = D/2) or 'right' (x = W/2); w x h = 1.2 x 1.0
+    const rot = wall === 'front' ? 0 : Math.PI / 2;
+    const place = (lx, ly, lz) => (wall === 'front' ? [cx + lx, cy + ly, D / 2 + lz] : [W / 2 + lz, cy + ly, cx - lx]);
+    const box = (P, sx, sy, sz, lx, ly, lz, color, tip = 0) => { const [x, y, z] = place(lx, ly, lz); P.add(new THREE.BoxGeometry(sx, sy, sz), { m: M(x, y, z, 0, rot, 0), color, tip: () => tip }); };
+    const frame = wood(0.55);
+    box(ext, 1.32, 0.09, 0.4, 0, 0.53, 0, frame); box(ext, 1.32, 0.09, 0.4, 0, -0.53, 0, frame);
+    box(ext, 0.09, 1.1, 0.4, -0.62, 0, 0, frame); box(ext, 0.09, 1.1, 0.4, 0.62, 0, 0, frame);
+    box(ext, 0.05, 1.0, 0.06, 0, 0, 0, frame); box(ext, 1.2, 0.05, 0.06, 0, 0, 0, frame);   // cross bars
+    box(ext, 1.45, 0.06, 0.3, 0, -0.6, 0.2, frame, 1);                                       // outside sill
+    [-1, 1].forEach((s) => box(ext, 0.55, 1.05, 0.04, s * 0.98, 0, 0.27, (v) => { const c = 0.42 + n(v.x * 9, v.y * 2, v.z * 9) * 0.1; const slat = Math.abs(((v.y + 5) % 0.14) - 0.07) < 0.012 ? 0.75 : 1; return [c * 0.9 * slat, c * 0.95 * slat, c * 0.92 * slat]; }));   // shutters
+    const [gx, gy, gz] = place(0, 0, 0);
+    glassP.add(new THREE.PlaneGeometry(1.2, 1.0), { m: M(gx, gy, gz, 0, rot, 0), color: flat(1, 1, 1) });
+    glassP.add(new THREE.PlaneGeometry(1.2, 1.0), { m: M(gx, gy, gz, 0, rot + Math.PI, 0), color: flat(1, 1, 1) });
+    // curtains inside, tied back
+    [-1, 1].forEach((s) => box(inn, 0.3, 1.15, 0.03, s * 0.78, 0.02, -0.24, (v) => { const c = 0.78 + Math.sin(v.x * 60 + v.z * 60) * 0.04; return [c, c * 0.95, c * 0.86]; }));
+    box(inn, 1.9, 0.03, 0.03, 0, 0.62, -0.24, flat(0.3, 0.25, 0.2));
+  };
+  windowAt(1.35, 1.45, 'front');
+  windowAt(0.3, 1.45, 'right');
+  // door frame
+  [[DX0 - 0.05, 0.08], [DX1 + 0.05, 0.08]].forEach(([x, w]) => ext.add(new THREE.BoxGeometry(w, DH, 0.42), { m: M(x, DH / 2, D / 2), color: wood(0.55), tip: () => 0 }));
+  ext.add(new THREE.BoxGeometry(DX1 - DX0 + 0.3, 0.12, 0.44), { m: M((DX0 + DX1) / 2, DH + 0.05, D / 2), color: wood(0.55), tip: () => 1 });
+
+  /* ---------- porch: deck, step, roof on posts, bench, lantern ---------- */
+  for (let i = 0; i < 11; i++) {
+    const x = -3.25 + i * 0.6 + 0.3;
+    ext.add(new THREE.BoxGeometry(0.57, 0.08, 2.2), { m: M(x, 0.16, D / 2 + 1.25, 0, (n(i, 2, 2) - 0.5) * 0.01, 0), color: wood(0.52 + (i % 3) * 0.04), tip: () => 1 });
+  }
+  ext.add(new THREE.BoxGeometry(6.65, 0.14, 0.08), { m: M(0.05, 0.1, D / 2 + 2.36), color: wood(0.45), tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(1.4, 0.07, 0.3), { m: M((DX0 + DX1) / 2, 0.05, D / 2 + 2.55), color: wood(0.5), tip: () => 1 });
+  const PR0 = -3.4, PR1 = 0.6;
+  ext.add(new THREE.BoxGeometry(PR1 - PR0, 0.08, 2.55, 4, 1, 4), { m: M((PR0 + PR1) / 2, 2.32, D / 2 + 1.3, -0.12, 0, 0), color: (v, nn) => { const c = (nn.y < 0 ? 0.62 : 0.32) + n(v.x * 3, 0, v.z * 9) * 0.1; return nn.y < 0 ? [c, c * 0.8, c * 0.6] : [c, c * 0.93, c * 0.88]; }, tip: (v, nn) => (nn.y > 0 ? 1 : 0) });
+  [PR0 + 0.25, PR1 - 0.25].forEach((x) => {
+    ext.add(new THREE.BoxGeometry(0.14, 2.2, 0.14), { m: M(x, 1.1, D / 2 + 2.2), color: wood(0.5), tip: () => 0 });
+    ext.add(new THREE.BoxGeometry(0.08, 0.7, 0.08), { m: M(x, 1.95, D / 2 + 1.95, 0.75, 0, 0), color: wood(0.5), tip: () => 0 });   // brace
+  });
+  ext.add(new THREE.BoxGeometry(PR1 - PR0, 0.14, 0.14), { m: M((PR0 + PR1) / 2, 2.12, D / 2 + 2.2), color: wood(0.45), tip: () => 1 });
+  // bench under the window
+  ext.add(new THREE.BoxGeometry(1.4, 0.06, 0.4), { m: M(1.45, 0.47, D / 2 + 0.48), color: wood(0.55), tip: () => 1 });
+  [[0.85], [2.05]].forEach(([x]) => ext.add(new THREE.BoxGeometry(0.06, 0.3, 0.36), { m: M(x, 0.32, D / 2 + 0.48), color: wood(0.45), tip: () => 0 }));
+  // wall lantern beside the door
+  ext.add(new THREE.BoxGeometry(0.04, 0.04, 0.3), { m: M(-0.5, 2.0, D / 2 + 0.3), color: flat(0.15, 0.15, 0.15), tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(0.2, 0.04, 0.2), { m: M(-0.5, 1.98, D / 2 + 0.42), color: flat(0.15, 0.15, 0.15), tip: () => 1 });
+  glowP.add(new THREE.BoxGeometry(0.15, 0.22, 0.15), { m: M(-0.5, 1.84, D / 2 + 0.42), color: flat(1, 1, 1) });
+
+  /* ---------- around the house ---------- */
+  // rain barrel
+  ext.add(new THREE.CylinderGeometry(0.32, 0.29, 0.85, 14), { m: M(W / 2 + 0.55, 0.42, D / 2 - 0.45), color: (v) => { const c = 0.45 + Math.sin(Math.atan2(v.z, v.x) * 14) * 0.03; return [c, c * 0.8, c * 0.6]; }, tip: (v, nn) => (nn.y > 0.5 ? 1 : 0) });
+  [0.12, 0.72].forEach((y) => ext.add(new THREE.CylinderGeometry(0.33, 0.33, 0.04, 14, 1, true), { m: M(W / 2 + 0.55, y, D / 2 - 0.45), color: flat(0.2, 0.2, 0.21), tip: () => 0 }));
+  // stacked firewood along the left wall, end grain showing
+  for (let r = 0; r < 4; r++) for (let i = 0; i < 9 - r; i++) {
+    const z = -1.6 + i * 0.19 + r * 0.09, y = 0.11 + r * 0.18;
+    ext.add(new THREE.CylinderGeometry(0.09 + n(i, r, 1) * 0.03, 0.1, 0.7, 7), { m: M(-W / 2 - 0.58, y, z, 0, 0, Math.PI / 2), color: (v, nn) => (Math.abs(nn.x) > 0.9 ? [0.74, 0.6, 0.42] : wood(0.45)(v)), tip: () => 1 });
+  }
+  // chopping block with an axe
+  ext.add(new THREE.CylinderGeometry(0.3, 0.34, 0.5, 10), { m: M(-W / 2 - 1.4, 0.25, 1.4), color: (v, nn) => (nn.y > 0.5 ? [0.7, 0.58, 0.42] : wood(0.45)(v)), tip: (v, nn) => (nn.y > 0.5 ? 1 : 0) });
+  ext.add(new THREE.CylinderGeometry(0.025, 0.03, 0.75, 6), { m: M(-W / 2 - 1.3, 0.75, 1.4, 0, 0, -0.55), color: wood(0.62), tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(0.2, 0.12, 0.03), { m: M(-W / 2 - 1.48, 0.52, 1.4, 0, 0, -0.55), color: flat(0.35, 0.36, 0.38), tip: () => 0 });
+
+  /* ---------- dock, posts, lanterns ---------- */
+  for (let i = 0; i < dockLen / 0.5; i++) {
+    ext.add(new THREE.BoxGeometry(1.8, 0.08, 0.44), { m: M(-1.3 + (((i * 7) % 5) - 2) * 0.01, 0.2 - i * 0.012, dz0 + i * 0.5, 0, (((i * 3) % 5) - 2) * 0.012, 0), color: wood(0.5 + ((i * 11) % 9) / 60), tip: () => 1 });
+  }
+  for (let i = 0; i <= dockLen / 2.2; i++) [-1, 1].forEach((s) => {
+    ext.add(new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6), { m: M(-1.3 + s * 0.85, -1.1 - i * 0.03, dz0 + i * 2.2), color: wood(0.36), tip: () => 0 });
+  });
+  [-1, 1].forEach((s) => {
+    ext.add(new THREE.CylinderGeometry(0.06, 0.06, 1.3, 6), { m: M(-1.3 + s * 0.85, 0.85, dz0 + dockLen - 0.4), color: wood(0.36), tip: () => 0 });
+    glowP.add(new THREE.BoxGeometry(0.16, 0.2, 0.16), { m: M(-1.3 + s * 0.85, 1.6, dz0 + dockLen - 0.4), color: flat(1, 1, 1) });
+  });
+
+  /* ---------- inside ---------- */
+  const IX = W / 2 - LR, IZ = D / 2 - LR;
+  // plank floor
+  for (let x = -IX, i = 0; x < IX - 0.01; x += 0.2, i++) {
+    inn.add(new THREE.BoxGeometry(0.195, 0.06, IZ * 2 + 0.1), { m: M(x + 0.1, 0.09, 0), color: (v) => { const c = (0.5 + (i % 4) * 0.025) * (0.92 + n(v.x * 4, 0, v.z * 1.2) * 0.16) * (Math.abs(((v.z + 9 + i * 0.37) % 1.6) - 0.8) < 0.01 ? 0.7 : 1); return [c, c * 0.8, c * 0.6]; } });
+  }
+  // rug
+  inn.add(new THREE.BoxGeometry(2.3, 0.014, 1.55), { m: M(0.55, 0.127, 0.5), color: (v) => { const band = Math.floor(Math.abs(v.x - 0.55) / 0.17) % 3; const edge = Math.abs(v.x - 0.55) > 1.05 || Math.abs(v.z - 0.5) > 0.68; return edge ? [0.32, 0.2, 0.17] : band === 0 ? [0.55, 0.28, 0.22] : band === 1 ? [0.78, 0.7, 0.58] : [0.36, 0.38, 0.32]; } });
+  // beams: two tie beams, a ridge beam and rafters under the roof
+  [-1.1, 1.1].forEach((z) => inn.add(new THREE.BoxGeometry(W - 0.2, 0.2, 0.2), { m: M(0, TOP - 0.02, z), color: wood(0.42) }));
+  inn.add(new THREE.BoxGeometry(0.2, 0.22, D + 0.2), { m: M(0, TOP + GH - 0.2, 0), color: wood(0.42) });
+  [-1, 1].forEach((s) => [-1.8, 0, 1.8].forEach((z) => inn.add(new THREE.BoxGeometry(slope - 0.6, 0.14, 0.1), { m: M(s * (run - 0.3) / 2, TOP + GH - (rise) * 0.47 - 0.1, z, 0, 0, -s * ang), color: wood(0.4) })));
+  // fireplace: stone hearth, sides, back, wooden mantel, chimney breast
+  const F = FIRE;
+  inn.add(new THREE.BoxGeometry(1.95, 0.12, 1.0), { m: M(F.x, 0.17, -IZ + 0.5), color: stone });
+  [-1, 1].forEach((s) => inn.add(new THREE.BoxGeometry(0.36, 1.25, 0.7), { m: M(F.x + s * 0.76, 0.85, -IZ + 0.35), color: stone }));
+  inn.add(new THREE.BoxGeometry(1.2, 1.25, 0.2), { m: M(F.x, 0.85, -IZ + 0.1), color: (v) => { const c = stone(v); return [c[0] * 0.45, c[1] * 0.42, c[2] * 0.4]; } });   // sooty back
+  inn.add(new THREE.BoxGeometry(2.0, 0.16, 0.42), { m: M(F.x, 1.44, -IZ + 0.4), color: wood(0.42) });
+  for (let i = 0; i < 4; i++) inn.add(new THREE.BoxGeometry(1.3 - i * 0.04, 0.3, 0.55), { m: M(F.x, 1.67 + i * 0.3, -IZ + 0.27), color: stone });
+  // the fire: logs, glowing embers, flames (flames are animated)
+  [[-0.2, 0.3], [0.15, -0.25], [0.0, 0.05]].forEach(([dx, r]) => inn.add(new THREE.CylinderGeometry(0.07, 0.08, 0.7, 7), { m: M(F.x + dx * 0.4, 0.3, -IZ + 0.42, 0, r, Math.PI / 2), color: (v, nn) => (Math.abs(nn.x) > 0.8 ? [0.2, 0.15, 0.1] : [0.18, 0.13, 0.1]) }));
+  glowP.add(new THREE.BoxGeometry(0.9, 0.05, 0.45), { m: M(F.x, 0.25, -IZ + 0.42), color: flat(1, 0.62, 0.3) });
+  // firewood basket
+  inn.add(new THREE.CylinderGeometry(0.28, 0.24, 0.32, 10, 1, true), { m: M(F.x - 1.25, 0.28, -IZ + 0.35), color: wood(0.5) });
+  for (let i = 0; i < 5; i++) inn.add(new THREE.CylinderGeometry(0.05, 0.05, 0.55, 6), { m: M(F.x - 1.25 + (i - 2) * 0.08, 0.42 + (i % 2) * 0.04, -IZ + 0.35, 0.2 * (i - 2), 0, Math.PI / 2 + 0.1), color: wood(0.5) });
+  // bed in the back-left corner
+  const B0 = -IX + 0.02, B1 = B0 + 1.95, BZ0 = -IZ + 0.02, BZ1 = BZ0 + 1.0;
+  const bx = (B0 + B1) / 2, bz = (BZ0 + BZ1) / 2;
+  [[B0 + 0.05, BZ0 + 0.05, 0.9], [B0 + 0.05, BZ1 - 0.05, 0.9], [B1 - 0.05, BZ0 + 0.05, 0.6], [B1 - 0.05, BZ1 - 0.05, 0.6]].forEach(([x, z, h]) => inn.add(new THREE.BoxGeometry(0.09, h, 0.09), { m: M(x, 0.12 + h / 2, z), color: wood(0.45) }));
+  inn.add(new THREE.BoxGeometry(0.06, 0.45, BZ1 - BZ0 - 0.1), { m: M(B0 + 0.05, 0.75, bz), color: wood(0.5) });   // headboard
+  inn.add(new THREE.BoxGeometry(B1 - B0, 0.12, BZ1 - BZ0), { m: M(bx, 0.36, bz), color: wood(0.45) });
+  inn.add(new THREE.BoxGeometry(B1 - B0 - 0.1, 0.16, BZ1 - BZ0 - 0.08), { m: M(bx, 0.5, bz), color: flat(0.86, 0.84, 0.78) });   // mattress
+  inn.add(new THREE.BoxGeometry(1.3, 0.05, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.68, 0.6, bz), color: (v) => { const check = (Math.floor(v.x * 6) + Math.floor(v.z * 6)) % 2; return check ? [0.46, 0.2, 0.18] : [0.52, 0.26, 0.22]; } });   // blanket
+  inn.add(new THREE.BoxGeometry(0.08, 0.25, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.03, 0.5, bz), color: flat(0.46, 0.2, 0.18) });
+  const pillow = new THREE.SphereGeometry(1, 12, 8);
+  inn.add(pillow, { m: M(B0 + 0.32, 0.64, bz, 0, 0, 0, 0.2, 0.08, 0.36), color: flat(0.92, 0.9, 0.86) });
+  // chest at the foot of the bed
+  inn.add(new THREE.BoxGeometry(0.7, 0.42, 0.42), { m: M(B1 + 0.45, 0.33, BZ0 + 0.25), color: wood(0.5) });
+  inn.add(new THREE.BoxGeometry(0.72, 0.05, 0.44), { m: M(B1 + 0.45, 0.4, BZ0 + 0.25), color: flat(0.25, 0.25, 0.26) });
+  // table with two chairs, lantern, mug, book and a bowl of grey fruit
+  const T = { x: 0.9, z: 0.6 };
+  inn.add(new THREE.BoxGeometry(1.3, 0.06, 0.85), { m: M(T.x, 0.88, T.z), color: wood(0.55) });
+  [[-0.58, -0.36], [0.58, -0.36], [-0.58, 0.36], [0.58, 0.36]].forEach(([dx, dz]) => inn.add(new THREE.BoxGeometry(0.07, 0.73, 0.07), { m: M(T.x + dx, 0.48, T.z + dz), color: wood(0.45) }));
+  [-1, 1].forEach((s) => {
+    const cz = T.z + s * 0.68;
+    inn.add(new THREE.BoxGeometry(0.44, 0.05, 0.42), { m: M(T.x, 0.58, cz), color: wood(0.5) });
+    [[-0.18, -0.17], [0.18, -0.17], [-0.18, 0.17], [0.18, 0.17]].forEach(([dx, dz]) => inn.add(new THREE.BoxGeometry(0.045, 0.46, 0.045), { m: M(T.x + dx, 0.35, cz + dz), color: wood(0.45) }));
+    inn.add(new THREE.BoxGeometry(0.44, 0.5, 0.04), { m: M(T.x, 0.85, cz + s * 0.2), color: wood(0.5) });
+  });
+  glowP.add(new THREE.BoxGeometry(0.12, 0.16, 0.12), { m: M(T.x + 0.35, 1.0, T.z - 0.15), color: flat(1, 1, 1) });
+  inn.add(new THREE.BoxGeometry(0.16, 0.03, 0.16), { m: M(T.x + 0.35, 0.92, T.z - 0.15), color: flat(0.15, 0.15, 0.15) });
+  inn.add(new THREE.BoxGeometry(0.14, 0.03, 0.14), { m: M(T.x + 0.35, 1.09, T.z - 0.15), color: flat(0.15, 0.15, 0.15) });
+  inn.add(new THREE.CylinderGeometry(0.045, 0.04, 0.1, 10), { m: M(T.x - 0.3, 0.96, T.z + 0.2), color: flat(0.75, 0.73, 0.7) });
+  inn.add(new THREE.BoxGeometry(0.22, 0.04, 0.3), { m: M(T.x - 0.25, 0.93, T.z - 0.2, 0, 0.3, 0), color: flat(0.3, 0.36, 0.42) });
+  inn.add(new THREE.CylinderGeometry(0.16, 0.1, 0.07, 14, 1, true), { m: M(T.x + 0.05, 0.95, T.z + 0.15), color: wood(0.5) });
+  [[0, 0], [0.07, 0.05], [-0.06, 0.05], [0.0, -0.07]].forEach(([dx, dz], i) => inn.add(new THREE.SphereGeometry(0.055, 10, 7), { m: M(T.x + 0.05 + dx, 0.99 + (i === 3 ? 0.04 : 0), T.z + 0.15 + dz), color: flat(0.66, 0.66, 0.65) }));
+  // shelf on the left wall with jars and books
+  [1.35, 1.75].forEach((y) => {
+    inn.add(new THREE.BoxGeometry(0.26, 0.04, 1.3), { m: M(-IX + 0.14, y, 0.9), color: wood(0.5) });
+    inn.add(new THREE.BoxGeometry(0.04, 0.16, 0.04), { m: M(-IX + 0.04, y - 0.1, 0.35), color: wood(0.4) });
+    inn.add(new THREE.BoxGeometry(0.04, 0.16, 0.04), { m: M(-IX + 0.04, y - 0.1, 1.45), color: wood(0.4) });
+  });
+  [[0.4, 0.08, 0.16, [0.62, 0.66, 0.66]], [0.6, 0.06, 0.12, [0.6, 0.58, 0.5]], [0.78, 0.07, 0.2, [0.55, 0.6, 0.62]]].forEach(([z, r, h, c]) => {
+    inn.add(new THREE.CylinderGeometry(r, r, h, 10), { m: M(-IX + 0.14, 1.37 + h / 2, z), color: flat(...c) });
+    inn.add(new THREE.CylinderGeometry(r * 0.8, r * 0.8, 0.03, 10), { m: M(-IX + 0.14, 1.38 + h, z), color: flat(0.45, 0.35, 0.25) });
+  });
+  [[1.0, 0.24, [0.45, 0.22, 0.2]], [1.06, 0.2, [0.25, 0.32, 0.36]], [1.12, 0.26, [0.4, 0.38, 0.28]], [1.18, 0.22, [0.6, 0.55, 0.45]], [1.26, 0.19, [0.3, 0.3, 0.32]]].forEach(([z, h, c], i) => {
+    inn.add(new THREE.BoxGeometry(0.18, h, 0.05), { m: M(-IX + 0.14, 1.77 + h / 2, z, i === 4 ? 0.25 : 0, 0, 0), color: flat(...c) });
+  });
+  // coat on a peg and boots by the door
+  inn.add(new THREE.CylinderGeometry(0.015, 0.015, 0.12, 5), { m: M(-2.6, 1.7, IZ - 0.06, Math.PI / 2, 0, 0), color: wood(0.4) });
+  inn.add(new THREE.BoxGeometry(0.42, 0.85, 0.12), { m: M(-2.6, 1.25, IZ - 0.1), color: (v) => { const c = 0.32 + n(v.x * 9, v.y * 9, 0) * 0.04; return [c * 0.85, c, c * 0.9]; } });
+  [-2.7, -2.48].forEach((x) => {
+    inn.add(new THREE.BoxGeometry(0.11, 0.26, 0.13), { m: M(x, 0.25, IZ - 0.2), color: flat(0.2, 0.16, 0.13) });
+    inn.add(new THREE.BoxGeometry(0.11, 0.07, 0.26), { m: M(x, 0.155, IZ - 0.26), color: flat(0.2, 0.16, 0.13) });
+  });
+  // a small framed picture beside the fireplace
+  inn.add(new THREE.BoxGeometry(0.5, 0.38, 0.03), { m: M(-0.25, 1.6, -IZ + 0.02), color: wood(0.4) });
+  inn.add(new THREE.PlaneGeometry(0.4, 0.28), { m: M(-0.25, 1.6, -IZ + 0.04), color: (v) => (v.y > 1.6 ? [0.7, 0.72, 0.74] : [0.4, 0.45, 0.4]) });
+
+  /* ---------- the door (its own mesh, turning on its hinge) ---------- */
+  const doorP = new Parts();
+  const DW = DX1 - DX0 - 0.04;
+  for (let i = 0; i < 5; i++) doorP.add(new THREE.BoxGeometry(DW / 5 - 0.008, DH - 0.04, 0.06), { m: M(0.02 + DW / 10 + i * DW / 5, (DH - 0.04) / 2, 0), color: wood(0.5 + (i % 2) * 0.04), tip: () => 0 });
+  [0.35, DH - 0.4].forEach((y) => doorP.add(new THREE.BoxGeometry(DW - 0.1, 0.12, 0.04), { m: M(0.02 + DW / 2, y, -0.05), color: wood(0.46), tip: () => 0 }));
+  doorP.add(new THREE.BoxGeometry(0.1, Math.hypot(DW - 0.2, DH - 0.95), 0.04), { m: M(0.02 + DW / 2, DH / 2 - 0.02, -0.05, 0, 0, Math.atan2(DW - 0.2, DH - 0.95)), color: wood(0.46), tip: () => 0 });
+  [0.06, -0.08].forEach((z) => doorP.add(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 6), { m: M(DW - 0.1, 1.0, z), color: flat(0.18, 0.18, 0.19), tip: () => 0 }));
+  [0.3, DH - 0.3].forEach((y) => doorP.add(new THREE.BoxGeometry(0.4, 0.05, 0.075), { m: M(0.22, y, 0), color: flat(0.18, 0.18, 0.19), tip: () => 0 }));   // hinges
+
+  /* ---------- boat ---------- */
+  const boatP = new Parts();
+  boatP.add(new THREE.SphereGeometry(1, 14, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), { m: M(0, 0, 0, 0, 0, 0, 1.25, 0.42, 0.5), color: (p) => (p.y > -0.05 ? [0.55, 0.4, 0.28] : [0.4, 0.3, 0.22]), tip: () => 1 });
+  boatP.add(new THREE.BoxGeometry(0.16, 0.05, 0.9), { m: M(0.1, -0.08, 0), color: flat(0.5, 0.4, 0.3), tip: () => 1 });
+  boatP.add(new THREE.BoxGeometry(0.16, 0.05, 0.75), { m: M(-0.6, -0.08, 0), color: flat(0.5, 0.4, 0.3), tip: () => 1 });
+  boatP.add(new THREE.CylinderGeometry(0.025, 0.025, 2.2, 5), { m: M(0.2, 0.0, 0.1, 0, 0.3, 1.45), color: flat(0.55, 0.45, 0.32), tip: () => 0 });
+
+  /* ---------- materials and meshes ---------- */
+  const ONE = { value: 1 };
+  const extMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, snowBias: 0.12 });
+  const intMat = coverMaterial({ ...shared, uSnowCover: { value: 0 }, uMoss: { value: 0 }, uFrost: { value: 0 } }, ONE, { color: 0xdccdb9 });
+  const boatMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, side: THREE.DoubleSide });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x141414 });
+  const glassMat = new THREE.MeshBasicMaterial({ color: 0xa9b7c0, transparent: true, opacity: 0.16, depthWrite: false });
+
+  const group = new THREE.Group();
+  group.position.set(CABIN.x, CABIN.y, CABIN.z);
+  group.rotation.y = CABIN.yaw;
+  group.scale.setScalar(S);
+  const extMesh = new THREE.Mesh(ext.geometry(), extMat); extMesh.castShadow = true; extMesh.receiveShadow = true;
+  const intMesh = new THREE.Mesh(inn.geometry(), intMat); intMesh.receiveShadow = true;
+  const glowMesh = new THREE.Mesh(glowP.geometry(), glowMat);
+  const glassMesh = new THREE.Mesh(glassP.geometry(), glassMat); glassMesh.renderOrder = 2;
+  const door = new THREE.Mesh(doorP.geometry(), extMat); door.castShadow = true;
+  const hinge = new THREE.Group(); hinge.position.set(DX0 + 0.02, 0.1, D / 2); hinge.add(door);
+  const boat = new THREE.Mesh(boatP.geometry(), boatMat); boat.castShadow = true;
+  boat.position.set(0.9, 0, dz0 + dockLen - 2.5); boat.rotation.y = 0.12;
+  // flames: soft additive tongues that flicker
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+  const flames = [[-0.18, 0.28], [0.12, 0.34], [0.0, 0.42], [0.25, 0.22]].map(([dx, h]) => {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.09, 1, 7, 1, true).translate(0, 0.5, 0), flameMat);
+    f.position.set(FIRE.x + dx, 0.3, -IZ + 0.42); f.userData.h = h; group.add(f); return f;
+  });
+  group.add(extMesh, intMesh, glowMesh, glassMesh, hinge, boat);
+  scene.add(group);
+  const fireLight = new THREE.PointLight(0xffa058, 0, 46, 1.4);
+  fireLight.position.copy(new THREE.Vector3(FIRE.x, 0.9, -IZ + 1.1)).applyAxisAngle(new THREE.Vector3(0, 1, 0), CABIN.yaw).multiplyScalar(S).add(group.position);
+  scene.add(fireLight);
+  const fireBase = fireLight.position.clone();
+
+  // chimney smoke
+  const smoke = (() => {
+    const N = 90, g = new THREE.BufferGeometry();
+    const pos = new Float32Array(N * 3), seed = new Float32Array(N);
+    for (let i = 0; i < N; i++) seed[i] = i / N;
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: { uTime: U.uTime, uOpacity: { value: 0 }, uColor: { value: new THREE.Color(0xc9c9c9) }, uSize: { value: 70 } },
+      vertexShader: /* glsl */`
+        uniform float uTime, uSize; attribute float aSeed; varying float vA;
+        void main() {
+          float t = fract(uTime * 0.045 + aSeed);
+          vec3 p = vec3(sin(aSeed * 91.0) * (0.6 + t * 5.0) + t * t * 30.0 + sin(uTime * 0.3 + aSeed * 20.0) * 3.0 * t, t * 55.0, cos(aSeed * 47.0) * (0.6 + t * 5.0) + t * 8.0);
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = uSize * (0.35 + t * 2.2) * (60.0 / -mv.z);
+          vA = smoothstep(0.0, 0.12, t) * (1.0 - t) * (1.0 - t) * 0.22;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */`
+        uniform float uOpacity; uniform vec3 uColor; varying float vA;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          float a = smoothstep(0.5, 0.0, d);
+          gl_FragColor = vec4(uColor, a * a * uOpacity * vA);
+          #include <colorspace_fragment>
+        }`
+    });
+    const pts = new THREE.Points(g, mat); pts.frustumCulled = false;
+    pts.position.copy(group.localToWorld(smokeFrom.clone()));
+    scene.add(pts);
+    return pts;
+  })();
+
+  /* ---------- solid parts and floors (worked out in the house's own metres) ---------- */
+  const toLocal = (wx, wz) => {
+    const dx = (wx - CABIN.x) / S, dz = (wz - CABIN.z) / S, c = Math.cos(CABIN.yaw), s = Math.sin(CABIN.yaw);
+    return [dx * c - dz * s, dx * s + dz * c];
+  };
+  const toWorld = (lx, lz) => { const c = Math.cos(CABIN.yaw), s = Math.sin(CABIN.yaw); return [CABIN.x + (lx * c + lz * s) * S, CABIN.z + (-lx * s + lz * c) * S]; };
+  const RECTS = [
+    // walls
+    [-W / 2 - 0.3, W / 2 + 0.3, -D / 2 - LR, -D / 2 + LR],
+    [-W / 2 - LR, -W / 2 + LR, -D / 2 - 0.3, D / 2 + 0.3],
+    [W / 2 - LR, W / 2 + LR, -D / 2 - 0.3, D / 2 + 0.3],
+    [-W / 2 - 0.3, DX0, D / 2 - LR, D / 2 + LR],
+    [DX1, W / 2 + 0.3, D / 2 - LR, D / 2 + LR],
+    // inside
+    [B0, B1, BZ0, BZ1], [B1 + 0.08, B1 + 0.82, BZ0, BZ0 + 0.5],
+    [T.x - 0.65, T.x + 0.65, T.z - 0.43, T.z + 0.43], [T.x - 0.25, T.x + 0.25, T.z - 0.95, T.z - 0.45], [T.x - 0.25, T.x + 0.25, T.z + 0.45, T.z + 0.95],
+    [F.x - 1.0, F.x + 1.0, -IZ - 0.1, -IZ + 1.0], [F.x - 1.55, F.x - 0.95, -IZ, -IZ + 0.65],
+    [-IX, -IX + 0.3, 0.25, 1.55],
+    // outside
+    [0.8, 2.15, D / 2 + 0.26, D / 2 + 0.7],
+    [-W / 2 - 0.95, -W / 2 - 0.2, -1.75, 0.0],
+    [W / 2 + 0.2, W / 2 + 0.9, D / 2 - 0.8, D / 2 - 0.1],
+    [-W / 2 - 1.75, -W / 2 - 1.05, 1.05, 1.75],
+    [PR0 + 0.15, PR0 + 0.35, D / 2 + 2.1, D / 2 + 2.3], [PR1 - 0.35, PR1 - 0.15, D / 2 + 2.1, D / 2 + 2.3]
+  ];
+  const DOOR_CLOSED = [DX0, DX1, D / 2 - 0.1, D / 2 + 0.1];
+  const DOOR_OPEN = [DX0 - 0.06, DX0 + 0.08, D / 2 - DW - 0.05, D / 2];
+  const inRect = (lx, lz, [x0, x1, z0, z1], p) => lx > x0 - p && lx < x1 + p && lz > z0 - p && lz < z1 + p;
+  const door$ = { open: false, a: 0, from: 0, t0: -1e9 };
+
+  // hint shown near the door
+  const doorWorld = toWorld((DX0 + DX1) / 2, D / 2);
+
+  return {
+    group,
+    // true when (wx, wz) is inside something solid; pad grows everything (world units)
+    blocked(wx, wz, pad = 0) {
+      const [lx, lz] = toLocal(wx, wz);
+      if (Math.abs(lx) > W / 2 + 3 || lz < -D / 2 - 3 || lz > D / 2 + 4) return false;
+      const p = 0.17 + pad / S;
+      for (const r of RECTS) if (inRect(lx, lz, r, p)) return true;
+      if (door$.a < 0.5 ? inRect(lx, lz, DOOR_CLOSED, p) : inRect(lx, lz, DOOR_OPEN, p * 0.6)) return true;
+      return false;
+    },
+    // are you inside the house? (no rain, no mist in here)
+    inside(wx, wz) { const [lx, lz] = toLocal(wx, wz); return Math.abs(lx) < W / 2 && Math.abs(lz) < D / 2; },
+    // height of the floor you'd stand on here (inside, porch, dock), or -Infinity
+    floorAt(wx, wz) {
+      const [lx, lz] = toLocal(wx, wz);
+      const y = (m) => CABIN.y + m * S;
+      if (lx > -W / 2 + LR - 0.05 && lx < W / 2 - LR + 0.05 && lz > -D / 2 + LR && lz < D / 2 + LR + 0.05) return y(0.12);
+      if (lx > -3.3 && lx < 3.4 && lz >= D / 2 + LR + 0.05 && lz < D / 2 + 2.4) return y(0.2);
+      if (lx > -2.25 && lx < -0.35 && lz > dz0 - 0.3 && lz < dz0 + dockLen) return y(0.24 - (lz - dz0) * 0.024);
+      return -Infinity;
+    },
+    door: {
+      near(wx, wz) { return Math.hypot(wx - doorWorld[0], wz - doorWorld[1]) < 13; },
+      get open() { return door$.open; },
+      // the door won't shut on you
+      canToggle(wx, wz) { if (!door$.open) return true; const [lx, lz] = toLocal(wx, wz); return !inRect(lx, lz, [DX0 - 0.1, DX1 + 0.1, D / 2 - DW - 0.1, D / 2 + 0.25], 0.17); },
+      toggle(now) { door$.open = !door$.open; door$.from = door$.a; door$.t0 = now; return door$.open; }
+    },
+    update(s, time, now, waterY) {
+      const show = s.pCabin, on = show > 0.01;
+      group.visible = on; smoke.visible = on && show > 0.5;
+      group.scale.setScalar(S * Math.max(0.001, show));
+      // door swings with a little ease, overshoot on opening, a soft bump on closing
+      const k = Math.min(1, (now - door$.t0) / 900);
+      const e = door$.open ? 1 - Math.pow(1 - k, 3) * Math.cos(k * 3.2) : 1 - Math.pow(1 - k, 4);
+      door$.a = door$.from + ((door$.open ? 1 : 0) - door$.from) * e;
+      hinge.rotation.y = door$.a * 1.72;
+      // fire, lanterns and the warm light inside
+      const g = Math.min(1, s.pGlow);
+      const flick = 0.86 + 0.08 * Math.sin(time * 9.1 + Math.sin(time * 2.7) * 2) + 0.06 * Math.sin(time * 23.3);
+      glowMat.color.setRGB(0.07, 0.07, 0.075).lerp(new THREE.Color(1.3, 0.8, 0.42), g * flick);
+      flames.forEach((f, i) => { const h = f.userData.h * (0.75 + 0.35 * Math.sin(time * (7 + i * 1.7) + i * 2) * Math.sin(time * (3.1 + i))); f.scale.set(1, Math.max(0.05, h * g), 1); f.visible = g > 0.05; });
+      flameMat.opacity = 0.75 * g;
+      fireLight.intensity = g * show * 220 * flick;
+      fireLight.position.set(fireBase.x + Math.sin(time * 5.3) * 0.15, fireBase.y + Math.sin(time * 7.1) * 0.1, fireBase.z);
+      smoke.material.uniforms.uColor.value.copy(s.fog).multiplyScalar(1.1).addScalar(0.05);
+      smoke.material.uniforms.uOpacity.value = Math.min(show, 0.35 + g * 0.5);
+      // the boat rocks on the water
+      boat.position.y = (waterY + 0.9 + Math.sin(time * 0.9) * 0.15 - CABIN.y) / S;
+      boat.rotation.z = Math.sin(time * 0.7) * 0.03;
+    }
+  };
+}

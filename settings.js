@@ -15,7 +15,8 @@
     sound: true,
     volume: 0.7,
     hints: true,
-    motion: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'
+    motion: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full',
+    cursor: 'paw'   // mouse pointer: paw, classic, soft or buddy
   };
 
   // [value, label key, preview swatch] — muted colours, black & white to soft colour
@@ -67,6 +68,7 @@
     root.classList.toggle('reduce-motion', s.motion === 'reduced');
     if (window.MEOW_BG) { window.MEOW_BG.setScene(s.scene); window.MEOW_BG.setMotion(s.motion); }
     if (window.MEOW_SOUND) { window.MEOW_SOUND.setVolume(s.volume); window.MEOW_SOUND.setEnabled(s.sound); }
+    if (window.MEOW_CURSOR) window.MEOW_CURSOR.set(s.cursor);
     syncPanel();
   };
 
@@ -77,6 +79,7 @@
   const syncPanel = () => {
     setSeg($('langSeg'), s.lang);
     setSeg($('motionSeg'), s.motion);
+    setSeg($('cursorGrid'), s.cursor);
     setSwitch($('soundSwitch'), s.sound);
     setSwitch($('hintSwitch'), s.hints);
     $('volume').value = Math.round(s.volume * 100);
@@ -154,6 +157,10 @@
     $('motionSeg').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
       s.motion = b.dataset.val; save(); apply();
+    });
+    $('cursorGrid').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      s.cursor = b.dataset.val; save(); apply();
     });
     $('soundSwitch').addEventListener('click', () => { s.sound = !s.sound; save(); apply(); });
     $('hintSwitch').addEventListener('click', () => { s.hints = !s.hints; save(); apply(); });

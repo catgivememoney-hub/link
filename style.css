@@ -769,3 +769,107 @@ html.reduce-motion .lamp-glow { animation: none; }
 /* nothing on the page gets accidentally selected or dragged while looking around */
 img { -webkit-user-drag: none; user-select: none; }
 .top, .stage .wordmark, .explore-ui { user-select: none; -webkit-user-select: none; }
+
+/* =====================================================================
+   GALLERY TAGS — the chosen tag lifts a little and glows with a soft gradient
+   ===================================================================== */
+.rail-chip { position: relative; isolation: isolate; }
+.rail-chip[aria-pressed="true"] {
+  color: var(--solid);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ink) 94%, transparent), color-mix(in srgb, var(--ink) 72%, transparent));
+  border-color: transparent;
+  transform: translateZ(26px) scale(1.09);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--solid) 30%, transparent) inset,
+              0 0 16px color-mix(in srgb, var(--ink) 30%, transparent),
+              0 0 36px color-mix(in srgb, var(--ink) 18%, transparent),
+              0 14px 28px rgba(0, 0, 0, 0.2);
+}
+/* a gradient ring that slowly travels around the chosen tag */
+.rail-chip[aria-pressed="true"]::before {
+  content: ""; position: absolute; inset: -2px; border-radius: inherit; padding: 1.5px; z-index: -1;
+  background: linear-gradient(110deg, transparent 10%, rgba(255, 255, 255, 0.9) 35%, color-mix(in srgb, var(--ink) 40%, #b9c2c8) 55%, transparent 80%) 0 0 / 250% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+  animation: chipRing 3.2s linear infinite;
+}
+/* and a soft halo behind it */
+.rail-chip[aria-pressed="true"]::after {
+  content: ""; position: absolute; inset: -8px; border-radius: inherit; z-index: -2;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--glow, #fff) 70%, transparent), transparent);
+  filter: blur(8px); opacity: 0.85;
+  animation: chipHalo 2.8s ease-in-out infinite;
+}
+@keyframes chipRing { to { background-position: -250% 0; } }
+@keyframes chipHalo { 50% { opacity: 0.45; transform: scale(0.96); } }
+html.reduce-motion .rail-chip[aria-pressed="true"]::before, html.reduce-motion .rail-chip[aria-pressed="true"]::after { animation: none; }
+
+/* =====================================================================
+   HOLD-E HINT (cabin door)
+   ===================================================================== */
+.act-hint {
+  position: fixed; left: 50%; bottom: 150px; z-index: 30; display: flex; align-items: center; gap: 10px;
+  padding: 7px 16px 7px 8px; border-radius: 999px; color: var(--ink);
+  background: var(--glass); border: 1px solid var(--glass-line);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+  font-size: 0.78rem; letter-spacing: 0.08em; pointer-events: none;
+  opacity: 0; transform: translate(-50%, 10px) scale(0.96); transition: opacity 0.35s, transform 0.45s var(--ease);
+}
+.act-hint.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.act-hint svg { width: 30px; height: 30px; transform: rotate(-90deg); position: absolute; left: 8px; }
+.act-hint circle { fill: none; stroke-width: 2.4; }
+.act-hint .trk { stroke: color-mix(in srgb, var(--ink) 18%, transparent); }
+.act-hint .bar { stroke: var(--ink); stroke-linecap: round; stroke-dasharray: 100.5; stroke-dashoffset: 100.5; }
+.act-hint kbd { width: 30px; height: 30px; display: grid; place-items: center; font: 600 0.78rem/1 inherit; border: 0; background: none; box-shadow: none; }
+
+/* =====================================================================
+   CUSTOM POINTERS (cursor.js) — frosted fill, colours follow the scene
+   ===================================================================== */
+:root {
+  --cur-line: rgba(18, 20, 23, 0.92);
+  --cur-fill: rgba(255, 255, 255, 0.34);
+  --cur-rim: rgba(255, 255, 255, 0.95);
+  --cur-solid: rgba(22, 24, 28, 0.62);
+}
+:root[data-scene="night"], :root[data-scene="aurora"], :root[data-scene="ocean"], :root[data-theme="dark"] {
+  --cur-line: rgba(246, 245, 240, 0.95);
+  --cur-fill: rgba(20, 22, 28, 0.34);
+  --cur-rim: rgba(10, 12, 16, 0.85);
+  --cur-solid: rgba(246, 245, 240, 0.58);
+}
+:root[data-scene="rain"]:not([data-theme="dark"]) { --cur-fill: rgba(245, 247, 248, 0.42); }
+:root[data-scene="snow"]:not([data-theme="dark"]), :root[data-scene="frost"]:not([data-theme="dark"]) { --cur-fill: rgba(150, 165, 178, 0.32); --cur-line: rgba(14, 18, 24, 0.95); }
+:root[data-scene="mist"]:not([data-theme="dark"]) { --cur-fill: rgba(235, 242, 238, 0.38); }
+
+html.mcur-on, html.mcur-on * { cursor: none !important; }
+html.mcur-on input:not([type="range"]):not([type="button"]), html.mcur-on textarea { cursor: text !important; }
+.mcur { position: fixed; left: 0; top: 0; z-index: 2147483000; pointer-events: none; opacity: 0; transition: opacity 0.2s; will-change: transform; }
+.mcur.show { opacity: 1; }
+.mcur.text .mcur-arrow { opacity: 0; }
+.mcur-arrow { position: absolute; left: -3px; top: -2px; width: 32px; height: 32px; transform-origin: 3px 2px; transition: transform 0.22s var(--spring, ease), opacity 0.15s; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.22)); }
+.mcur.hover .mcur-arrow { transform: scale(1.14); }
+.mcur.down .mcur-arrow { transform: scale(0.88); }
+.mcur-fill { position: absolute; inset: 0; background: var(--cur-fill); -webkit-backdrop-filter: blur(5px) saturate(1.4); backdrop-filter: blur(5px) saturate(1.4); transition: background 1.2s; }
+.mcur-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.mcur-line path { fill: none; stroke-linejoin: round; stroke-linecap: round; transition: stroke 1.2s; }
+.mcur-line .rim { stroke: var(--cur-rim); stroke-width: 4; opacity: 0.55; }
+.mcur-line .ink { stroke: var(--cur-line); stroke-width: 1.7; }
+/* soft: the fill is the strong part, with a bright rim around it */
+html[data-cursor="soft"] .mcur-fill { background: var(--cur-solid); }
+html[data-cursor="soft"] .mcur-line .rim { stroke-width: 4.2; opacity: 1; }
+html[data-cursor="soft"] .mcur-line .ink { stroke: var(--cur-rim); stroke-width: 1.2; opacity: 0.6; }
+html[data-cursor="buddy"] .mcur-line .ink { stroke-width: 2.1; }
+.mcur-buddy { position: absolute; left: -4px; top: -4px; width: 28px; height: 28px; transform-origin: 14px 24px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.2)); }
+.mcur-buddy[hidden] { display: none; }
+.mcur-buddy .eye { fill: var(--cur-line); }
+.mcur-buddy .mouth { fill: none; stroke: var(--cur-line); stroke-width: 1.1; stroke-linecap: round; }
+.mcur.down .mcur-buddy .eye { transform: scaleY(0.25); transform-box: fill-box; transform-origin: center; }
+
+/* cursor choices in Settings */
+.cursors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.cursors button { display: grid; justify-items: center; gap: 6px; padding: 10px 4px 8px; border-radius: 14px; border: 1px solid var(--glass-line); background: var(--glass); color: var(--ink); font-size: 0.72rem; letter-spacing: 0.04em; transition: transform 0.3s var(--spring, ease), border-color 0.3s, box-shadow 0.3s; }
+.cursors button:hover { transform: translateY(-2px); }
+.cursors button[aria-pressed="true"] { border-color: var(--ring-hi); box-shadow: 0 0 0 1px var(--ring-hi) inset, 0 0 18px color-mix(in srgb, var(--ink) 16%, transparent); }
+.cursors svg { width: 34px; height: 34px; }
+.cursors svg .f { fill: color-mix(in srgb, var(--ink) 14%, transparent); }
+.cursors svg .l { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+.cursors svg .s { fill: currentColor; stroke: var(--solid); stroke-width: 2; stroke-linejoin: round; }
