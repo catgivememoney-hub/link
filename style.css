@@ -37,13 +37,13 @@ body {
 .top { display: flex; justify-content: space-between; align-items: center; padding: 26px 0 8px; }
 .brand { display: flex; align-items: center; gap: 14px; }
 .logo {
-  width: 52px; height: 52px; border-radius: 50%;
-  object-fit: cover;
-  border: 2px solid var(--text);
-  filter: grayscale(1);
-  transition: filter 0.3s, transform 0.3s;
+  width: 56px; height: 56px; border-radius: 50%;
+  object-fit: contain;
+  transition: transform 0.3s;
 }
-.logo:hover { filter: none; transform: rotate(-8deg) scale(1.05); }
+.logo:hover { transform: rotate(-8deg) scale(1.06); }
+/* the icon's circle is black, so give it a light disc in dark mode */
+:root[data-theme="dark"] .logo { background: #f5f5f5; }
 .brand h1 { margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: 0.18em; }
 
 .hero { padding: 34px 0 22px; border-bottom: 2px solid var(--text); }
