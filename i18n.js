@@ -33,6 +33,7 @@
       closeSidebar: 'Close sidebar',
       toggleTheme: 'Toggle light/dark theme',
       settings: 'Settings',
+      gallery: 'Gallery',
       close: 'Close',
       // settings panel
       sLanguage: 'Language',
@@ -100,6 +101,7 @@
       closeSidebar: '关闭侧边栏',
       toggleTheme: '切换深色/浅色',
       settings: '设置',
+      gallery: '画廊',
       close: '关闭',
       sLanguage: '语言',
       sBackground: '场景',

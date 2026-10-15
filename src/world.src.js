@@ -398,7 +398,7 @@ import * as THREE from 'three';
     U.uTop.value.copy(s.skyTop); U.uHorizon.value.copy(s.skyHorizon); U.uBottom.value.copy(s.skyBottom);
     U.uSunColor.value.copy(s.sunC); U.uSunDir.value.copy(s.sunDir).normalize(); U.uSunSize.value = s.sunSize;
     U.uStars.value = s.stars; U.uAurora.value = s.aurora; U.uAur1.value.copy(s.aur1); U.uAur2.value.copy(s.aur2);
-    scene.fog.color.copy(s.fog); scene.fog.density = s.fogDensity;
+    scene.fog.color.copy(s.fog); scene.fog.density = s.fogDensity * (1 + gal.focus * 0.35);
     TU.uLow.value.copy(s.low); TU.uHigh.value.copy(s.high); TU.uSnow.value.copy(s.snowC); TU.uSnowLine.value = s.snowLine;
     water.position.y = s.water; wMat.color.copy(s.waterC); wMat.roughness = s.waterRough;
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
@@ -420,7 +420,10 @@ import * as THREE from 'three';
     pointer.y = (e.clientY / innerHeight) * 2 - 1;
   }, { passive: true });
 
+  // gallery reactions: push the camera into the valley, pan with the cards, small pulse
+  const gal = { focus: 0, focusTo: 0, pan: 0, panTo: 0, pulse: 0 };
   const lookTmp = new THREE.Vector3();
+  const dirTmp = new THREE.Vector3();
   const placeCamera = (time) => {
     const still = motion !== 'full';
     pointer.sx += (pointer.x - pointer.sx) * 0.035;
@@ -433,7 +436,19 @@ import * as THREE from 'three';
     );
     lookTmp.copy(cur.look);
     lookTmp.x += pointer.sx * 3 * drift;
+    // gallery: move forward along the view, a little lower, and pan sideways
+    const f = gal.focus;
+    if (f > 0.0005 || Math.abs(gal.pan) > 0.0005) {
+      dirTmp.copy(cur.look).sub(cur.cam).normalize();
+      camera.position.addScaledVector(dirTmp, f * 34);
+      camera.position.y -= f * 4 - gal.pulse * 2;
+      camera.position.x += gal.pan * 10 * f;
+      lookTmp.x += gal.pan * 38 * f;
+      lookTmp.y -= f * 3;
+    }
     camera.lookAt(lookTmp);
+    const wantFov = (innerWidth < 700 ? 62 : 50) - f * 6 + gal.pulse * 1.5;
+    if (Math.abs(camera.fov - wantFov) > 0.01) { camera.fov = wantFov; camera.updateProjectionMatrix(); }
     sky.position.copy(camera.position);
     // weather volumes follow the camera
     rain.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
@@ -464,6 +479,10 @@ import * as THREE from 'three';
     // mist drift
     mists.forEach((m) => { m.position.x += m.userData.v * 0.016; if (m.position.x > 520) m.position.x = -520; if (m.position.x < -520) m.position.x = 520; m.lookAt(camera.position.x, m.position.y, camera.position.z); });
     exposure += (exposureTo - exposure) * 0.04;
+    const gk = motion === 'full' ? 0.035 : 1;
+    gal.focus += (gal.focusTo - gal.focus) * gk;
+    gal.pan += (gal.panTo - gal.pan) * (motion === 'full' ? 0.05 : 1);
+    gal.pulse *= 0.94;
     renderer.toneMappingExposure = exposure;
     applyState();
     placeCamera(time);
@@ -515,6 +534,10 @@ import * as THREE from 'three';
       goTo(name, 3200);
     },
     setMotion(m) { motion = m === 'reduced' ? 'reduced' : 'full'; startLoop(); },
+    // called by gallery.js
+    focus(on) { gal.focusTo = on ? 1 : 0; if (!running) renderOnce(); },
+    pan(x) { gal.panTo = Math.max(-1, Math.min(1, x || 0)); },
+    pulse() { if (motion === 'full') gal.pulse = 1; },
     start() {
       if (started) return;
       started = true;

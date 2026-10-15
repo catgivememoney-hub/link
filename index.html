@@ -10,10 +10,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@200;300;400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
   <!-- password check runs first, before anything else shows -->
-  <script src="password.js?v=10"></script>
-  <script src="gate.js?v=10"></script>
+  <script src="password.js?v=11"></script>
+  <script src="gate.js?v=11"></script>
 </head>
 <body>
   <!-- Password screen: one input, nothing else -->
@@ -81,6 +81,9 @@
     <p class="hint enter" style="--d:4" data-i18n="heroHint">+ copies a line → paste into links.js</p>
 
     <div class="tools enter" style="--d:5">
+      <button id="galleryBtn" class="icon glass" type="button" aria-label="Gallery" data-i18n-aria="gallery" title="Gallery" data-i18n-title="gallery">
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </button>
       <a id="editBtn" class="icon glass" href="#" target="_blank" rel="noopener noreferrer" aria-label="Edit links.js" data-i18n-aria="editLinks" title="links.js" data-i18n-title="editLinks">
         <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
       </a>
@@ -89,6 +92,30 @@
       </button>
     </div>
   </main>
+
+
+  <!-- ================= 3D floating gallery (gallery.js) ================= -->
+  <section id="gallery" class="gallery" hidden aria-label="Gallery">
+    <div class="rail-wrap">
+      <div id="rail" class="rail" role="group" aria-label="Tags"></div>
+    </div>
+    <div id="galleryStage" class="g-stage">
+      <div id="ring" class="ring"></div>
+      <p id="galleryEmpty" class="g-empty" hidden data-i18n="empty">Empty</p>
+    </div>
+    <div class="g-controls">
+      <button id="galleryPrev" class="icon glass" type="button" aria-label="Previous">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span id="galleryCount" class="g-count">0</span>
+      <button id="galleryNext" class="icon glass" type="button" aria-label="Next">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="galleryClose" class="icon glass" type="button" aria-label="Close" data-i18n-aria="close">
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </section>
 
   <!-- Hover preview card (filled in by app.js) -->
   <div id="preview" class="preview glass" aria-hidden="true">
@@ -175,10 +202,11 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="i18n.js?v=10"></script>
-  <script src="sound.js?v=10"></script>
-  <script src="app.js?v=10"></script>
-  <script src="settings.js?v=10"></script>
-  <script src="world.js?v=10"></script>
+  <script src="i18n.js?v=11"></script>
+  <script src="sound.js?v=11"></script>
+  <script src="app.js?v=11"></script>
+  <script src="gallery.js?v=11"></script>
+  <script src="settings.js?v=11"></script>
+  <script src="world.js?v=11"></script>
 </body>
 </html>

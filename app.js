@@ -108,7 +108,8 @@
       b.type = 'button';
       b.className = 'chip' + (tag === activeTag ? ' active' : '');
       b.textContent = tag === 'all' ? t('all') : '#' + tag;
-      b.addEventListener('click', () => { activeTag = tag; render(); });
+      // choosing a category also opens the 3D gallery for it
+      b.addEventListener('click', () => { activeTag = tag; render(); if (window.MEOW_GALLERY) window.MEOW_GALLERY.open(tag); });
       box.appendChild(b);
     });
   };
@@ -352,6 +353,8 @@
     $('exportBtn').addEventListener('click', exportJson);
     addEventListener('scroll', hidePreview, { passive: true });
     await loadRepoLinks();
+    window.MEOW_LINKS_DATA = links; // shared with gallery.js
+    $('galleryBtn').addEventListener('click', () => window.MEOW_GALLERY && window.MEOW_GALLERY.open(activeTag));
     render();
     showMoveNotice();
     // redraw text when the language changes in Settings
