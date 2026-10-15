@@ -939,7 +939,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     y = Math.max(y, Math.max(heightAt(wx, wz), water.position.y) + 4);
     fly.y = y;
     fly.roll = (fly.yaw1 - fly.yaw0) * 0.22 * Math.sin(Math.PI * Math.min(1, k * 1.3));
-    if (k >= 1) { fly.on = false; fly.roll = 0; ex.ground = fly.ty; }
+    if (k >= 1) { fly.on = false; fly.roll = 0; ex.ground = fly.ty; fly.justLanded = true; }
   };
 
   /* ---------- input for exploring and for the trees ---------- */
@@ -959,7 +959,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (!e.code.startsWith('Shift')) e.preventDefault();
     keys.add(e.code);
     ex.homing = false;
-    if (!fly.on && !e.code.startsWith('Shift') && Math.hypot(ex.px, ex.pz) < 3) startFly();
+    if (!fly.on && !e.code.startsWith('Shift') && Math.hypot(ex.px, ex.pz) < 3) { startFly(); lockPointer(); }
     if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
   });
   addEventListener('keyup', (e) => keys.delete(e.code));
@@ -970,7 +970,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     e.preventDefault();
     toggleLight();
   });
-  addEventListener('blur', () => { keys.clear(); look.inside = false; door.hold = 0; door.key = false; });
+  addEventListener('blur', () => { keys.clear(); look.inside = false; });
   document.addEventListener('mouseleave', () => { look.inside = false; });
   // Space: jump (only out in the world)
   addEventListener('keydown', (e) => {
@@ -981,36 +981,64 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     jump.v = 15.5; jump.air = true;
     if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
   });
-  // E (hold for one second): open / close the cabin door when you're next to it
-  const door = { hold: 0, key: false, done: false };
-  addEventListener('keydown', (e) => {
-    if (e.code !== 'KeyE' || typing(e.target) || busy() || !ex.on || e.repeat) return;
-    door.key = true; door.done = false;
-    if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+  /* ---------- first-person mode: no mouse pointer, a white dot in the middle ----------
+     In the forest the pointer is locked (hidden) and moving the mouse turns the view.
+     You aim with the dot and click: trees, links, the cabin door. Esc gives the mouse back;
+     click the world again to carry on. */
+  const centre = () => [innerWidth / 2, innerHeight / 2];
+  const locked = () => !!document.pointerLockElement;
+  let lockFails = 0;   // if this browser won't hide the pointer, clicks just work normally
+  const lockPointer = () => {
+    if (locked() || !canvas.requestPointerLock || lockFails > 0) return;
+    try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { lockFails++; }); } catch (e) { lockFails++; }
+  };
+  document.addEventListener('pointerlockerror', () => { lockFails++; });
+  const unlockPointer = () => { if (locked() && document.exitPointerLock) document.exitPointerLock(); };
+  const dot = document.createElement('div');
+  dot.className = 'aim-dot';
+  document.body.appendChild(dot);
+  document.addEventListener('pointerlockchange', () => {
+    root.classList.toggle('pl', locked());
+    if (locked()) { hover.x = centre()[0]; hover.y = centre()[1]; }
+    else if (hover.id >= 0) setHover(-1);
   });
-  addEventListener('keyup', (e) => { if (e.code === 'KeyE') { door.key = false; door.hold = 0; } });
+
+  // the cabin door: aim at it and click (or tap E)
+  const door = { aimed: false };
   const actHint = document.createElement('div');
   actHint.className = 'act-hint';
-  actHint.innerHTML = '<svg viewBox="0 0 40 40" aria-hidden="true"><circle class="trk" cx="20" cy="20" r="16"/><circle class="bar" cx="20" cy="20" r="16"/></svg><kbd>E</kbd><span></span>';
+  actHint.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v6" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 9h5.5V3.4A6 6 0 0 0 6.5 9z" fill="currentColor"/></svg><span></span>';
   document.body.appendChild(actHint);
-  const actBar = actHint.querySelector('.bar'), actTxt = actHint.querySelector('span');
+  const actTxt = actHint.querySelector('span');
   const t$ = (k, f) => (window.MEOW_I18N ? window.MEOW_I18N.t(k) : f);
-  let actShown = false;
-  const updateDoor = (dt, now) => {
+  let actShown = false, doorTick = 0;
+  const aimAtDoor = (cx, cy) => {
     const cab = props.cabin.door;
-    const px = camera.position.x, pz = camera.position.z;
-    const near = ex.on && !fly.on && cur.pCabin > 0.5 && cab.near(px, pz);
-    if (near !== actShown) { actShown = near; actHint.classList.toggle('show', near); }
-    if (near) actTxt.textContent = cab.open ? t$('doorClose', 'Hold E to close') : t$('doorOpen', 'Hold E to open');
-    if (near && door.key && !door.done && cab.canToggle(px, pz)) door.hold = Math.min(1, door.hold + dt);
-    else if (!door.key) door.hold = 0;
-    actBar.style.strokeDashoffset = String(100.5 * (1 - door.hold));
-    if (door.hold >= 1 && !door.done) {
-      door.done = true; door.hold = 0;
-      const opened = cab.toggle(now);
-      if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(opened);
-    }
+    if (!ex.on || fly.on || cur.pCabin < 0.5 || !cab.near(camera.position.x, camera.position.z)) return false;
+    ndc.set((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(cab.mesh, false)[0];
+    return !!hit && hit.distance < 26;
   };
+  const toggleDoor = () => {
+    const cab = props.cabin.door;
+    if (!cab.canToggle(camera.position.x, camera.position.z)) return false;
+    const opened = cab.toggle(performance.now());
+    if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(opened);
+    if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+    return true;
+  };
+  const updateDoor = () => {
+    if (++doorTick % 3) return;                              // checking every third frame is plenty
+    const [cx, cy] = locked() ? centre() : [hover.x, hover.y];
+    door.aimed = aimAtDoor(cx, cy);
+    if (door.aimed !== actShown) { actShown = door.aimed; actHint.classList.toggle('show', door.aimed); }
+    if (door.aimed) actTxt.textContent = props.cabin.door.open ? t$('doorClose', 'Click to close the door') : t$('doorOpen', 'Click to open the door');
+  };
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyE' || typing(e.target) || busy() || !ex.on || e.repeat) return;
+    if (props.cabin.door.near(camera.position.x, camera.position.z) && cur.pCabin > 0.5) toggleDoor();
+  });
 
   // right mouse button (or a finger on touch screens) drags to look around;
   // left click is for trees and links
@@ -1023,6 +1051,11 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       drag = { x: e.clientX, y: e.clientY, yaw: ex.yawTo, pitch: ex.pitchTo, moved: false, touch: e.pointerType === 'touch' };
       e.preventDefault(); // dragging to look must not select text or images
     } else if (e.button === 0) {
+      if (ex.on && !locked() && e.pointerType === 'mouse' && !lockFails && canvas.requestPointerLock) {         // first click: hide the pointer, aim with the dot
+        lockPointer(); press = null; e.preventDefault();
+        dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'miss' } }));
+        return;
+      }
       press = { x: e.clientX, y: e.clientY };
       e.preventDefault();
     }
@@ -1037,6 +1070,14 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       ex.pitchTo = clamp(drag.pitch + dy * 0.0025, PITCH_MIN, PITCH_MAX);
       root.classList.add('looking');
       wake();
+      return;
+    }
+    if (locked()) {
+      if (ex.on && !fly.on && !busy()) {
+        ex.yawTo += e.movementX * 0.0024;
+        ex.pitchTo = clamp(ex.pitchTo + e.movementY * 0.002, PITCH_MIN, PITCH_MAX);
+        wake();
+      }
       return;
     }
     look.x = e.clientX; look.y = e.clientY; look.inside = true; look.ui = !!overUI(e.target);
@@ -1057,15 +1098,18 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       drag = null;
       root.classList.remove('looking');
     } else if (press && e.button === 0) {
-      wasClick = Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8;
+      wasClick = locked() || Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8;
     }
     press = null;
     if (wasClick) {
-      // use the tree that is already lit up under the mouse, so label and click always match
-      const id = hover.id >= 0 ? hover.id : pick(e.clientX, e.clientY);
+      const [cx, cy] = locked() ? centre() : [e.clientX, e.clientY];
+      // the door comes first when you're aiming at it
+      if (aimAtDoor(cx, cy)) { toggleDoor(); return; }
+      // use the tree that is already lit up under the dot / mouse, so label and click always match
+      const id = hover.id >= 0 ? hover.id : pick(cx, cy);
       if (id >= 0) {
         shakes.set(id, performance.now());
-        dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'click', id, x: e.clientX, y: e.clientY } }));
+        dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'click', id, x: cx, y: cy } }));
         wake();
       } else {
         dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'miss' } }));
@@ -1254,7 +1298,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         if (Math.hypot(ex.px, ex.pz) < 0.05) { ex.px = ex.pz = 0; ex.homing = false; }
       }
       const lightBusy = (now - Math.max(light.torch.since, light.lamp.since)) < 1200;
-      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy && !fly.on && !jump.air && !door.key) { tempRun = false; running = motion === 'full'; }
+      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy && !fly.on && !jump.air) { tempRun = false; running = motion === 'full'; }
     }
     frameDt = fdt / 60;
     // jump: up, gravity, land (with a soft thump and a little dip of the head)
@@ -1272,12 +1316,16 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       }
     }
     // keep turning while the mouse rests at the left / right edge of the screen
-    if (ex.on && !fly.on && look.inside && !look.ui && !drag && !busy() && motion === 'full' && look.y > innerHeight * 0.15 && look.y < innerHeight * 0.85) {
+    if (locked() && ex.on && !busy() && (doorTick % 3 === 1)) { const [cx, cy] = centre(); hover.x = cx; hover.y = cy; hover.pending = true; }
+    if (!locked() && ex.on && !fly.on && look.inside && !look.ui && !drag && !busy() && motion === 'full' && look.y > innerHeight * 0.15 && look.y < innerHeight * 0.85) {
       const edge = Math.max(30, innerWidth * 0.04);
       if (look.x > innerWidth - edge) ex.yawTo += 1.1 * frameDt * (look.x - (innerWidth - edge)) / edge;
       else if (look.x >= 0 && look.x < edge) ex.yawTo -= 1.1 * frameDt * (edge - look.x) / edge;
     }
-    updateDoor(Math.min(0.25, (now - (lastNow || now)) / 1000), now);   // real time, so the 1 s hold is 1 s
+    updateDoor();
+    // lock the pointer as soon as the glide into the forest ends; let it go when you leave
+    if (ex.on && !fly.on && fly.justLanded) { fly.justLanded = false; lockPointer(); }
+    if (!ex.on && locked()) unlockPointer();
     {
       const sp = Math.hypot(ex.vx, ex.vz);
       const running = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 1 : 0;
@@ -1396,25 +1444,26 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     },
     setMotion(m) { motion = m === 'reduced' ? 'reduced' : 'full'; startLoop(); },
     // called by gallery.js
-    focus(on) { gal.focusTo = on ? 1 : 0; if (on) { fly.on = false; ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
+    focus(on) { gal.focusTo = on ? 1 : 0; if (on) { unlockPointer(); fly.on = false; ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
     toggleLight() { toggleLight(); },
     // for testing: stand at an exact spot (world x, z)
-    _standAt(x, z) { ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0; if (!running) renderOnce(); },
+    _standAt(x, z) { ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0; ex.ground = Math.max(heightAt(x, z), water.position.y, props.floorAt(x, z, cur)) + EYE; if (!running) renderOnce(); },
     _look(x, z) {
       const bx = cur.look.x - cur.cam.x, bz = cur.look.z - cur.cam.z;
       const px = cur.cam.x + ex.px, pz = cur.cam.z + ex.pz;
       let y = Math.atan2(bz, bx) - Math.atan2(z - pz, x - px);
       y = Math.atan2(Math.sin(y), Math.cos(y));
-      ex.yaw = ex.yawTo = y; if (!running) renderOnce();
+      ex.yaw = ex.yawTo = y; ex.pitch = ex.pitchTo = 0; if (!running) renderOnce();
     },
     _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
     _toggleDoor() { props.cabin.door.toggle(performance.now()); },
-    _pos() { const d = new THREE.Vector3(); camera.getWorldDirection(d); return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on, pitch: ex.pitch, lookY: d.y }; },
+    _pos() { const d = new THREE.Vector3(); camera.getWorldDirection(d); return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on, pitch: ex.pitch, lookY: d.y, yaw: ex.yaw, yawTo: ex.yawTo, dx: d.x, dz: d.z, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, ground: ex.ground }; },
     _sites() { return { cabin: props.cabinAt, circle: props.circleAt }; },
     _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
     // back to the home view (used by the back button)
-    enter() { if (started && !fly.on && !busy() && Math.hypot(ex.px, ex.pz) < 3) startFly(); },
+    enter() { if (started && !fly.on && !busy() && Math.hypot(ex.px, ex.pz) < 3) { startFly(); lockPointer(); } },
     home() {
+      unlockPointer();
       const turns = Math.round(ex.yaw / (Math.PI * 2)) * Math.PI * 2; ex.yaw -= turns; ex.yawTo -= turns;
       fly.on = false; ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
       if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }

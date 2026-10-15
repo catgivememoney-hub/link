@@ -808,14 +808,14 @@ html.reduce-motion .rail-chip[aria-pressed="true"]::before, html.reduce-motion .
    ===================================================================== */
 .act-hint {
   position: fixed; left: 50%; bottom: 150px; z-index: 30; display: flex; align-items: center; gap: 10px;
-  padding: 7px 16px 7px 8px; border-radius: 999px; color: var(--ink);
+  padding: 8px 16px 8px 10px; border-radius: 999px; color: var(--ink);
   background: var(--glass); border: 1px solid var(--glass-line);
   -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
   font-size: 0.78rem; letter-spacing: 0.08em; pointer-events: none;
   opacity: 0; transform: translate(-50%, 10px) scale(0.96); transition: opacity 0.35s, transform 0.45s var(--ease);
 }
 .act-hint.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
-.act-hint svg { width: 30px; height: 30px; transform: rotate(-90deg); position: absolute; left: 8px; }
+.act-hint svg { width: 18px; height: 18px; margin-left: 6px; }
 .act-hint circle { fill: none; stroke-width: 2.4; }
 .act-hint .trk { stroke: color-mix(in srgb, var(--ink) 18%, transparent); }
 .act-hint .bar { stroke: var(--ink); stroke-linecap: round; stroke-dasharray: 100.5; stroke-dashoffset: 100.5; }
@@ -873,3 +873,17 @@ html[data-cursor="buddy"] .mcur-line .ink { stroke-width: 2.1; }
 .cursors svg .f { fill: color-mix(in srgb, var(--ink) 14%, transparent); }
 .cursors svg .l { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
 .cursors svg .s { fill: currentColor; stroke: var(--solid); stroke-width: 2; stroke-linejoin: round; }
+
+/* =====================================================================
+   FIRST-PERSON AIM: the pointer hides, a small white dot stays in the middle
+   ===================================================================== */
+.aim-dot {
+  position: fixed; left: 50%; top: 50%; z-index: 40; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 6px rgba(0, 0, 0, 0.25);
+  pointer-events: none; opacity: 0; transform: scale(0.4); transition: opacity 0.3s, transform 0.3s var(--spring);
+}
+html.exploring.pl .aim-dot { opacity: 0.95; transform: scale(1); }
+html.exploring.pl.on-tree .aim-dot { transform: scale(1.5); }
+html.pl .mcur { display: none; }
+/* the door hint sits just under the dot */
+html.pl .act-hint { bottom: auto; top: calc(50% + 26px); }

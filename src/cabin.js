@@ -9,7 +9,7 @@
    curtains, a coat and boots by the door.
 
    The walls and furniture are solid; floors (inside, porch, dock) can be walked on;
-   the door swings open and shut (hold E). */
+   the door swings open and shut (click it). */
 import * as THREE from 'three';
 import { Parts, M, n3, coverMaterial } from './kit.js';
 
@@ -408,6 +408,7 @@ export function createCabin({ scene, shared, U }) {
       return -Infinity;
     },
     door: {
+      mesh: door,
       near(wx, wz) { return Math.hypot(wx - doorWorld[0], wz - doorWorld[1]) < 13; },
       get open() { return door$.open; },
       // the door won't shut on you

@@ -74,7 +74,7 @@
     place(tip, x, y);
   };
   const hideTip = () => tip.classList.remove('show');
-  addEventListener('pointermove', (e) => { if (tip.classList.contains('show')) place(tip, e.clientX, e.clientY); }, { passive: true });
+  addEventListener('pointermove', (e) => { if (tip.classList.contains('show') && !document.pointerLockElement) place(tip, e.clientX, e.clientY); }, { passive: true });
 
   /* ---------- link card ---------- */
   const openCard = (link, x, y) => {
@@ -91,6 +91,8 @@
     $('treeCopy').onclick = async () => {
       try { await navigator.clipboard.writeText(link.url); toast(t('copied')); } catch { window.prompt(t('copy'), link.url); }
     };
+    // the card has buttons, so give the mouse back
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
     card.hidden = false;
     card.classList.remove('show');
     place(card, x, y, 22, -40);
