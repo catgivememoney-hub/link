@@ -33,9 +33,9 @@
     if (root.classList.contains('reduce-motion')) return;
     const { name, dur } = e.detail || {};
     if (caption) caption.textContent = t(LABEL[name] || 'bgRain');
-    root.classList.add('shot');
+    root.classList.add('cine-shot');
     clearTimeout(shotTimer);
-    shotTimer = setTimeout(() => root.classList.remove('shot'), Math.max(1800, (dur || 3000) + 300));
+    shotTimer = setTimeout(() => root.classList.remove('cine-shot'), Math.max(1800, (dur || 3000) + 300));
   });
 
   /* ---------- rack focus: what you hover stays sharp, the rest softens ---------- */
