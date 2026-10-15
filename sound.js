@@ -12,6 +12,7 @@
   let patterTimer = null;
   let rainOn = false;
   let enabled = true;     // "Sound effects" switch in Settings
+  let out = null;         // final mixer (for the tree chimes)
   let volume = 0.7;       // "Volume" slider in Settings
   let interacted = false;
 
@@ -21,6 +22,7 @@
     if (!AC) return null;
     ac = new AC();
     const comp = ac.createDynamicsCompressor(); // keeps everything smooth, never harsh
+    out = comp;
     comp.threshold.value = -18; comp.ratio.value = 3;
     comp.connect(ac.destination);
     rainGain = ac.createGain(); rainGain.gain.value = 0; rainGain.connect(comp);
@@ -117,7 +119,28 @@
     rainGain.gain.setTargetAtTime(rainOn ? volume : 0, ac.currentTime, rainOn ? 0.6 : 0.25);
   };
 
+  // a soft bell for the trees: each tree has its own note in a calm pentatonic scale
+  const SCALE = [392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
+  const chime = (n) => {
+    if (!enabled || !getAudio()) return;
+    ac.resume();
+    const t = ac.currentTime + 0.01;
+    const f = SCALE[Math.abs(n) % SCALE.length] * (n % 3 === 0 ? 0.5 : 1);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.16 * Math.max(0.3, volume), t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+    g.connect(out);
+    [[1, 'sine', 1], [2.01, 'sine', 0.25], [3.02, 'triangle', 0.08]].forEach(([mul, type, amp]) => {
+      const o = ac.createOscillator(); o.type = type; o.frequency.value = f * mul;
+      const og = ac.createGain(); og.gain.value = amp;
+      o.connect(og); og.connect(g);
+      o.start(t); o.stop(t + 2.3);
+    });
+  };
+
   window.MEOW_SOUND = {
+    chime,
     setEnabled(on) { enabled = !!on; update(); },
     setVolume(v) { volume = Math.max(0, Math.min(1, Number(v) || 0)); update(); }
   };

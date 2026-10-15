@@ -174,6 +174,8 @@ import * as THREE from 'three';
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed *= uTree;');
   };
   const TREE_N = 1400;
+  const treeBase = [];                  // base position + size of every tree (for swaying)
+  const WHITE = new THREE.Color(1, 1, 1);
   const trees = new THREE.InstancedMesh(coneGeo, treeMat, TREE_N);
   {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), pos = new THREE.Vector3();
@@ -185,7 +187,8 @@ import * as THREE from 'three';
       if (fbm(x * 0.02, z * 0.02, 3) < 0.42) continue; // natural clumps
       const k = rnd(2.2, 4.8);
       pos.set(x, h - 0.6, z); s.set(k, k * rnd(1.3, 1.9), k);
-      m.compose(pos, q, s); trees.setMatrixAt(n++, m);
+      treeBase.push({ p: pos.clone(), s: s.clone() });
+      m.compose(pos, q, s); trees.setColorAt(n, WHITE); trees.setMatrixAt(n++, m);
     }
     trees.count = n;
   }
@@ -419,6 +422,13 @@ import * as THREE from 'three';
     pointer.y = (e.clientY / innerHeight) * 2 - 1;
   }, { passive: true });
 
+  /* ---------- explore: two-finger swipe / wheel walks forward, drag looks around ---------- */
+  const WALK = 340;   // how far you can walk from the home view
+  const EYE = 7.5;    // eye height above ground or water
+  const ex = { depth: 0, depthTo: 0, yaw: 0, yawTo: 0, pitch: 0, pitchTo: 0, ground: 0, on: false };
+  const fwd = new THREE.Vector3(), flat = new THREE.Vector3(), lookDir = new THREE.Vector3();
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
   // gallery reactions: push the camera into the valley, pan with the cards, small pulse
   const gal = { focus: 0, focusTo: 0, pan: 0, panTo: 0, pulse: 0 };
   const lookTmp = new THREE.Vector3();
@@ -435,6 +445,26 @@ import * as THREE from 'three';
     );
     lookTmp.copy(cur.look);
     lookTmp.x += pointer.sx * 3 * drift;
+    // explore: walk over the land (staying at eye height), turn and tilt the view
+    const e = ex.depth;
+    if (e > 0.0005 || Math.abs(ex.yaw) > 0.0005 || Math.abs(ex.pitch) > 0.0005) {
+      fwd.copy(cur.look).sub(cur.cam);
+      const viewDist = fwd.length();
+      fwd.normalize();
+      flat.set(fwd.x, 0, fwd.z).normalize();
+      const dist = e * WALK;
+      const px = camera.position.x + flat.x * dist, pz = camera.position.z + flat.z * dist;
+      const ground = Math.max(heightAt(px, pz), water.position.y) + EYE;
+      ex.ground += (ground - ex.ground) * 0.08; // glide over bumps instead of jolting
+      const hb = smooth(0, 0.3, e);
+      camera.position.set(px, camera.position.y * (1 - hb) + ex.ground * hb, pz);
+      lookDir.copy(fwd).applyAxisAngle(Y_AXIS, ex.yaw);
+      lookDir.y = lookDir.y * (1 - hb) - 0.04 * hb + ex.pitch;
+      lookDir.normalize();
+      lookTmp.copy(camera.position).addScaledVector(lookDir, viewDist);
+    } else {
+      ex.ground = camera.position.y;
+    }
     // gallery: move forward along the view, a little lower, and pan sideways
     const f = gal.focus;
     if (f > 0.0005 || Math.abs(gal.pan) > 0.0005) {
@@ -453,6 +483,101 @@ import * as THREE from 'three';
     rain.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
     snow.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
     fireflies.position.set(cur.look.x * 0.3, water.position.y, cur.cam.z - 90);
+  };
+
+  /* ---------- input for exploring and for the trees ---------- */
+  const root = document.documentElement;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const busy = () => !started || root.classList.contains('locked') || gal.focusTo > 0;
+  const overUI = (t) => t && t.closest && t.closest('.sidebar, .modal, .gallery, .top, .composer, .tools, .tree-card, .home-btn, .backdrop, input, button, a, label');
+  const wake = () => { if (!running) renderOnce(); };
+
+  addEventListener('wheel', (e) => {
+    if (busy() || overUI(e.target)) return;
+    e.preventDefault();
+    let d = e.deltaY * (e.deltaMode === 1 ? 30 : 1);
+    if (e.ctrlKey) d = -d * 3;               // trackpad pinch: spread fingers = forward
+    ex.depthTo = clamp(ex.depthTo + d * 0.0016, 0, 1);
+    wake();
+  }, { passive: false });
+
+  let drag = null;
+  const hover = { x: 0, y: 0, pending: false, id: -1 };
+  addEventListener('pointerdown', (e) => {
+    if (busy() || e.button !== 0 || overUI(e.target)) return;
+    drag = { x: e.clientX, y: e.clientY, yaw: ex.yawTo, pitch: ex.pitchTo, moved: false };
+  });
+  addEventListener('pointermove', (e) => {
+    if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.hypot(dx, dy) > 5) drag.moved = true;
+      ex.yawTo = clamp(drag.yaw + dx * 0.0035, -1.3, 1.3);
+      ex.pitchTo = clamp(drag.pitch + dy * 0.0025, -0.35, 0.3);
+      root.classList.add('looking');
+      wake();
+      return;
+    }
+    if (busy() || overUI(e.target)) { if (hover.id >= 0) setHover(-1); return; }
+    hover.x = e.clientX; hover.y = e.clientY; hover.pending = true;
+  }, { passive: true });
+  addEventListener('pointerup', (e) => {
+    if (!drag) return;
+    const wasClick = !drag.moved;
+    drag = null;
+    root.classList.remove('looking');
+    if (wasClick) {
+      // use the tree that is already lit up under the mouse, so label and click always match
+      const id = hover.id >= 0 ? hover.id : pick(e.clientX, e.clientY);
+      if (id >= 0) {
+        shakes.set(id, performance.now());
+        dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'click', id, x: e.clientX, y: e.clientY } }));
+        wake();
+      } else {
+        dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'miss' } }));
+      }
+    }
+  });
+
+  // which tree is under the mouse?
+  const ray = new THREE.Raycaster();
+  ray.far = 900;
+  const ndc = new THREE.Vector2();
+  const pick = (cx, cy) => {
+    if (!trees.visible || treeU.uTree.value < 0.5) return -1;
+    ndc.set((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(trees, false)[0];
+    return hit ? hit.instanceId : -1;
+  };
+  const GLOW = new THREE.Color(2.6, 2.6, 2.4);
+  const setHover = (id) => {
+    if (id === hover.id) return;
+    if (hover.id >= 0) trees.setColorAt(hover.id, WHITE);
+    hover.id = id;
+    if (id >= 0) trees.setColorAt(id, GLOW);
+    trees.instanceColor.needsUpdate = true;
+    root.classList.toggle('on-tree', id >= 0);
+    dispatchEvent(new CustomEvent('meow:tree', { detail: id >= 0 ? { type: 'hover', id, x: hover.x, y: hover.y } : { type: 'leave' } }));
+    wake();
+  };
+
+  // a clicked tree sways and settles
+  const shakes = new Map();
+  const swayQ = new THREE.Quaternion(), swayE = new THREE.Euler(), swayM = new THREE.Matrix4();
+  const updateShakes = (now) => {
+    if (!shakes.size) return;
+    shakes.forEach((start, id) => {
+      const t = (now - start) / 1000;
+      const b = treeBase[id];
+      if (!b) { shakes.delete(id); return; }
+      const a = t > 2.6 ? 0 : Math.sin(t * 15) * Math.exp(-t * 2.1) * 0.17;
+      swayE.set(a * 0.6, 0, a);
+      swayQ.setFromEuler(swayE);
+      swayM.compose(b.p, swayQ, b.s);
+      trees.setMatrixAt(id, swayM);
+      if (t > 2.6) shakes.delete(id);
+    });
+    trees.instanceMatrix.needsUpdate = true;
   };
 
   /* ---------- film lens (post-processing) ----------
@@ -544,16 +669,30 @@ import * as THREE from 'three';
     gal.focus += (gal.focusTo - gal.focus) * gk;
     gal.pan += (gal.panTo - gal.pan) * (motion === 'full' ? 0.05 : 1);
     gal.pulse *= 0.94;
+    // explore smoothing; drift back to centre at home
+    const fullMo = motion === 'full';
+    // time-based smoothing: same feel at any frame rate
+    const fdt = Math.min(0.1, Math.max(0.001, (now - (lastNow || now)) / 1000)) * 60;
+    const k60 = (k) => (fullMo ? 1 - Math.pow(1 - k, fdt) : 1);
+    ex.depth += (ex.depthTo - ex.depth) * k60(0.07);
+    if (!drag && ex.depthTo === 0 && ex.depth < 0.05) { const r = Math.pow(0.96, fdt); ex.yawTo *= r; ex.pitchTo *= r; }
+    ex.yaw += (ex.yawTo - ex.yaw) * k60(0.12);
+    ex.pitch += (ex.pitchTo - ex.pitch) * k60(0.12);
+    const exploring = ex.depth > 0.04;
+    if (exploring !== ex.on) { ex.on = exploring; root.classList.toggle('exploring', exploring); }
+    updateShakes(now);
     renderer.toneMappingExposure = exposure;
     applyState();
     placeCamera(time);
+    if (hover.pending) { hover.pending = false; setHover(pick(hover.x, hover.y)); }
     // rack focus
     const dpr = renderer.getPixelRatio();
     const full = motion === 'full';
     const shotPull = k < 1 ? Math.sin(Math.PI * ease(k)) * 6 : 0;          // focus breathes during scene changes
     const enter = full ? Math.max(0, 1 - (now - entranceAt) / 3600) : 0;    // entrance: from blur into focus
-    LU.uBlur.value = 2.6 * dpr * (1 + gal.focus * 2.6);
-    LU.uBand.value = 0.22 - gal.focus * 0.1;
+    const walk = smooth(0, 0.4, ex.depth);   // in the forest everything near you stays sharp
+    LU.uBlur.value = 2.6 * dpr * (1 + gal.focus * 2.6) * (1 - walk * 0.7);
+    LU.uBand.value = 0.22 - gal.focus * 0.1 + walk * 0.12;
     LU.uPull.value = (shotPull * (full ? 1 : 0) + Math.pow(enter, 1.6) * 18 + gal.pulse * 3) * dpr;
     LU.uFlicker.value = full ? 0.012 : 0;
     renderer.setRenderTarget(rt);
@@ -609,7 +748,10 @@ import * as THREE from 'three';
     },
     setMotion(m) { motion = m === 'reduced' ? 'reduced' : 'full'; startLoop(); },
     // called by gallery.js
-    focus(on) { gal.focusTo = on ? 1 : 0; if (!running) renderOnce(); },
+    focus(on) { gal.focusTo = on ? 1 : 0; if (on) { ex.depthTo = 0; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
+    // back to the home view (used by the back button)
+    home() { ex.depthTo = 0; ex.yawTo = 0; ex.pitchTo = 0; if (!running) renderOnce(); },
+    walk(delta) { ex.depthTo = clamp(ex.depthTo + delta, 0, 1); if (!running) renderOnce(); },
     pan(x) { gal.panTo = Math.max(-1, Math.min(1, x || 0)); },
     pulse() { if (motion === 'full') gal.pulse = 1; },
     start() {

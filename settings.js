@@ -112,6 +112,9 @@
     return `https://github.com/${owner}/${m && repo ? repo : 'link'}/edit/main/password.js`;
   };
 
+  // other parts of the page (the scene trees) can change the scene too
+  window.MEOW_SET_SCENE = (val) => { s.scene = val; save(); apply(); };
+
   const toast = (msg) => {
     const el = $('toast');
     el.textContent = msg;

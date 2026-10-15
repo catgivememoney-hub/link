@@ -684,3 +684,62 @@ input[type="text"], input[type="url"], input[type="search"], input[type="passwor
 /* small hint stays readable over water or sky */
 .hint:not(.small) { text-shadow: 0 0 14px var(--glow), 0 0 2px color-mix(in srgb, var(--glow) 60%, transparent); }
 :root:not([data-theme="dark"]):not([data-scene="night"]):not([data-scene="aurora"]):not([data-scene="ocean"]) .hint:not(.small) { opacity: 0.8; }
+
+
+/* =====================================================================
+   EXPLORE — walking into the 3D world, and the trees
+   ===================================================================== */
+/* the home view dissolves as you walk away from it */
+.stage { transition: transform 0.9s var(--ease), opacity 0.8s var(--ease), filter 0.8s var(--ease); }
+html.exploring .stage { opacity: 0; filter: blur(12px); transform: scale(1.08); }
+html.exploring .stage > * { pointer-events: none; }
+html.exploring.focus-side .stage { opacity: 0; }
+
+.explore-ui {
+  position: fixed; left: 0; right: 0; bottom: 26px; z-index: 16;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  pointer-events: none;
+  opacity: 0; transform: translateY(14px); filter: blur(6px);
+  transition: opacity 0.8s var(--ease), transform 0.9s var(--ease), filter 0.8s var(--ease);
+}
+html.exploring .explore-ui { opacity: 1; transform: none; filter: none; }
+html.exploring .explore-ui > * { pointer-events: auto; }
+.home-btn[data-label]::after { top: auto; bottom: calc(100% + 10px); }
+html:not(.exploring) .explore-ui > * { pointer-events: none !important; }
+
+/* hovering a tree */
+html.on-tree, html.on-tree body { cursor: url("paw.png") 12 4, pointer; }
+html.looking, html.looking body { cursor: grabbing; }
+.tree-tip {
+  position: fixed; z-index: 40; pointer-events: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px 7px 10px; border-radius: 999px;
+  background: var(--glass-strong); border: 1px solid var(--ring);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  font-size: 0.78rem; letter-spacing: 0.06em; white-space: nowrap;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--glow) 45%, transparent);
+  opacity: 0; transform: translateY(6px) scale(0.94); filter: blur(4px);
+  transition: opacity 0.3s var(--ease), transform 0.45s var(--spring), filter 0.3s;
+}
+.tree-tip.show { opacity: 1; transform: none; filter: none; }
+.tree-tip i { font-style: normal; opacity: 0.75; }
+.tree-tip span { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+
+/* the little card a link tree opens */
+.tree-card {
+  position: fixed; z-index: 45; width: 270px; border-radius: 22px; padding: 14px 14px 10px;
+  background: var(--glass-strong);
+  opacity: 0; transform: translateY(14px) scale(0.92) rotateX(18deg); filter: blur(6px);
+  transform-origin: 20% 100%;
+  transition: opacity 0.35s var(--ease), transform 0.55s var(--spring), filter 0.35s;
+}
+.tree-card.show { opacity: 1; transform: none; filter: none; }
+.tree-card-body { display: flex; align-items: center; gap: 12px; }
+.tree-card .meta strong { display: block; font-weight: 400; }
+.tree-card-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 8px; }
+.explore-hint {
+  margin: 0; padding: 7px 16px; border-radius: 999px; opacity: 0.9 !important;
+  background: var(--glass-strong); border: 1px solid var(--ring);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  color: var(--ink) !important; text-shadow: none !important;
+}
