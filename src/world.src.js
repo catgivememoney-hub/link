@@ -26,6 +26,8 @@ import * as THREE from 'three';
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.shadowMap.enabled = true;               // only the flashlight casts shadows
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMappingExposure = 1;
 
   const scene = new THREE.Scene();
@@ -134,16 +136,26 @@ import * as THREE from 'three';
   tMat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, TU);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vH; varying float vSlope;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y;');
+      .replace('#include <common>', '#include <common>\nvarying float vH; varying float vSlope; varying vec2 vXZ;')
+      .replace('#include <common>', '#include <common>')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y; vXZ = position.xz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uLow, uHigh, uSnow; uniform float uSnowLine; varying float vH; varying float vSlope;')
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uLow, uHigh, uSnow; uniform float uSnowLine; varying float vH; varying float vSlope; varying vec2 vXZ;
+        float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float tn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(th(i), th(i + vec2(1, 0)), f.x), mix(th(i + vec2(0, 1)), th(i + vec2(1, 1)), f.x), f.y); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         vec3 land = mix(uLow, uHigh, smoothstep(-5.0, 120.0, vH));
         float snow = smoothstep(uSnowLine - 12.0, uSnowLine + 12.0, vH) * (1.0 - smoothstep(0.35, 0.7, vSlope));
-        diffuseColor.rgb = mix(land, uSnow, snow);`);
+        // ground detail: grass patches, soil and small stones (shows up under the flashlight)
+        float d1 = tn(vXZ * 0.08), d2 = tn(vXZ * 0.45), d3 = tn(vXZ * 2.2);
+        land *= 0.82 + 0.22 * d1 + 0.12 * d2 + 0.08 * d3;
+        land = mix(land, land * vec3(0.92, 0.88, 0.84), smoothstep(0.35, 0.75, vSlope));   // rocky on slopes
+        diffuseColor.rgb = mix(land, uSnow * (0.94 + 0.06 * d2), snow);`);
   };
   const terrain = new THREE.Mesh(tGeo, tMat);
+  terrain.receiveShadow = true;
   scene.add(terrain);
 
   /* ---------- water (lake or sea) with a moving ripple texture ---------- */
@@ -252,7 +264,71 @@ import * as THREE from 'three';
     }
     trees.count = n;
   }
+  trees.castShadow = true;
+  trees.receiveShadow = true;
   scene.add(trees);
+
+  /* ---------- hand-held light: flashlight or warm lantern (F) ----------
+     No hands are drawn, only the light. The flashlight is held low and to the
+     right, its beam lags a little behind your view and trembles slightly; it
+     casts shadows and shows as a soft beam in fog. The lantern is a warm flame
+     that catches, flickers and swings like a pendulum as you walk. */
+  const torch = new THREE.SpotLight(0xffeedd, 0, 190, THREE.MathUtils.degToRad(22), 0.75, 1.5);
+  torch.castShadow = false;
+  torch.shadow.mapSize.set(1024, 1024);
+  torch.shadow.camera.near = 0.5;
+  torch.shadow.camera.far = 190;
+  torch.shadow.bias = -0.0012;
+  torch.shadow.normalBias = 0.06;
+  scene.add(torch, torch.target);
+  const lamp = new THREE.PointLight(0xffa35a, 0, 56, 1.6);
+  scene.add(lamp);
+
+  // the visible beam: a soft, open cone with drifting dust, added on top of the scene
+  const beamMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.BackSide, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { uTime: U.uTime, uOpacity: { value: 0 }, uColor: { value: new THREE.Color(0xfff0dc) } },
+    vertexShader: /* glsl */`
+      varying vec3 vLocal; varying vec3 vN; varying vec3 vView;
+      void main() {
+        vLocal = position;
+        vN = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vView = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      uniform float uTime, uOpacity; uniform vec3 uColor;
+      varying vec3 vLocal; varying vec3 vN; varying vec3 vView;
+      float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      float noise(vec3 p) {
+        vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      void main() {
+        float along = clamp(vLocal.z, 0.0, 1.0);
+        // seen from behind the lamp a beam is a faint haze, a little stronger toward its edges
+        float facing = abs(dot(normalize(vN), normalize(vView)));
+        float edge = 0.18 + 0.82 * pow(1.0 - facing, 2.0);
+        float fall = pow(1.0 - along, 1.8) * smoothstep(0.02, 0.3, along);     // invisible at the hand, fades with distance
+        float dust = 0.75 + 0.5 * noise(vLocal * vec3(9.0, 9.0, 26.0) + vec3(0.0, uTime * 0.25, uTime * 0.1));
+        gl_FragColor = vec4(uColor * edge * fall * dust * uOpacity, 1.0);
+        #include <colorspace_fragment>
+      }`
+  });
+  const beamGeo = new THREE.ConeGeometry(1, 1, 40, 1, true).translate(0, -0.5, 0).rotateX(-Math.PI / 2);
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.frustumCulled = false;
+  beam.renderOrder = 5;
+  scene.add(beam);
+
+  const light = {
+    mode: 'torch', on: false, since: -1e9, level: 0,
+    aim: new THREE.Vector3(0, 0, -1),               // where the beam actually points (lags the view)
+    swing: 0, swingV: 0, swingZ: 0, swingZV: 0,     // lantern pendulum
+    lastVX: 0, lastVZ: 0
+  };
 
   /* ---------- soft mist banks ---------- */
   const mistTex = (() => {
@@ -398,17 +474,17 @@ import * as THREE from 'three';
     },
     night: {
       sat: 0.45, skyTop: '#04060d', skyHorizon: '#1a2238', skyBottom: '#0a0e18', fog: '#111727', fogDensity: 0.0032,
-      low: '#141a24', high: '#1d2431', snowC: '#5d6676', snowLine: 160, water: 0, waterC: '#0e1421', waterRough: 0.1,
-      sunC: '#d8d4c6', sunDir: V(-0.45, 0.32, -1), sunSize: 0.0022, lightC: '#93a0bf', light: 0.4, lightDir: V(-0.45, 0.5, -0.6),
-      hemiSky: '#26304a', hemiGround: '#07090f', hemi: 0.45, treeC: '#0d1217', trees: 0.85,
+      low: '#3a4352', high: '#4a5262', snowC: '#8a93a3', snowLine: 160, water: 0, waterC: '#0e1421', waterRough: 0.1,
+      sunC: '#d8d4c6', sunDir: V(-0.45, 0.32, -1), sunSize: 0.0022, lightC: '#93a0bf', light: 0.16, lightDir: V(-0.45, 0.5, -0.6),
+      hemiSky: '#26304a', hemiGround: '#07090f', hemi: 0.16, treeC: '#2c3a33', trees: 0.85,
       rain: 0, snow: 0, fire: 0.85, stars: 1, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.25,
       cam: V(0, 10, 92), look: V(0, 16, -40)
     },
     aurora: {
       sat: 0.65, skyTop: '#03060a', skyHorizon: '#122029', skyBottom: '#070c10', fog: '#0d161b', fogDensity: 0.0034,
-      low: '#1b2429', high: '#29333a', snowC: '#8b989f', snowLine: 55, water: 0, waterC: '#0c1418', waterRough: 0.08,
-      sunC: '#000000', sunDir: V(0, 0.3, -1), sunSize: 0, lightC: '#8fb1aa', light: 0.35, lightDir: V(0.2, 0.6, -0.8),
-      hemiSky: '#1f3a3a', hemiGround: '#05080a', hemi: 0.5, treeC: '#0b1113', trees: 0.6,
+      low: '#3b464c', high: '#4c575e', snowC: '#a9b5bb', snowLine: 55, water: 0, waterC: '#0c1418', waterRough: 0.08,
+      sunC: '#000000', sunDir: V(0, 0.3, -1), sunSize: 0, lightC: '#8fb1aa', light: 0.14, lightDir: V(0.2, 0.6, -0.8),
+      hemiSky: '#1f3a3a', hemiGround: '#05080a', hemi: 0.18, treeC: '#2a3833', trees: 0.6,
       rain: 0, snow: 0.22, fire: 0, stars: 0.75, aurora: 1, aur1: '#4f8f80', aur2: '#6f6595', mist: 0.15,
       cam: V(30, 15, 102), look: V(0, 34, -80)
     },
@@ -487,6 +563,8 @@ import * as THREE from 'three';
   const SPEED = 24;     // walking speed (units per second); Shift runs
   const ex = { px: 0, pz: 0, vx: 0, vz: 0, homing: false, yaw: 0, yawTo: 0, pitch: 0, pitchTo: 0, ground: 0, on: false };
   const keys = new Set();
+  const bob = { phase: 0, amp: 0, run: 0 };   // walking camera motion
+  let frameDt = 1 / 60;
   const fwd = new THREE.Vector3(), flat = new THREE.Vector3(), lookDir = new THREE.Vector3();
   const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -539,7 +617,22 @@ import * as THREE from 'three';
       lookTmp.x += gal.pan * 38 * f;
       lookTmp.y -= f * 3;
     }
+    // walking: two soft dips per stride, a gentle side sway and a tiny tilt.
+    // The eyes stay steadier than the head, so the look point moves only half as much.
+    let roll = 0;
+    if (bob.amp > 0.001 && motion === 'full') {
+      const s1 = Math.sin(bob.phase), s2 = Math.sin(bob.phase * 2);
+      const a = bob.amp * (1 + bob.run * 0.8);
+      const up = -Math.abs(s1) * 0.32 * a + 0.16 * a;          // dips at each foot strike
+      const side = s1 * 0.16 * a;
+      camera.position.y += up;
+      dirTmp.copy(lookTmp).sub(camera.position); dirTmp.y = 0; dirTmp.normalize();
+      camera.position.x += -dirTmp.z * side; camera.position.z += dirTmp.x * side;
+      lookTmp.y += up * 0.5;
+      roll = s1 * 0.006 * a + s2 * 0.0015 * a;
+    }
     camera.lookAt(lookTmp);
+    if (roll) camera.rotateZ(roll);
     const wantFov = (innerWidth < 700 ? 62 : 50) - f * 6 + gal.pulse * 1.5;
     if (Math.abs(camera.fov - wantFov) > 0.01) { camera.fov = wantFov; camera.updateProjectionMatrix(); }
     sky.position.copy(camera.position);
@@ -547,6 +640,96 @@ import * as THREE from 'three';
     rain.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
     snow.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
     fireflies.position.set(cur.look.x * 0.3, water.position.y, cur.cam.z - 90);
+  };
+
+  /* ---------- light: switching on/off, hand lag, flame, pendulum ---------- */
+  const fwdV = new THREE.Vector3(), rightV = new THREE.Vector3(), upV = new THREE.Vector3(), tmpV = new THREE.Vector3();
+  const powerCurve = (mode, on, t) => {
+    if (mode === 'torch') {
+      if (on) {                     // LED: quick catch, one tiny stutter, full
+        if (t < 0.04) return 0.55; if (t < 0.08) return 0.12; if (t < 0.16) return 0.12 + (t - 0.08) / 0.08 * 0.88; return 1;
+      }
+      return Math.max(0, 1 - t / 0.12);  // off: quick fade
+    }
+    if (on) {                       // flame: sputter, dip, then grows warm
+      if (t < 0.12) return t / 0.12 * 0.35; if (t < 0.24) return 0.35 - (t - 0.12) / 0.12 * 0.2;
+      if (t < 0.7) { const k = (t - 0.24) / 0.46; return 0.15 + (1 - Math.pow(1 - k, 3)) * 0.85; } return 1;
+    }
+    return Math.max(0, 1 - Math.pow(t / 0.5, 0.8));     // off: dims slowly like a flame going out
+  };
+  const updateLight = (now, time) => {
+    const t = (now - light.since) / 1000;
+    const base = powerCurve(light.mode, light.on, t);
+    camera.updateMatrixWorld();
+    fwdV.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    rightV.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    upV.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    const k = 1 - Math.pow(1 - 0.16, frameDt * 60);
+    const fog = Math.min(1.6, scene.fog.density / 0.004);   // beams show more in mist and rain
+    const rainy = rainMat.uniforms.uOpacity.value;
+
+    if (light.mode === 'torch') {
+      const lvl = base * (light.on && t > 0.16 ? 0.985 + 0.015 * Math.sin(time * 40) * Math.sin(time * 7) : 1);
+      light.level = lvl;
+      // held low and to the right; the hand moves a little against the head bob
+      const handBob = bob.amp * (motion === 'full' ? 1 : 0);
+      torch.position.copy(camera.position)
+        .addScaledVector(rightV, 0.75).addScaledVector(upV, -0.6 - Math.sin(bob.phase) * 0.05 * handBob).addScaledVector(fwdV, 0.4);
+      // the beam follows the view with a small delay, plus a faint tremor
+      tmpV.copy(fwdV);
+      if (motion === 'full') {
+        tmpV.addScaledVector(rightV, Math.sin(time * 1.7) * 0.004 + Math.sin(time * 4.3) * 0.002 + Math.sin(bob.phase) * 0.01 * handBob);
+        tmpV.addScaledVector(upV, Math.sin(time * 2.1 + 1) * 0.004 + Math.sin(bob.phase * 2) * 0.008 * handBob);
+      }
+      light.aim.lerp(tmpV.normalize(), motion === 'full' ? k : 1).normalize();
+      torch.target.position.copy(torch.position).addScaledVector(light.aim, 40);
+      torch.intensity = lvl * 380;
+      torch.castShadow = lvl > 0.02;
+      // visible beam
+      const len = 70;
+      const r = Math.tan(torch.angle) * len;
+      beam.position.copy(torch.position);
+      beam.lookAt(torch.target.position);
+      beam.scale.set(r, r, len);
+      beamMat.uniforms.uOpacity.value = lvl * (0.02 + 0.035 * fog + 0.04 * rainy);
+      beam.visible = lvl > 0.01;
+      lamp.intensity = 0;
+    } else {
+      // flame flicker: slow breathing plus small quick shivers
+      const flick = light.on && t > 0.7
+        ? 0.88 + 0.07 * Math.sin(time * 9.3 + Math.sin(time * 3.1) * 2) + 0.04 * Math.sin(time * 23.7) + 0.02 * Math.sin(time * 41)
+        : 1;
+      const lvl = base * flick;
+      light.level = lvl;
+      // pendulum: sways when you speed up, slow down or turn, then settles
+      if (motion === 'full') {
+        const ax = (ex.vx - light.lastVX) / Math.max(frameDt, 0.001), az = (ex.vz - light.lastVZ) / Math.max(frameDt, 0.001);
+        const side = -(ax * fwdV.z - az * fwdV.x) * 0.0012, fore = -(ax * fwdV.x + az * fwdV.z) * 0.0012;
+        const dt = frameDt;
+        light.swingV += (-light.swing * 14 - light.swingV * 1.8 + side) * dt;
+        light.swing += light.swingV * dt;
+        light.swingZV += (-light.swingZ * 14 - light.swingZV * 1.8 + fore + Math.sin(bob.phase * 2) * 0.6 * bob.amp) * dt;
+        light.swingZ += light.swingZV * dt;
+      }
+      light.lastVX = ex.vx; light.lastVZ = ex.vz;
+      lamp.position.copy(camera.position)
+        .addScaledVector(rightV, 1.1 + Math.sin(light.swing) * 1.4)
+        .addScaledVector(upV, -2.4 + (1 - Math.cos(light.swing)) * 1.4)
+        .addScaledVector(fwdV, 2.2 + Math.sin(light.swingZ) * 1.0);
+      if (motion === 'full' && light.on) lamp.position.y += Math.sin(time * 6.1) * 0.03;   // tiny flame jitter
+      lamp.intensity = lvl * 520;
+      torch.intensity = 0; torch.castShadow = false;
+      beam.visible = false;
+    }
+    root.classList.toggle('light-on', light.level > 0.05);
+    root.classList.toggle('lamp-on', light.mode === 'lamp' && light.level > 0.05);
+  };
+  const toggleLight = () => {
+    light.on = !light.on;
+    light.since = performance.now();
+    light.aim.copy(fwdV.lengthSq() ? fwdV : light.aim);
+    if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+    dispatchEvent(new CustomEvent('meow:light', { detail: { on: light.on, mode: light.mode } }));
   };
 
   /* ---------- input for exploring and for the trees ---------- */
@@ -569,6 +752,13 @@ import * as THREE from 'three';
     if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
   });
   addEventListener('keyup', (e) => keys.delete(e.code));
+  // F: flashlight / lantern on and off
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyF' || e.repeat || typing(e.target) || !started || root.classList.contains('locked')) return;
+    if (document.querySelector('.modal:not([hidden])') || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault();
+    toggleLight();
+  });
   addEventListener('blur', () => keys.clear());
 
   let drag = null;
@@ -576,6 +766,7 @@ import * as THREE from 'three';
   addEventListener('pointerdown', (e) => {
     if (busy() || e.button !== 0 || overUI(e.target)) return;
     drag = { x: e.clientX, y: e.clientY, yaw: ex.yawTo, pitch: ex.pitchTo, moved: false };
+    e.preventDefault(); // dragging to look must not select text or images
   });
   addEventListener('pointermove', (e) => {
     if (drag) {
@@ -784,7 +975,18 @@ import * as THREE from 'three';
         ex.px -= ex.px * k; ex.pz -= ex.pz * k; ex.vx = ex.vz = 0;
         if (Math.hypot(ex.px, ex.pz) < 0.05) { ex.px = ex.pz = 0; ex.homing = false; }
       }
-      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing) { tempRun = false; running = motion === 'full'; }
+      const lightBusy = (now - light.since) < 900;
+      if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy) { tempRun = false; running = motion === 'full'; }
+    }
+    frameDt = fdt / 60;
+    {
+      const sp = Math.hypot(ex.vx, ex.vz);
+      const running = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 1 : 0;
+      bob.run += (running - bob.run) * (1 - Math.pow(0.9, fdt));
+      const want = Math.min(1.2, sp / SPEED);                 // 0 standing → 1 walking → more when running
+      bob.amp += (want - bob.amp) * (1 - Math.pow(0.88, fdt)); // settle smoothly when you stop
+      // steps per second grow with speed: ~0.95 strides/s walking, ~1.45 running
+      bob.phase += Math.PI * 2 * (0.95 + 0.5 * bob.run) * Math.min(1, sp / SPEED + 0.15) * frameDt * (sp > 0.3 ? 1 : 0.4);
     }
     const away = Math.hypot(ex.px, ex.pz);
     if (!drag && away < 2) { const rr = Math.pow(0.96, fdt); ex.yawTo *= rr; ex.pitchTo *= rr; }
@@ -796,6 +998,7 @@ import * as THREE from 'three';
     renderer.toneMappingExposure = exposure;
     applyState();
     placeCamera(time);
+    updateLight(now, time);
     if (hover.pending) { hover.pending = false; setHover(pick(hover.x, hover.y)); }
     // rack focus
     const dpr = renderer.getPixelRatio();
@@ -861,6 +1064,18 @@ import * as THREE from 'three';
     setMotion(m) { motion = m === 'reduced' ? 'reduced' : 'full'; startLoop(); },
     // called by gallery.js
     focus(on) { gal.focusTo = on ? 1 : 0; if (on) { ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
+    // which hand light F switches: 'torch' (flashlight) or 'lamp' (warm lantern)
+    setLight(mode) {
+      const m = mode === 'lamp' ? 'lamp' : 'torch';
+      if (m === light.mode) return;
+      light.mode = m;
+      if (light.on) { light.since = performance.now() - 50; }
+      if (!running) renderOnce();
+    },
+    toggleLight() { toggleLight(); },
+    // for testing: stand at an exact spot (world x, z)
+    _standAt(x, z) { ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0; if (!running) renderOnce(); },
+    _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
     // back to the home view (used by the back button)
     home() {
       ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
@@ -892,6 +1107,6 @@ import * as THREE from 'three';
 
   // Pick up settings that were applied before this file finished loading.
   const st = window.MEOW_STATE;
-  if (st) { sceneName = PRESETS[st.scene] ? st.scene : 'rain'; motion = st.motion === 'reduced' ? 'reduced' : 'full'; }
+  if (st) { sceneName = PRESETS[st.scene] ? st.scene : 'rain'; motion = st.motion === 'reduced' ? 'reduced' : 'full'; light.mode = st.light === 'lamp' ? 'lamp' : 'torch'; }
   if (window.MEOW_READY && window.MEOW_STATE) window.MEOW_READY.then(() => window.MEOW_BG.start());
 })();

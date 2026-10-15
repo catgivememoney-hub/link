@@ -753,3 +753,18 @@ kbd {
   background: color-mix(in srgb, var(--glass) 70%, transparent);
 }
 .walk-hint kbd:last-of-type { margin-right: 8px; }
+
+/* lantern on: a faint warm bloom rising from below (the light, not a hand) */
+.lamp-glow {
+  position: fixed; inset: auto 0 0 0; height: 55vh; z-index: 2; pointer-events: none;
+  background: radial-gradient(70% 90% at 62% 115%, rgba(255, 170, 90, 0.22), rgba(255, 150, 70, 0.06) 45%, transparent 70%);
+  mix-blend-mode: screen;
+  opacity: 0; transition: opacity 0.9s var(--ease);
+}
+html.lamp-on .lamp-glow { opacity: 1; animation: lampBreath 3.2s ease-in-out infinite; }
+@keyframes lampBreath { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.12); } }
+html.reduce-motion .lamp-glow { animation: none; }
+
+/* nothing on the page gets accidentally selected or dragged while looking around */
+img { -webkit-user-drag: none; user-select: none; }
+.top, .stage .wordmark, .explore-ui { user-select: none; -webkit-user-select: none; }

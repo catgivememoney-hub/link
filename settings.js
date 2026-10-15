@@ -15,7 +15,8 @@
     sound: true,
     volume: 0.7,
     hints: true,
-    motion: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'
+    motion: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full',
+    light: 'torch'   // what F switches on in the 3D world: 'torch' or 'lamp'
   };
 
   // [value, label key, preview swatch] — muted colours, black & white to soft colour
@@ -65,7 +66,7 @@
     I.apply(s.lang);
     root.classList.toggle('no-hints', !s.hints);
     root.classList.toggle('reduce-motion', s.motion === 'reduced');
-    if (window.MEOW_BG) { window.MEOW_BG.setScene(s.scene); window.MEOW_BG.setMotion(s.motion); }
+    if (window.MEOW_BG) { window.MEOW_BG.setScene(s.scene); window.MEOW_BG.setMotion(s.motion); if (window.MEOW_BG.setLight) window.MEOW_BG.setLight(s.light); }
     if (window.MEOW_SOUND) { window.MEOW_SOUND.setVolume(s.volume); window.MEOW_SOUND.setEnabled(s.sound); }
     syncPanel();
   };
@@ -77,6 +78,7 @@
   const syncPanel = () => {
     setSeg($('langSeg'), s.lang);
     setSeg($('motionSeg'), s.motion);
+    setSeg($('lightSeg'), s.light);
     setSwitch($('soundSwitch'), s.sound);
     setSwitch($('hintSwitch'), s.hints);
     $('volume').value = Math.round(s.volume * 100);
@@ -150,6 +152,10 @@
     $('langSeg').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
       s.lang = b.dataset.val; save(); apply();
+    });
+    $('lightSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      s.light = b.dataset.val; save(); apply();
     });
     $('motionSeg').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
