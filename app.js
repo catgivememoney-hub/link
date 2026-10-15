@@ -4,6 +4,7 @@
   const KEY = 'meow.links.v1';
   const OLD_KEY = 'linknest.links.v1'; // v1 name, migrated once
   const THEME_KEY = 'meow.theme';
+  const SIDE_KEY = 'meow.sidebar';
   const MAX_IMPORT = 200;
   const $ = (id) => document.getElementById(id);
 
@@ -168,7 +169,7 @@
   /* ---------- one row in the list ---------- */
   const card = (l, i) => {
     const row = document.createElement('li');
-    row.className = 'row';
+    row.className = 'row' + (l.pinned ? ' featured' : '');
     row.style.animationDelay = Math.min(i * 25, 300) + 'ms';
 
     const num = document.createElement('span');
@@ -262,6 +263,7 @@
     hidePreview();
     $('list').replaceChildren(...list.map(card));
     $('empty').hidden = list.length > 0;
+    $('count').textContent = list.length;
   };
 
   /* ---------- actions ---------- */
@@ -275,6 +277,7 @@
     $('addForm').reset();
     render();
     toast('Link added ✨');
+    if (!sidebarOpen()) setSidebar(true, false);
   };
 
   const mergeIn = (incoming) => {
@@ -350,9 +353,39 @@
     });
   };
 
+  /* ---------- sidebar ---------- */
+  const isSmall = () => matchMedia('(max-width: 900px)').matches;
+
+  const setSidebar = (open, remember) => {
+    document.body.classList.toggle('side-closed', !open);
+    $('menuBtn').setAttribute('aria-expanded', String(open));
+    $('menuBtn').setAttribute('aria-label', open ? 'Close sidebar' : 'Open sidebar');
+    $('backdrop').hidden = !(open && isSmall());
+    $('sidebar').inert = !open;
+    hidePreview();
+    if (remember && !isSmall()) {
+      try { localStorage.setItem(SIDE_KEY, open ? 'open' : 'closed'); } catch { /* ignore */ }
+    }
+  };
+  const sidebarOpen = () => !document.body.classList.contains('side-closed');
+
+  const initSidebar = () => {
+    let saved = null;
+    try { saved = localStorage.getItem(SIDE_KEY); } catch { /* ignore */ }
+    // Open by default on big screens, closed on phones.
+    setSidebar(isSmall() ? false : saved !== 'closed', false);
+    $('menuBtn').addEventListener('click', () => setSidebar(!sidebarOpen(), true));
+    $('closeSide').addEventListener('click', () => setSidebar(false, true));
+    $('backdrop').addEventListener('click', () => setSidebar(false, true));
+    addEventListener('keydown', (e) => { if (e.key === 'Escape' && sidebarOpen() && isSmall()) setSidebar(false, true); });
+    matchMedia('(max-width: 900px)').addEventListener('change', () => setSidebar(isSmall() ? false : true, false));
+    $('list').addEventListener('scroll', hidePreview, { passive: true });
+  };
+
   /* ---------- start ---------- */
   const init = async () => {
     initTheme();
+    initSidebar();
     load();
     $('addForm').addEventListener('submit', addLink);
     $('search').addEventListener('input', render);
