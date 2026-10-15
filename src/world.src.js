@@ -273,15 +273,15 @@ import * as THREE from 'three';
      right, its beam lags a little behind your view and trembles slightly; it
      casts shadows and shows as a soft beam in fog. The lantern is a warm flame
      that catches, flickers and swings like a pendulum as you walk. */
-  const torch = new THREE.SpotLight(0xffeedd, 0, 190, THREE.MathUtils.degToRad(22), 0.75, 1.5);
+  const torch = new THREE.SpotLight(0xffeedd, 0, 280, THREE.MathUtils.degToRad(32), 0.7, 1.35);
   torch.castShadow = false;
   torch.shadow.mapSize.set(1024, 1024);
   torch.shadow.camera.near = 0.5;
-  torch.shadow.camera.far = 190;
+  torch.shadow.camera.far = 280;
   torch.shadow.bias = -0.0012;
   torch.shadow.normalBias = 0.06;
   scene.add(torch, torch.target);
-  const lamp = new THREE.PointLight(0xffa35a, 0, 56, 1.6);
+  const lamp = new THREE.PointLight(0xffa35a, 0, 120, 1.25);
   scene.add(lamp);
 
   // the visible beam: a soft, open cone with drifting dust, added on top of the scene
@@ -324,7 +324,10 @@ import * as THREE from 'three';
   scene.add(beam);
 
   const light = {
-    mode: 'torch', on: false, since: -1e9, level: 0,
+    state: 'off',                                    // F cycles: off → torch → lamp → off
+    torch: { on: false, since: -1e9, level: 0 },     // each light fades in/out on its own,
+    lamp: { on: false, since: -1e9, level: 0 },      // so switching torch → lamp cross-fades
+    level: 0,
     aim: new THREE.Vector3(0, 0, -1),               // where the beam actually points (lags the view)
     swing: 0, swingV: 0, swingZ: 0, swingZV: 0,     // lantern pendulum
     lastVX: 0, lastVZ: 0
@@ -563,7 +566,7 @@ import * as THREE from 'three';
   const SPEED = 24;     // walking speed (units per second); Shift runs
   const ex = { px: 0, pz: 0, vx: 0, vz: 0, homing: false, yaw: 0, yawTo: 0, pitch: 0, pitchTo: 0, ground: 0, on: false };
   const keys = new Set();
-  const bob = { phase: 0, amp: 0, run: 0 };   // walking camera motion
+  const bob = { phase: 0, amp: 0, run: 0, lastStep: 0 };   // walking camera motion
   let frameDt = 1 / 60;
   const fwd = new THREE.Vector3(), flat = new THREE.Vector3(), lookDir = new THREE.Vector3();
   const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -645,6 +648,7 @@ import * as THREE from 'three';
   /* ---------- light: switching on/off, hand lag, flame, pendulum ---------- */
   const fwdV = new THREE.Vector3(), rightV = new THREE.Vector3(), upV = new THREE.Vector3(), tmpV = new THREE.Vector3();
   const powerCurve = (mode, on, t) => {
+    if (t < 0) return 0;              // scheduled to start a moment later
     if (mode === 'torch') {
       if (on) {                     // LED: quick catch, one tiny stutter, full
         if (t < 0.04) return 0.55; if (t < 0.08) return 0.12; if (t < 0.16) return 0.12 + (t - 0.08) / 0.08 * 0.88; return 1;
@@ -658,8 +662,6 @@ import * as THREE from 'three';
     return Math.max(0, 1 - Math.pow(t / 0.5, 0.8));     // off: dims slowly like a flame going out
   };
   const updateLight = (now, time) => {
-    const t = (now - light.since) / 1000;
-    const base = powerCurve(light.mode, light.on, t);
     camera.updateMatrixWorld();
     fwdV.set(0, 0, -1).applyQuaternion(camera.quaternion);
     rightV.set(1, 0, 0).applyQuaternion(camera.quaternion);
@@ -668,9 +670,11 @@ import * as THREE from 'three';
     const fog = Math.min(1.6, scene.fog.density / 0.004);   // beams show more in mist and rain
     const rainy = rainMat.uniforms.uOpacity.value;
 
-    if (light.mode === 'torch') {
-      const lvl = base * (light.on && t > 0.16 ? 0.985 + 0.015 * Math.sin(time * 40) * Math.sin(time * 7) : 1);
-      light.level = lvl;
+    /* --- flashlight --- */
+    const tT = (now - light.torch.since) / 1000;
+    const tLvl = powerCurve('torch', light.torch.on, tT) * (light.torch.on && tT > 0.16 ? 0.985 + 0.015 * Math.sin(time * 40) * Math.sin(time * 7) : 1);
+    light.torch.level = tLvl;
+    if (tLvl > 0.001) {
       // held low and to the right; the hand moves a little against the head bob
       const handBob = bob.amp * (motion === 'full' ? 1 : 0);
       torch.position.copy(camera.position)
@@ -683,53 +687,70 @@ import * as THREE from 'three';
       }
       light.aim.lerp(tmpV.normalize(), motion === 'full' ? k : 1).normalize();
       torch.target.position.copy(torch.position).addScaledVector(light.aim, 40);
-      torch.intensity = lvl * 380;
-      torch.castShadow = lvl > 0.02;
       // visible beam
-      const len = 70;
+      const len = 90;
       const r = Math.tan(torch.angle) * len;
       beam.position.copy(torch.position);
       beam.lookAt(torch.target.position);
       beam.scale.set(r, r, len);
-      beamMat.uniforms.uOpacity.value = lvl * (0.02 + 0.035 * fog + 0.04 * rainy);
-      beam.visible = lvl > 0.01;
-      lamp.intensity = 0;
-    } else {
-      // flame flicker: slow breathing plus small quick shivers
-      const flick = light.on && t > 0.7
-        ? 0.88 + 0.07 * Math.sin(time * 9.3 + Math.sin(time * 3.1) * 2) + 0.04 * Math.sin(time * 23.7) + 0.02 * Math.sin(time * 41)
-        : 1;
-      const lvl = base * flick;
-      light.level = lvl;
-      // pendulum: sways when you speed up, slow down or turn, then settles
-      if (motion === 'full') {
-        const ax = (ex.vx - light.lastVX) / Math.max(frameDt, 0.001), az = (ex.vz - light.lastVZ) / Math.max(frameDt, 0.001);
-        const side = -(ax * fwdV.z - az * fwdV.x) * 0.0012, fore = -(ax * fwdV.x + az * fwdV.z) * 0.0012;
-        const dt = frameDt;
-        light.swingV += (-light.swing * 14 - light.swingV * 1.8 + side) * dt;
-        light.swing += light.swingV * dt;
-        light.swingZV += (-light.swingZ * 14 - light.swingZV * 1.8 + fore + Math.sin(bob.phase * 2) * 0.6 * bob.amp) * dt;
-        light.swingZ += light.swingZV * dt;
-      }
-      light.lastVX = ex.vx; light.lastVZ = ex.vz;
-      lamp.position.copy(camera.position)
-        .addScaledVector(rightV, 1.1 + Math.sin(light.swing) * 1.4)
-        .addScaledVector(upV, -2.4 + (1 - Math.cos(light.swing)) * 1.4)
-        .addScaledVector(fwdV, 2.2 + Math.sin(light.swingZ) * 1.0);
-      if (motion === 'full' && light.on) lamp.position.y += Math.sin(time * 6.1) * 0.03;   // tiny flame jitter
-      lamp.intensity = lvl * 520;
-      torch.intensity = 0; torch.castShadow = false;
-      beam.visible = false;
     }
+    torch.intensity = tLvl * 520;
+    torch.castShadow = tLvl > 0.02;
+    beamMat.uniforms.uOpacity.value = tLvl * (0.018 + 0.03 * fog + 0.035 * rainy);
+    beam.visible = tLvl > 0.01;
+
+    /* --- warm lantern --- */
+    const lT = (now - light.lamp.since) / 1000;
+    const flick = light.lamp.on && lT > 0.7
+      ? 0.88 + 0.07 * Math.sin(time * 9.3 + Math.sin(time * 3.1) * 2) + 0.04 * Math.sin(time * 23.7) + 0.02 * Math.sin(time * 41)
+      : 1;
+    const lLvl = powerCurve('lamp', light.lamp.on, lT) * flick;
+    light.lamp.level = lLvl;
+    // pendulum: sways when you speed up, slow down or turn, then settles
+    if (motion === 'full') {
+      const ax = (ex.vx - light.lastVX) / Math.max(frameDt, 0.001), az = (ex.vz - light.lastVZ) / Math.max(frameDt, 0.001);
+      const side = -(ax * fwdV.z - az * fwdV.x) * 0.0012, fore = -(ax * fwdV.x + az * fwdV.z) * 0.0012;
+      const dt = frameDt;
+      light.swingV += (-light.swing * 14 - light.swingV * 1.8 + side) * dt;
+      light.swing += light.swingV * dt;
+      light.swingZV += (-light.swingZ * 14 - light.swingZV * 1.8 + fore + Math.sin(bob.phase * 2) * 0.6 * bob.amp) * dt;
+      light.swingZ += light.swingZV * dt;
+    }
+    light.lastVX = ex.vx; light.lastVZ = ex.vz;
+    lamp.position.copy(camera.position)
+      .addScaledVector(rightV, 1.1 + Math.sin(light.swing) * 1.4)
+      .addScaledVector(upV, -2.4 + (1 - Math.cos(light.swing)) * 1.4)
+      .addScaledVector(fwdV, 2.2 + Math.sin(light.swingZ) * 1.0);
+    if (motion === 'full' && light.lamp.on) lamp.position.y += Math.sin(time * 6.1) * 0.03;   // tiny flame jitter
+    lamp.intensity = lLvl * 900;
+
+    light.level = Math.max(tLvl, lLvl);
     root.classList.toggle('light-on', light.level > 0.05);
-    root.classList.toggle('lamp-on', light.mode === 'lamp' && light.level > 0.05);
+    root.classList.toggle('lamp-on', lLvl > 0.05);
   };
+  // F: off → flashlight → warm lantern → off
   const toggleLight = () => {
-    light.on = !light.on;
-    light.since = performance.now();
-    light.aim.copy(fwdV.lengthSq() ? fwdV : light.aim);
+    const now = performance.now();
+    const snd = window.MEOW_SOUND;
+    if (light.state === 'off') {
+      light.state = 'torch';
+      light.torch.on = true; light.torch.since = now;
+      light.aim.copy(fwdV.lengthSq() ? fwdV : light.aim);
+      if (snd && snd.click) snd.click(true);
+    } else if (light.state === 'torch') {
+      light.state = 'lamp';
+      light.torch.on = false; light.torch.since = now;
+      light.lamp.on = true; light.lamp.since = now + 120;        // the flame catches as the beam fades
+      if (snd && snd.click) snd.click(false);
+      if (snd && snd.ignite) setTimeout(() => snd.ignite(), 120);
+    } else {
+      light.state = 'off';
+      light.lamp.on = false; light.lamp.since = now;
+      if (snd && snd.puff) snd.puff();
+    }
+    if (snd && snd.fire) snd.fire(light.state === 'lamp');
     if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
-    dispatchEvent(new CustomEvent('meow:light', { detail: { on: light.on, mode: light.mode } }));
+    dispatchEvent(new CustomEvent('meow:light', { detail: { state: light.state } }));
   };
 
   /* ---------- input for exploring and for the trees ---------- */
@@ -975,7 +996,7 @@ import * as THREE from 'three';
         ex.px -= ex.px * k; ex.pz -= ex.pz * k; ex.vx = ex.vz = 0;
         if (Math.hypot(ex.px, ex.pz) < 0.05) { ex.px = ex.pz = 0; ex.homing = false; }
       }
-      const lightBusy = (now - light.since) < 900;
+      const lightBusy = (now - Math.max(light.torch.since, light.lamp.since)) < 1200;
       if (tempRun && !keys.size && Math.hypot(ex.vx, ex.vz) < 0.05 && !ex.homing && !lightBusy) { tempRun = false; running = motion === 'full'; }
     }
     frameDt = fdt / 60;
@@ -987,6 +1008,16 @@ import * as THREE from 'three';
       bob.amp += (want - bob.amp) * (1 - Math.pow(0.88, fdt)); // settle smoothly when you stop
       // steps per second grow with speed: ~0.95 strides/s walking, ~1.45 running
       bob.phase += Math.PI * 2 * (0.95 + 0.5 * bob.run) * Math.min(1, sp / SPEED + 0.15) * frameDt * (sp > 0.3 ? 1 : 0.4);
+      // footsteps: one at each foot strike, the sound depends on what you're walking on
+      const stepNo = Math.floor(bob.phase / Math.PI);
+      if (stepNo !== bob.lastStep) {
+        bob.lastStep = stepNo;
+        if (sp > SPEED * 0.25 && window.MEOW_SOUND && window.MEOW_SOUND.step) {
+          const wx = camera.position.x, wz = camera.position.z, gh = heightAt(wx, wz);
+          const surface = gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
+          window.MEOW_SOUND.step(surface, Math.min(1.5, sp / SPEED));
+        }
+      }
     }
     const away = Math.hypot(ex.px, ex.pz);
     if (!drag && away < 2) { const rr = Math.pow(0.96, fdt); ex.yawTo *= rr; ex.pitchTo *= rr; }
@@ -1064,14 +1095,6 @@ import * as THREE from 'three';
     setMotion(m) { motion = m === 'reduced' ? 'reduced' : 'full'; startLoop(); },
     // called by gallery.js
     focus(on) { gal.focusTo = on ? 1 : 0; if (on) { ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
-    // which hand light F switches: 'torch' (flashlight) or 'lamp' (warm lantern)
-    setLight(mode) {
-      const m = mode === 'lamp' ? 'lamp' : 'torch';
-      if (m === light.mode) return;
-      light.mode = m;
-      if (light.on) { light.since = performance.now() - 50; }
-      if (!running) renderOnce();
-    },
     toggleLight() { toggleLight(); },
     // for testing: stand at an exact spot (world x, z)
     _standAt(x, z) { ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0; if (!running) renderOnce(); },
@@ -1107,6 +1130,6 @@ import * as THREE from 'three';
 
   // Pick up settings that were applied before this file finished loading.
   const st = window.MEOW_STATE;
-  if (st) { sceneName = PRESETS[st.scene] ? st.scene : 'rain'; motion = st.motion === 'reduced' ? 'reduced' : 'full'; light.mode = st.light === 'lamp' ? 'lamp' : 'torch'; }
+  if (st) { sceneName = PRESETS[st.scene] ? st.scene : 'rain'; motion = st.motion === 'reduced' ? 'reduced' : 'full'; }
   if (window.MEOW_READY && window.MEOW_STATE) window.MEOW_READY.then(() => window.MEOW_BG.start());
 })();

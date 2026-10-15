@@ -139,8 +139,91 @@
     });
   };
 
+  /* ---- walking and light sounds ---- */
+  const nb = {};                                     // cached noise buffers
+  const noise = (sec) => (nb[sec] = nb[sec] || noiseBuffer(sec, 'white'));
+  const fx = (dur, chain, gainCurve, when = 0) => {
+    // plays a filtered noise burst: chain = list of [type, freq, Q]
+    const t = ac.currentTime + 0.005 + when;
+    const src = ac.createBufferSource(); src.buffer = noise(Math.max(0.05, Math.ceil(dur * 20) / 20));
+    let node = src;
+    chain.forEach(([type, f, q]) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q) b.Q.value = q; node.connect(b); node = b; });
+    const g = ac.createGain(); node.connect(g); g.connect(out);
+    gainCurve(g.gain, t);
+    src.start(t); src.stop(t + dur + 0.05);
+    return { src, t };
+  };
+  const ready = () => enabled && getAudio() && (ac.resume(), true);
+  const vol = () => Math.max(0.25, volume);
+
+  // a footstep: soft thud on grass/soil, crunch on snow, splash at the water's edge
+  const step = (surface, pace = 1) => {
+    if (!ready()) return;
+    const v = vol() * (0.7 + 0.35 * pace) * rand(0.85, 1.1);
+    if (surface === 'snow') {
+      for (let i = 0; i < 5; i++) {
+        fx(0.03, [['bandpass', rand(1800, 3600), 2.5]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.07 * v, t + 0.003); g.exponentialRampToValueAtTime(0.0001, t + 0.03); }, i * rand(0.012, 0.022));
+      }
+      fx(0.12, [['lowpass', 500]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.12 * v, t + 0.01); g.exponentialRampToValueAtTime(0.0001, t + 0.12); });
+    } else if (surface === 'water') {
+      fx(0.22, [['bandpass', rand(500, 900), 0.9]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.16 * v, t + 0.02); g.exponentialRampToValueAtTime(0.0001, t + 0.22); });
+      const o = ac.createOscillator(), og = ac.createGain(), t = ac.currentTime + 0.03, f0 = rand(500, 800);
+      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 1.8, t + 0.06);
+      og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.035 * v, t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      o.connect(og); og.connect(out); o.start(t); o.stop(t + 0.1);
+    } else {
+      // heel thud + a little rustle of grass
+      fx(0.12, [['lowpass', rand(260, 380)], ['peaking', 120, 1]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.32 * v, t + 0.006); g.exponentialRampToValueAtTime(0.0001, t + 0.11); });
+      fx(0.16, [['bandpass', rand(2200, 3800), 0.9]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.03 * v, t + 0.03); g.exponentialRampToValueAtTime(0.0001, t + 0.16); }, 0.01);
+    }
+  };
+
+  // flashlight switch: a small mechanical "tick-tock"
+  const click = (on) => {
+    if (!ready()) return;
+    const v = vol();
+    const hi = on ? 4200 : 3600;
+    fx(0.012, [['bandpass', hi, 3]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.32 * v, t + 0.001); g.exponentialRampToValueAtTime(0.0001, t + 0.012); });
+    fx(0.03, [['bandpass', hi * 0.42, 2.2]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.22 * v, t + 0.002); g.exponentialRampToValueAtTime(0.0001, t + 0.03); }, 0.028);
+  };
+
+  // lantern catching: a soft whoosh that opens up, with a few sparks
+  const ignite = () => {
+    if (!ready()) return;
+    const v = vol();
+    const w = fx(0.6, [['lowpass', 300, 0.7]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.22 * v, t + 0.18); g.exponentialRampToValueAtTime(0.0001, t + 0.6); });
+    // the filter opens as the flame grows
+    const lp = w.src; void lp;
+    for (let i = 0; i < 5; i++) {
+      fx(0.02, [['bandpass', rand(2500, 5500), 3]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(rand(0.05, 0.1) * v, t + 0.002); g.exponentialRampToValueAtTime(0.0001, t + 0.02); }, 0.1 + i * rand(0.04, 0.09));
+    }
+  };
+
+  // lantern out: a soft puff
+  const puff = () => {
+    if (!ready()) return;
+    const v = vol();
+    fx(0.25, [['lowpass', 700, 0.6]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.18 * v, t + 0.02); g.exponentialRampToValueAtTime(0.0001, t + 0.25); });
+  };
+
+  // while the lantern burns: quiet crackles now and then
+  let fireTimer = 0;
+  const fire = (on) => {
+    clearTimeout(fireTimer);
+    if (!on) return;
+    const tick = () => {
+      if (enabled && ac && ac.state === 'running') {
+        const v = vol();
+        fx(0.015, [['bandpass', rand(2000, 6000), 2.5]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(rand(0.015, 0.05) * v, t + 0.002); g.exponentialRampToValueAtTime(0.0001, t + 0.015); });
+        if (Math.random() < 0.25) fx(0.15, [['lowpass', 220]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.04 * v, t + 0.04); g.exponentialRampToValueAtTime(0.0001, t + 0.15); });
+      }
+      fireTimer = setTimeout(tick, rand(90, 420));
+    };
+    fireTimer = setTimeout(tick, 600);
+  };
+
   window.MEOW_SOUND = {
-    chime,
+    chime, step, click, ignite, puff, fire,
     setEnabled(on) { enabled = !!on; update(); },
     setVolume(v) { volume = Math.max(0, Math.min(1, Number(v) || 0)); update(); }
   };
