@@ -993,15 +993,30 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { lockFails++; }); } catch (e) { lockFails++; }
   };
   document.addEventListener('pointerlockerror', () => { lockFails++; });
-  const unlockPointer = () => { if (locked() && document.exitPointerLock) document.exitPointerLock(); };
+  const unlockPointer = () => { if (locked() && document.exitPointerLock) { window.MEOW_UNLOCK_REASON = 'self'; document.exitPointerLock(); } };
+  // mouse sensitivity from Settings (1 = normal)
+  const sens = () => Math.max(0.2, Math.min(2.5, (window.MEOW_STATE && Number(window.MEOW_STATE.sens)) || 1));
+  // Esc leaves the forest: the browser uses Esc to free the pointer, so we listen for that…
+  const leaveScene = () => { if (ex.on && !busy() && window.MEOW_BG) window.MEOW_BG.home(); };
   const dot = document.createElement('div');
   dot.className = 'aim-dot';
   document.body.appendChild(dot);
   document.addEventListener('pointerlockchange', () => {
     root.classList.toggle('pl', locked());
+    // (switching to another app also frees the pointer — that shouldn't send you home)
+    if (!locked()) { const why = window.MEOW_UNLOCK_REASON; window.MEOW_UNLOCK_REASON = ''; if (!why) setTimeout(() => { if (document.hasFocus() && !document.hidden) leaveScene(); }, 80); }
     if (locked()) { hover.x = centre()[0]; hover.y = centre()[1]; }
     else if (hover.id >= 0) setHover(-1);
   });
+
+  // …and for a plain Esc when the pointer isn't hidden (a link card closes first instead)
+  addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !ex.on || typing(e.target)) return;
+    if (document.querySelector('.modal:not([hidden])')) return;
+    const card = document.getElementById('treeCard');
+    if (card && !card.hidden && card.classList.contains('show')) return;
+    leaveScene();
+  }, true);
 
   // the cabin door: aim at it and click (or tap E)
   const door = { aimed: false };
@@ -1074,8 +1089,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     }
     if (locked()) {
       if (ex.on && !fly.on && !busy()) {
-        ex.yawTo -= e.movementX * 0.0024;
-        ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.002, PITCH_MIN, PITCH_MAX);
+        const k = sens();
+        ex.yawTo -= e.movementX * 0.0024 * k;
+        ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.002 * k, PITCH_MIN, PITCH_MAX);
         wake();
       }
       return;
@@ -1085,8 +1101,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     // in the forest, just moving the mouse / one finger on the trackpad turns the view:
     // slide right → turn right, slide up → look up
     if (ex.on && !fly.on && e.pointerType !== 'touch' && (e.movementX || e.movementY)) {
-      ex.yawTo -= e.movementX * 0.0028;
-      ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.0022, PITCH_MIN, PITCH_MAX);
+      const k = sens();
+      ex.yawTo -= e.movementX * 0.0028 * k;
+      ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.0022 * k, PITCH_MIN, PITCH_MAX);
       wake();
     }
     hover.x = e.clientX; hover.y = e.clientY; hover.pending = true;
@@ -1457,7 +1474,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     },
     _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
     _toggleDoor() { props.cabin.door.toggle(performance.now()); },
-    _pos() { const d = new THREE.Vector3(); camera.getWorldDirection(d); return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on, pitch: ex.pitch, lookY: d.y, yaw: ex.yaw, yawTo: ex.yawTo, dx: d.x, dz: d.z, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, ground: ex.ground }; },
+    _pos() { const d = new THREE.Vector3(); camera.getWorldDirection(d); return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on, pitch: ex.pitch, lookY: d.y, yaw: ex.yaw, yawTo: ex.yawTo, dx: d.x, dz: d.z, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, ground: ex.ground, homing: ex.homing }; },
     _sites() { return { cabin: props.cabinAt, circle: props.circleAt }; },
     _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
     // back to the home view (used by the back button)

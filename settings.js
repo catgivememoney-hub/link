@@ -10,13 +10,19 @@
   const t = (k, v) => I.t(k, v);
 
   const DEFAULTS = {
-    lang: (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en',
+    lang: (() => {   // start in the visitor's own language when we have it
+      const l = (navigator.language || '').toLowerCase();
+      if (/^(yue|zh-hk|zh-mo)/.test(l)) return 'yue';
+      for (const k of ['zh', 'es', 'hi', 'ja']) if (l.startsWith(k)) return k;
+      return 'en';
+    })(),
     scene: 'rain',
     sound: true,
     volume: 0.7,
     hints: true,
     motion: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full',
-    cursor: 'paw'   // mouse pointer: paw, classic, soft or buddy
+    cursor: 'paw',  // mouse pointer: paw, classic, soft or buddy
+    sens: 1         // mouse sensitivity in the 3D world (0.2 – 2.5)
   };
 
   // [value, label key, preview swatch] — muted colours, black & white to soft colour
@@ -83,6 +89,8 @@
     setSwitch($('soundSwitch'), s.sound);
     setSwitch($('hintSwitch'), s.hints);
     $('volume').value = Math.round(s.volume * 100);
+    $('sens').value = Math.round((s.sens || 1) * 100);
+    $('sensVal').textContent = (s.sens || 1).toFixed(1) + '×';
     $('volume').disabled = !s.sound;
     $('sceneGrid').querySelectorAll('button').forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.val === s.scene));
@@ -164,6 +172,10 @@
     });
     $('soundSwitch').addEventListener('click', () => { s.sound = !s.sound; save(); apply(); });
     $('hintSwitch').addEventListener('click', () => { s.hints = !s.hints; save(); apply(); });
+    $('sens').addEventListener('input', (e) => {
+      s.sens = e.target.value / 100; save();
+      $('sensVal').textContent = s.sens.toFixed(1) + '×';
+    });
     $('volume').addEventListener('input', (e) => {
       s.volume = e.target.value / 100; save();
       if (window.MEOW_SOUND) window.MEOW_SOUND.setVolume(s.volume);

@@ -34,6 +34,38 @@
       '每只猫的鼻纹都是独一无二的。',
       '猫的每只耳朵有 32 块肌肉。',
       '猫呼噜声的频率大约在 25 到 150 赫兹。'
+    ],
+    yue: [
+      '貓一日瞓 12 至 16 個鐘。',
+      '一群貓喺英文叫 clowder。',
+      '貓食唔出甜味。',
+      '每隻貓嘅鼻紋都唔同。',
+      '貓每隻耳仔有 32 條肌肉。',
+      '貓嘅呼嚕聲大約 25 至 150 赫茲。'
+    ],
+    es: [
+      'Los gatos duermen de 12 a 16 horas al día.',
+      'Un grupo de gatos en inglés se llama «clowder».',
+      'Los gatos no pueden saborear lo dulce.',
+      'La huella de la nariz de cada gato es única.',
+      'Los gatos tienen 32 músculos en cada oreja.',
+      'El ronroneo de un gato va de unos 25 a 150 Hz.'
+    ],
+    hi: [
+      'बिल्लियाँ दिन में 12 से 16 घंटे सोती हैं।',
+      'अंग्रेज़ी में बिल्लियों के झुंड को “clowder” कहते हैं।',
+      'बिल्लियाँ मीठा स्वाद नहीं पहचान पातीं।',
+      'हर बिल्ली की नाक की छाप अलग होती है।',
+      'बिल्ली के हर कान में 32 मांसपेशियाँ होती हैं।',
+      'बिल्ली की घुरघुराहट लगभग 25 से 150 हर्ट्ज़ की होती है।'
+    ],
+    ja: [
+      '猫は1日に12〜16時間眠ります。',
+      '猫の群れは英語で「clowder」と言います。',
+      '猫は甘い味を感じません。',
+      '猫の鼻紋は一匹ずつ違います。',
+      '猫の耳には片方に32の筋肉があります。',
+      '猫のゴロゴロ音はおよそ25〜150ヘルツです。'
     ]
   };
 
@@ -92,7 +124,7 @@
       try { await navigator.clipboard.writeText(link.url); toast(t('copied')); } catch { window.prompt(t('copy'), link.url); }
     };
     // the card has buttons, so give the mouse back
-    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    if (document.pointerLockElement && document.exitPointerLock) { window.MEOW_UNLOCK_REASON = 'card'; document.exitPointerLock(); }
     card.hidden = false;
     card.classList.remove('show');
     place(card, x, y, 22, -40);

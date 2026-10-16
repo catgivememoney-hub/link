@@ -10,10 +10,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@200;300;400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=31">
+  <link rel="stylesheet" href="style.css?v=32">
   <!-- password check runs first, before anything else shows -->
-  <script src="password.js?v=31"></script>
-  <script src="gate.js?v=31"></script>
+  <script src="password.js?v=32"></script>
+  <script src="gate.js?v=32"></script>
 </head>
 <body>
   <!-- Password screen: one input, nothing else -->
@@ -186,12 +186,25 @@
             <button type="button" data-val="reduced" data-i18n="sMotionReduced">Less</button>
           </div>
         </div>
+      </section>
+
+      <section class="p-sec" style="--d:2">
         <div class="set-row">
-          <h3 data-i18n="sLanguage">Language</h3>
-          <div id="langSeg" class="seg">
-            <button type="button" data-val="en">EN</button>
-            <button type="button" data-val="zh">中</button>
-          </div>
+          <h3 data-i18n="sSens">Mouse sensitivity</h3>
+          <output id="sensVal" class="sens-val">1.0×</output>
+        </div>
+        <input id="sens" type="range" min="20" max="250" step="5" aria-label="Mouse sensitivity" data-i18n-aria="sSens">
+      </section>
+
+      <section class="p-sec" style="--d:2">
+        <h3 data-i18n="sLanguage">Language</h3>
+        <div id="langSeg" class="langs">
+          <button type="button" data-val="en" lang="en">English</button>
+          <button type="button" data-val="zh" lang="zh-CN">中文</button>
+          <button type="button" data-val="yue" lang="yue-HK">粵語</button>
+          <button type="button" data-val="es" lang="es">Español</button>
+          <button type="button" data-val="hi" lang="hi">हिन्दी</button>
+          <button type="button" data-val="ja" lang="ja">日本語</button>
         </div>
       </section>
 
@@ -232,15 +245,15 @@
   <div id="grain" class="grain" aria-hidden="true"></div>
   <div class="curtain" aria-hidden="true"></div>
 
-  <script src="i18n.js?v=31"></script>
-  <script src="sound.js?v=31"></script>
-  <script src="app.js?v=31"></script>
-  <script src="gallery.js?v=31"></script>
-  <script src="settings.js?v=31"></script>
-  <script src="cursor.js?v=31"></script>
-  <script src="cinema.js?v=31"></script>
-  <script src="fx.js?v=31"></script>
-  <script src="forest.js?v=31"></script>
-  <script src="world.js?v=31"></script>
+  <script src="i18n.js?v=32"></script>
+  <script src="sound.js?v=32"></script>
+  <script src="app.js?v=32"></script>
+  <script src="gallery.js?v=32"></script>
+  <script src="settings.js?v=32"></script>
+  <script src="cursor.js?v=32"></script>
+  <script src="cinema.js?v=32"></script>
+  <script src="fx.js?v=32"></script>
+  <script src="forest.js?v=32"></script>
+  <script src="world.js?v=32"></script>
 </body>
 </html>

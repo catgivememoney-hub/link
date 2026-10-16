@@ -9,7 +9,7 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `password.js` | **The password** (stored as a SHA-256 hash). Read the comments inside to change it. |
 | `gate.js` | The password screen (one input box). |
 | `settings.js` | ⚙ Settings: language, background, sound, hints, animation, password. |
-| `i18n.js` | English / 中文 text. |
+| `i18n.js` | All the site's text in 6 languages: English, 中文, 粵語 (Cantonese), Español, हिन्दी (Hindi), 日本語. |
 | `world.js` | The quiet 3D nature world (built from `src/world.src.js` with three.js 0.186.1). Scenes: rain, frost, mist, snow, night, aurora, sea. Edit the source file, then rebuild: `npx esbuild src/world.src.js --bundle --minify --format=iife --outfile=world.js` |
 | `sound.js` | Sound effects generated in the browser (no audio files): tree chimes, footsteps, flashlight click, lantern flame. No background sound. |
 | `app.js` | The link list, search, tags, hover previews. |
@@ -18,7 +18,7 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `src/cabin.js` | The log cabin by the lake: a walk-in house (solid walls and furniture, fireplace, bed, table, shelf, porch, dock, boat). Aim the centre dot at the door and click (or tap E) to open or close it. Bundled into `world.js`. |
 | `src/kit.js` | Shared 3D helpers (noise, geometry collector, the snow/moss material). |
 | `cursor.js` | Mouse pointers chosen in Settings: paw, classic, soft, buddy. Frosted see-through fill; colours follow the scene so the pointer stays visible. |
-| `forest.js` | Press W (or click the hint) to glide into the forest, then walk with W A S D / arrow keys (Shift runs, Space jumps, the pointer hides and a white dot marks the centre; move the mouse to look (slide right turns right, slide up looks up), click what the dot is on, Esc gives the mouse back; F cycles flashlight → warm lantern → off; footsteps and light sounds). Every tree does something: holds a link, switches the scene (every 7th), tells a cat fact (every 11th), opens a random link (every 13th), and rings its own chime. |
+| `forest.js` | Press W (or click the hint) to glide into the forest, then walk with W A S D / arrow keys (Shift runs, Space jumps, the pointer hides and a white dot marks the centre; move the mouse to look (slide right turns right, slide up looks up), click what the dot is on, Esc leaves the forest; mouse sensitivity is in Settings; F cycles flashlight → warm lantern → off; footsteps and light sounds). Every tree does something: holds a link, switches the scene (every 7th), tells a cat fact (every 11th), opens a random link (every 13th), and rings its own chime. |
 | `cinema.js` | Film layer: grain, letterbox bars with scene titles, rack focus (what you're not looking at softens). |
 | `gallery.js` | 3D floating gallery: pick a category and its links float in the middle as cards (drag, wheel, ← →, Enter, Esc). |
 
