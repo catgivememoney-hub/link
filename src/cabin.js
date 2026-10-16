@@ -658,49 +658,44 @@ export function createCabin({ scene, shared, U, camera }) {
   // hint shown near the door
   const doorWorld = toWorld((DX0 + DX1) / 2, D / 2);
 
-  // which floor you're on decides what's solid: the cabin, the stairs, or the study
-  const feetM = (self) => (self.feet === undefined ? 1e9 : (self.feet - CABIN.y) / S);
+  // which floor you're on decides what's solid: the cabin, the stairs, or the library
+  // (fm = height of your feet in the cabin's metres)
+  const toM = (feetY) => (feetY - CABIN.y) / S;
   const levelOf = (fm) => (fm > -0.7 ? 'ground' : fm < -3.2 ? 'study' : 'stairs');
   const inStair = (lx, lz) => lx > STAIR.x0 && lx < STAIR.x1 && lz > STAIR.bottom && lz < STAIR.top;
   const inStudy = (lx, lz) => lx > STUDY.x0 && lx < STUDY.x1 && lz > STUDY.z0 && lz < STUDY.z1;
   const inHouse = (lx, lz) => lx > -W / 2 + LR - 0.05 && lx < W / 2 - LR + 0.05 && lz > -D / 2 + LR && lz < D / 2 + LR + 0.05;
-  // world-space boxes: the ground shouldn't show inside the house, the lake shouldn't show in the study
+  // world-space boxes: no ground drawn inside the house, no lake inside the library
   const box = (x0, x1, z0, z1) => { const pts = [toWorld(x0, z0), toWorld(x1, z0), toWorld(x0, z1), toWorld(x1, z1)]; return [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))]; };
 
   return {
-    group, study, feet: undefined,
+    group, study,
     holeBox: box(-W / 2 + LR, W / 2 - LR, -D / 2 + LR, D / 2 - LR),
     studyBox: box(STUDY.x0 - 0.3, STUDY.x1 + 0.3, STUDY.z0 - 0.3, STUDY.z1 + 0.3),
-    // true when (wx, wz) is inside something solid; pad grows everything (world units)
-    blocked(wx, wz, pad = 0) {
+    // is (wx, wz) inside something solid for someone whose feet are at feetY? (pad: extra room, world units)
+    blocked(wx, wz, pad, feetY) {
       const [lx, lz] = toLocal(wx, wz);
       if (Math.abs(lx) > STUDY.x1 + 3 || lz < STUDY.z0 - 3 || lz > D / 2 + 4) return false;
-      const p = 0.17 + pad / S, lv = levelOf(feetM(this));
+      const p = 0.17 + pad / S, fm = toM(feetY), lv = levelOf(fm);
       if (lv === 'stairs') return lx < STAIR.x0 + p || lx > STAIR.x1 - p || lz > STAIR.top + 0.05;
-      if (lv === 'study') return studyBlocked(lx, lz, p, feetM(this));
+      if (lv === 'study') return studyBlocked(lx, lz, p, fm);
       if (Math.abs(lx) > W / 2 + 3 || lz < -D / 2 - 3) return false;
       for (const r of RECTS) if (inRect(lx, lz, r, p)) return true;
       if (door$.a < 0.5 ? inRect(lx, lz, DOOR_CLOSED, p) : inRect(lx, lz, DOOR_OPEN, p * 0.6)) return true;
       return false;
     },
-    // are you inside? (no rain, no mist in here)
-    inside(wx, wz) { const [lx, lz] = toLocal(wx, wz); return (Math.abs(lx) < W / 2 && Math.abs(lz) < D / 2) || (inStudy(lx, lz) && feetM(this) < -1); },
-    // the floor you'd stand on here: { y, under } — under = ignore the ground (you're in the house / below it)
-    floorAt(wx, wz) {
+    // are you indoors? (no rain or mist in here)
+    inside(wx, wz, feetY) { const [lx, lz] = toLocal(wx, wz); return (Math.abs(lx) < W / 2 && Math.abs(lz) < D / 2) || (inStudy(lx, lz) && toM(feetY) < -1); },
+    // every built floor under (wx, wz), in world units: [{ y, under }]; under = this replaces the ground
+    floors(wx, wz, out) {
       const [lx, lz] = toLocal(wx, wz);
       const y = (m) => CABIN.y + m * S;
-      const fm = feetM(this), cand = [];
-      if (inStair(lx, lz)) cand.push([rampY(lz), true]);
-      else if (inHouse(lx, lz)) cand.push([0.12, true]);
-      for (const h of studyFloors(lx, lz)) cand.push([h, true]);
-      if (lx > -3.3 && lx < 3.4 && lz >= D / 2 + LR + 0.05 && lz < D / 2 + 2.4) cand.push([0.2, false]);
-      if (lx > -2.25 && lx < -0.35 && lz > dz0 - 0.3 && lz < dz0 + dockLen) cand.push([0.24 - (lz - dz0) * 0.024, false]);
-      if (!cand.length) return null;
-      // the highest floor you can step onto from where your feet are
-      let best = null;
-      for (const c of cand) if (c[0] <= fm + 0.6 && (!best || c[0] > best[0])) best = c;
-      if (!best) best = cand.reduce((a, c) => (Math.abs(c[0] - fm) < Math.abs(a[0] - fm) ? c : a));   // never fall through: take the nearest
-      return { y: y(best[0]), under: best[1] };
+      if (inStair(lx, lz)) out.push({ y: y(rampY(lz)), under: true });
+      else if (inHouse(lx, lz)) out.push({ y: y(0.12), under: true });
+      for (const h of studyFloors(lx, lz)) out.push({ y: y(h), under: true });
+      if (lx > -3.3 && lx < 3.4 && lz >= D / 2 + LR + 0.05 && lz < D / 2 + 2.4) out.push({ y: y(0.2), under: false });                         // porch
+      if (lx > -2.25 && lx < -0.35 && lz > dz0 - 0.3 && lz < dz0 + dockLen) out.push({ y: y(0.24 - (lz - dz0) * 0.024), under: false });   // dock
+      return out;
     },
     door: {
       mesh: door,
@@ -710,13 +705,14 @@ export function createCabin({ scene, shared, U, camera }) {
       canToggle(wx, wz) { if (!door$.open) return true; const [lx, lz] = toLocal(wx, wz); return !inRect(lx, lz, [DX0 - 0.1, DX1 + 0.1, D / 2 - DW - 0.1, D / 2 + 0.25], 0.17); },
       toggle(now) { door$.open = !door$.open; door$.from = door$.a; door$.t0 = now; return door$.open; }
     },
-    update(s, time, now, waterY) {
+    // feetY: where the walker's feet are (undefined at the home view)
+    update(s, time, now, waterY, feetY) {
       const show = s.pCabin, on = show > 0.01;
       if (on) { if (!(this.syncT > now - 1500)) { this.syncT = now; study.sync(); } study.update(time, now); }
       study.lampLight.intensity = on ? 120 * (0.96 + 0.04 * Math.sin(time * 3.1)) : 0;
       // update the indoor shadows only while you're in that room (they're costly)
-      if (on && this.feet !== undefined) {
-        const [clx, clz] = toLocal(camera.position.x, camera.position.z), fm = feetM(this);
+      if (on && feetY !== undefined) {
+        const [clx, clz] = toLocal(camera.position.x, camera.position.z), fm = toM(feetY);
         if (fm > -0.7 && Math.abs(clx) < W / 2 + 1 && Math.abs(clz) < D / 2 + 1 && (this.shF = (this.shF || 0) + 1) % 3 === 0) fireLight.shadow.needsUpdate = true;
         if (fm < -3.0 && inStudy(clx, clz) && !(this.shL > now - 2500)) { this.shL = now; study.shadowLight.shadow.needsUpdate = true; }
       }

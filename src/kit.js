@@ -165,7 +165,7 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
           vec3 R1 = cross(vSigmaY, normal), R2 = cross(normal, vSigmaX);
           float fDet = dot(vSigmaX, R1) * faceDirection;
           vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
-          normal = normalize(abs(fDet) * normal - vGrad);
+          { vec3 nb = abs(fDet) * normal - vGrad; if (dot(nb, nb) > 1e-12) normal = normalize(nb); }   // (never NaN on a degenerate pixel)
         }` : grain ? `{
           float gh = grainH(vObj);
           vec2 dHdxy = vec2(dFdx(gh), dFdy(gh)) * ${grain.toFixed(3)};
@@ -173,7 +173,7 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
           vec3 R1 = cross(vSigmaY, normal), R2 = cross(normal, vSigmaX);
           float fDet = dot(vSigmaX, R1) * faceDirection;
           vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
-          normal = normalize(abs(fDet) * normal - vGrad);
+          { vec3 nb = abs(fDet) * normal - vGrad; if (dot(nb, nb) > 1e-12) normal = normalize(nb); }   // (never NaN on a degenerate pixel)
         }` : ''}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         ${tree ? `{

@@ -27,7 +27,7 @@
   }
 
   /* ---------- letterbox + caption for each shot ---------- */
-  const LABEL = { rain: 'bgRain', frost: 'bgFrost', mist: 'bgMist', snow: 'bgSnow', night: 'bgNight', aurora: 'bgAurora', ocean: 'bgOcean' };
+  const LABEL = { rain: 'bgRain', frost: 'bgFrost', mist: 'bgMist', snow: 'bgSnow', night: 'bgNight', aurora: 'bgAurora', ocean: 'bgOcean', spring: 'bgSpring', summer: 'bgSummer', fall: 'bgFall' };
   let shotTimer = 0;
   addEventListener('meow:shot', (e) => {
     if (root.classList.contains('reduce-motion')) return;

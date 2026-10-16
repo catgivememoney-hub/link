@@ -23,15 +23,11 @@ export const SHOW = {
 };
 export const SHOW_KEYS = ['pRocks', 'pLogs', 'pFerns', 'pGrass', 'pReeds', 'pCabin', 'pGlow', 'pStones', 'pStacks', 'pRipples', 'pFrost', 'pSnowCover', 'pMoss'];
 
-import { mulberry, h3, n3, Parts, M, coverMaterial, kind } from './kit.js';
-import { createCabin, CABIN } from './cabin.js';
-export { CABIN };
-export { STUDY } from './study.js';
-export { Parts, coverMaterial };
-void h3;
+import { mulberry, n3, Parts, M, coverMaterial, kind } from './kit.js';
+import { CABIN } from './cabin.js';
 
 /* ---------- build everything ---------- */
-export function createProps({ scene, heightAt, U, snowColor, clear = [], camera }) {
+export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
   const R = mulberry(20260707);
   const rr = (a, b) => a + R() * (b - a);
   const shared = {
@@ -173,9 +169,6 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
     return parts.geometry();
   })();
   const woodMat = coverMaterial(shared, show.pLogs, { color: 0xb7a99a });
-
-  /* ===== the log cabin (its own module: walk-in house with a door) ===== */
-  const cabin = createCabin({ scene, shared, U, camera });
 
   /* ===== stone circle ===== */
   const stonesMesh = (() => {
@@ -320,7 +313,9 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
     parts.tris(pts, (v) => { const r = Math.hypot(v.x, v.z) / 2.3; return [0.36 + r * 0.22, 0.52 + r * 0.26, 0.26 + r * 0.12]; }, (v) => Math.hypot(v.x, v.z) / 2.3, new THREE.Vector3(0, 1, 0));
     return parts.geometry();
   })();
-  const plantMat = (key, sway) => coverMaterial(shared, show[key], { sway, side: THREE.DoubleSide, color: 0xffffff, snowBias: -1, softBack: true });
+  // grass, ferns and reeds take the colour of the land in each scene (lush in summer, straw in autumn)
+  const plantMats = [];
+  const plantMat = (key, sway) => { const m = coverMaterial(shared, show[key], { sway, side: THREE.DoubleSide, color: 0xffffff, snowBias: -1, softBack: true }); plantMats.push(m); return m; };
 
   /* ===== seasons: leaf piles (autumn), flowers, beehives and a creek (spring / summer) ===== */
   let creekMesh = null, creekMat = null, bees = null;
@@ -478,30 +473,42 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
   };
   let creekPath = null;
 
+  // solids in a grid, so "is something in the way?" stays fast (built once everything is placed)
+  const SC = 40, sgrid = new Map();
+  const buildGrid = () => {
+    sgrid.clear();
+    solids.forEach((c) => {
+      const r = c.r + 2;
+      for (let gx = Math.floor((c.x - r) / SC); gx <= Math.floor((c.x + r) / SC); gx++) for (let gz = Math.floor((c.z - r) / SC); gz <= Math.floor((c.z + r) / SC); gz++) {
+        const k = gx + ',' + gz; if (!sgrid.has(k)) sgrid.set(k, []); sgrid.get(k).push(c);
+      }
+    });
+  };
+  const near = (x, z) => sgrid.get(Math.floor(x / SC) + ',' + Math.floor(z / SC)) || [];
+
   return {
-    shared, show, groups, solids, zones, cabinAt, circleAt, cabin,
-    // is this spot inside something solid? (circles plus the cabin's walls and furniture)
-    blockedAt(x, z, pad, cur, feet) {
-      for (const c of solids) {
+    shared, show, groups, solids, zones, cabinAt, circleAt,
+    // trees must not grow in clearings (the cabin, the stone circle)
+    inClearing(x, z) { return zones.some((q) => Math.hypot(q.x - x, q.z - z) < q.r); },
+    // something solid at (x, z)? feet = your height: you can be above a log or rock you jumped onto
+    blocks(x, z, pad, cur, feet) {
+      for (const c of near(x, z)) {
         if (cur[c.key] < 0.5) continue;
-        if (c.top !== undefined && feet !== undefined && feet >= c.top - 0.7) continue;   // you're above it (jumped up / standing on it)
+        if (c.top !== undefined && feet >= c.top - 0.7) continue;
         const dx = c.x - x, dz = c.z - z, r = c.r + pad;
         if (dx * dx + dz * dz < r * r) return true;
       }
-      return cur.pCabin > 0.5 && cabin.blocked(x, z, pad);
+      return false;
     },
-    // the top of a log, stump or rock you're standing on (after jumping up), else -Infinity
-    solidTop(x, z, feet, cur) {
-      let best = -Infinity;
-      for (const c of solids) {
-        if (c.top === undefined || cur[c.key] < 0.5 || c.top <= best || feet < c.top - 1.2) continue;
+    // tops of logs, stumps and rocks under (x, z) that you could stand on
+    tops(x, z, cur, out) {
+      for (const c of near(x, z)) {
+        if (c.top === undefined || cur[c.key] < 0.5) continue;
         const dx = c.x - x, dz = c.z - z;
-        if (dx * dx + dz * dz < c.rt * c.rt) best = c.top;
+        if (dx * dx + dz * dz < c.rt * c.rt) out.push(c.top);
       }
-      return best;
+      return out;
     },
-    // a built floor here (cabin, stairs, study, porch, dock): { y, under } or null
-    floorAt(x, z, cur) { return cur.pCabin > 0.5 ? cabin.floorAt(x, z) : null; },
     // second step, after the trees are planted: things that need to know where the trees stand
     plant(treeBase, waterLevel = 0) {
       const near = (x, z, r) => treeBase.some((b) => { const dx = b.p.x - x, dz = b.p.z - z; return dx * dx + dz * dz < r * r; });
@@ -565,16 +572,17 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
       }
       instanced(reedGeo, plantMat('pReeds', 0.012), reeds, 'pReeds');
       plantSeasons(treeBase, inZone, near);
+      buildGrid();
     },
     // per frame: s = the current (cross-faded) scene values
     update(s, time, camPos, waterY) {
       for (const k of SHOW_KEYS) show[k].value = s[k];
+      plantMats.forEach((m) => { m.color.copy(s.low).multiplyScalar(1.7); m.color.r = Math.min(1.1, m.color.r); m.color.g = Math.min(1.1, m.color.g); m.color.b = Math.min(1.1, m.color.b); });
       for (const k of SEASON_KEYS) show[k].value = s[k] || 0;
       if (creekMesh) { creekMat.uniforms.uOpacity.value = Math.min(1, (s.creek || 0) * 1.2); creekMat.uniforms.uColor.value.copy(s.waterC).lerp(new THREE.Color(0.32, 0.52, 0.56), 0.5); }
       if (bees) { bees.material.uniforms.uOpacity.value = s.hives || 0; bees.visible = (s.hives || 0) > 0.05; }
       shared.uSnowCover.value = s.pSnowCover; shared.uMoss.value = s.pMoss; shared.uFrost.value = s.pFrost;
       for (const [obj, key] of groups) obj.visible = s[key] > 0.01;
-      cabin.update(s, time, performance.now(), waterY);
       lampGlass.material.color.setRGB(1.6, 1.4, 1.05);
       lampGlass.position.y = lightTop.y - (1 - s.pStacks) * 140;
       beamPivot.position.y = lampGlass.position.y;
@@ -582,9 +590,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
       beamPivot.visible = s.pStacks > 0.5;
       lhBeamMat.uniforms.uOpacity.value = Math.max(0, s.pStacks - 0.5) * 0.5;
       void camPos;
-    },
-    // trees must not grow in clearings
-    blocked(x, z) { return zones.some((q) => Math.hypot(q.x - x, q.z - z) < q.r); }
+    }
   };
 }
 

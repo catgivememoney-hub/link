@@ -57,7 +57,7 @@
     const f = SCALE[Math.abs(n) % SCALE.length] * (n % 3 === 0 ? 0.5 : 1);
     const g = ac.createGain();
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.16 * Math.max(0.3, volume), t + 0.012);
+    g.gain.linearRampToValueAtTime(0.16 * vol() + 0.0001, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
     g.connect(out);
     [[1, 'sine', 1], [2.01, 'sine', 0.25], [3.02, 'triangle', 0.08]].forEach(([mul, type, amp]) => {
@@ -83,7 +83,7 @@
     return { src, t };
   };
   const ready = () => enabled && getAudio() && (ac.resume(), true);
-  const vol = () => Math.max(0.25, volume);
+  const vol = () => Math.pow(volume, 1.5);   // the Volume slider (0 = silent)
 
   // a footstep: soft thud on grass/soil, crunch on snow, splash at the water's edge
   const step = (surface, pace = 1) => {

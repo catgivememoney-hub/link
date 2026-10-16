@@ -1,5 +1,5 @@
 /* MEOW — what the trees do.
-   Walk into the forest (two-finger swipe / wheel), hover a tree to see what it holds,
+   Walk into the forest (W A S D), aim at a tree to see what it holds,
    click it: the tree sways, rings its own chime note, and does its job.
 
    Tree jobs (decided by the tree's number, so every tree always does the same thing):
@@ -68,12 +68,9 @@
     ]
   };
 
-  const links = () => window.MEOW_LINKS_DATA || [];
-  const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
-  // trees don't hold links any more (the books in the study do): every 7th tree changes the scene,
+  // trees don't hold links (the books in the library do): every 7th tree changes the scene,
   // the others tell a cat fact
   const kind = (id) => (id % 7 === 0 ? 'scene' : 'meow');
-  const linkFor = (id) => { const L = links(); return L[id % L.length]; };
 
   const toast = (msg) => {
     const el = $('toast'); el.textContent = msg; el.classList.add('show');
@@ -87,13 +84,7 @@
   };
 
   /* ---------- hover label ---------- */
-  const label = (id) => {
-    const k = kind(id);
-    if (k === 'link') return { icon: '↗', text: linkFor(id).title };
-    if (k === 'scene') return { icon: '◐', text: t('tNext') };
-    if (k === 'lucky') return { icon: '✦', text: t('tLucky') };
-    return { icon: '🐾', text: t('tMeow') };
-  };
+  const label = (id) => (kind(id) === 'scene' ? { icon: '◐', text: t('tNext') } : { icon: '🐾', text: t('tMeow') });
   const showTip = (id, x, y) => {
     const { icon, text } = label(id);
     tip.querySelector('i').textContent = icon;
@@ -104,28 +95,7 @@
   const hideTip = () => tip.classList.remove('show');
   addEventListener('pointermove', (e) => { if (tip.classList.contains('show') && !document.pointerLockElement) place(tip, e.clientX, e.clientY); }, { passive: true });
 
-  /* ---------- link card ---------- */
-  const openCard = (link, x, y) => {
-    card.querySelector('strong').textContent = link.title;
-    card.querySelector('small').textContent = host(link.url) + (link.tag ? '  ·  #' + link.tag : '');
-    const fav = card.querySelector('.fav');
-    fav.replaceChildren();
-    const img = document.createElement('img');
-    img.alt = '';
-    img.src = 'https://www.google.com/s2/favicons?sz=64&domain=' + encodeURIComponent(host(link.url));
-    img.onerror = () => { fav.textContent = (link.title[0] || '?').toUpperCase(); };
-    fav.appendChild(img);
-    $('treeOpen').href = link.url;
-    $('treeCopy').onclick = async () => {
-      try { await navigator.clipboard.writeText(link.url); toast(t('copied')); } catch { window.prompt(t('copy'), link.url); }
-    };
-    // the card has buttons, so give the mouse back
-    if (document.pointerLockElement && document.exitPointerLock) { window.MEOW_UNLOCK_REASON = 'card'; document.exitPointerLock(); }
-    card.hidden = false;
-    card.classList.remove('show');
-    place(card, x, y, 22, -40);
-    requestAnimationFrame(() => card.classList.add('show'));
-  };
+  /* ---------- the old link card (kept closed; links are books in the library now) ---------- */
   const closeCard = () => {
     card.classList.remove('show');
     setTimeout(() => { if (!card.classList.contains('show')) card.hidden = true; }, 350);
@@ -140,23 +110,12 @@
     else if (d.type === 'miss') closeCard();
     else if (d.type === 'click') {
       if (window.MEOW_SOUND && window.MEOW_SOUND.chime) window.MEOW_SOUND.chime(d.id);
-      const k = kind(d.id);
-      if (k === 'link') openCard(linkFor(d.id), d.x, d.y);
-      else if (k === 'scene') {
-        closeCard();
+      closeCard();
+      if (kind(d.id) === 'scene') {
         const cur = (window.MEOW_STATE && window.MEOW_STATE.scene) || 'rain';
         const next = SCENES[(SCENES.indexOf(cur) + 1) % SCENES.length];
         if (window.MEOW_SET_SCENE) window.MEOW_SET_SCENE(next);
-      } else if (k === 'lucky') {
-        closeCard();
-        const L = links();
-        if (L.length) {
-          const pickL = L[Math.floor(Math.random() * L.length)];
-          window.open(pickL.url, '_blank', 'noopener');
-          toast('✦ ' + pickL.title);
-        }
       } else {
-        closeCard();
         const list = FACTS[window.MEOW_I18N.lang] || FACTS.en;
         toast('🐾 ' + list[Math.floor(Math.random() * list.length)]);
       }
