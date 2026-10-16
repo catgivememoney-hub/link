@@ -589,7 +589,7 @@ export function createStudy({ group, mats, camera, U }) {
   // the chandelier throws real shadows (railings, shelves, furniture); only the house is drawn into them (layer 5)
   chLight.castShadow = true; chLight.shadow.autoUpdate = false; chLight.shadow.mapSize.set(512, 512);
   chLight.shadow.camera.near = 0.5; chLight.shadow.camera.far = 90; chLight.shadow.bias = -0.003; chLight.shadow.normalBias = 0.25;
-  chLight.shadow.camera.layers.set(5);
+  chLight.shadow.camera.layers.set(5);  chLight.shadow.needsUpdate = true;   // draw once now, so the map exists from the first frame
   // a low warm fill (the lamps and the window), so the gallery's underside isn't black
   const deskLight = new THREE.PointLight(0xffd4a0, 0, 70, 1.2);
   deskLight.position.set(-0.8, F + 2.0, -4.6); group.add(deskLight);

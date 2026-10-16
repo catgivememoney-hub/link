@@ -553,7 +553,7 @@ export function createCabin({ scene, shared, U, camera }) {
   // the fire throws flickering shadows of the furniture across the room (only the house is drawn into them)
   fireLight.castShadow = true; fireLight.shadow.autoUpdate = false; fireLight.shadow.mapSize.set(512, 512);
   fireLight.shadow.camera.near = 0.5; fireLight.shadow.camera.far = 46; fireLight.shadow.bias = -0.003; fireLight.shadow.normalBias = 0.2;
-  fireLight.shadow.camera.layers.set(5);
+  fireLight.shadow.camera.layers.set(5);  fireLight.shadow.needsUpdate = true;   // draw once now, so the map exists from the first frame
   [extMesh, intMesh, door].forEach((m) => m.layers.enable(5));
 
   // light through the windows, dust in the air, halos round flames and lamps
