@@ -63,7 +63,7 @@ export const M = (x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, 
   new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ')), new THREE.Vector3(sx, sy, sz));
 
 /* ---------- the shared material: grows with the scene, sways, gets moss / snow / frost ---------- */
-export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, color = 0xffffff, snowBias = 0, sink = 0, softBack = false, crisp = false, snowMask = false } = {}) => {
+export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, color = 0xffffff, snowBias = 0, sink = 0, softBack = false, crisp = false, snowMask = false, grain = 0 } = {}) => {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side, color });
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, { uShow: show });
@@ -71,8 +71,9 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
       .replace('#include <common>', `#include <common>
         uniform float uShow, uTime, uSnowCover, uMoss, uFrost;
         attribute float aTip;
-        varying float vSnowA; varying float vMossA; varying float vTipA;`)
+        varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vObj = position;
         mat4 cIM = mat4(1.0);
         #ifdef USE_INSTANCING
           cIM = instanceMatrix;
@@ -93,10 +94,26 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         ${sink ? `transformed.y -= (1.0 - uShow) * ${sink.toFixed(1)};` : 'transformed *= uShow;'}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uSnowC, uMossC; varying float vSnowA; varying float vMossA; varying float vTipA;`)
+        uniform vec3 uSnowC, uMossC; varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj;
+        // wood grain + fine speckle, so surfaces feel like real material up close
+        float gH(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        float gN(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(gH(i), gH(i + vec3(1, 0, 0)), f.x), mix(gH(i + vec3(0, 1, 0)), gH(i + vec3(1, 1, 0)), f.x), f.y),
+                     mix(mix(gH(i + vec3(0, 0, 1)), gH(i + vec3(1, 0, 1)), f.x), mix(gH(i + vec3(0, 1, 1)), gH(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
+        float grainH(vec3 p) { return gN(vec3(p.x * 1.3 + p.z * 0.4, p.y * 24.0, p.z * 1.3)) * 0.65 + gN(p * 11.0) * 0.35; }`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-        ${softBack ? '#ifdef DOUBLE_SIDED\n normal *= faceDirection;\n #endif' : ''}`)
+        ${softBack ? '#ifdef DOUBLE_SIDED\n normal *= faceDirection;\n #endif' : ''}
+        ${grain ? `{
+          float gh = grainH(vObj);
+          vec2 dHdxy = vec2(dFdx(gh), dFdy(gh)) * ${grain.toFixed(3)};
+          vec3 vSigmaX = dFdx(-vViewPosition), vSigmaY = dFdy(-vViewPosition);
+          vec3 R1 = cross(vSigmaY, normal), R2 = cross(normal, vSigmaX);
+          float fDet = dot(vSigmaX, R1) * faceDirection;
+          vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
+          normal = normalize(abs(fDet) * normal - vGrad);
+        }` : ''}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        ${grain ? 'diffuseColor.rgb *= 0.84 + 0.3 * grainH(vObj);' : ''}
         diffuseColor.rgb = mix(diffuseColor.rgb, uMossC * (0.7 + 0.3 * diffuseColor.g), clamp(vMossA, 0.0, 0.8));
         diffuseColor.rgb = mix(diffuseColor.rgb, uSnowC, clamp(vSnowA * 1.5 - 0.2, 0.0, 1.0));
         diffuseColor.rgb = mix(diffuseColor.rgb, uSnowC * 0.96, ${crisp ? 'smoothstep(0.42, 0.56, vTipA) * 0.95' : 'clamp(vTipA, 0.0, 0.9)'});`);

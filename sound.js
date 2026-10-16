@@ -183,8 +183,26 @@
     }
   };
 
+  // a book: the cover opens with a soft paper rustle (or thumps shut)
+  const page = (opening) => {
+    if (!ready()) return;
+    const v = vol();
+    if (opening) {
+      for (let i = 0; i < 4; i++) fx(0.09, [['bandpass', rand(2500, 5000), 1.2]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(rand(0.03, 0.06) * v, t + 0.02); g.exponentialRampToValueAtTime(0.0001, t + 0.09); }, 0.55 + i * rand(0.04, 0.08));
+      fx(0.35, [['bandpass', 1400, 0.8]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.05 * v, t + 0.15); g.exponentialRampToValueAtTime(0.0001, t + 0.35); }, 0.5);
+    } else {
+      fx(0.14, [['lowpass', 380]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.3 * v, t + 0.005); g.exponentialRampToValueAtTime(0.0001, t + 0.14); }, 0.3);
+    }
+  };
+  // books taking off from the shelves
+  const whoosh = () => {
+    if (!ready()) return;
+    const v = vol();
+    fx(0.9, [['bandpass', 700, 0.6]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.12 * v, t + 0.35); g.exponentialRampToValueAtTime(0.0001, t + 0.9); });
+  };
+
   window.MEOW_SOUND = {
-    chime, step, click, ignite, puff, fire, door,
+    chime, step, click, ignite, puff, fire, door, page, whoosh,
     setEnabled(on) { enabled = !!on; update(); },
     setVolume(v) { volume = Math.max(0, Math.min(1, Number(v) || 0)); update(); }
   };

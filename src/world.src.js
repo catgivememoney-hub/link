@@ -8,7 +8,7 @@
 
    API used by settings.js:  window.MEOW_BG.setScene(name), setMotion('full'|'reduced'), start() */
 import * as THREE from 'three';
-import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMaterial, Parts, CABIN } from './props.js';
+import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMaterial, Parts, CABIN, STUDY } from './props.js';
 
 (() => {
   'use strict';
@@ -69,6 +69,13 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     // level ground where the cabin stands
     const dc = Math.hypot(x - CABIN.x, z - CABIN.z);
     if (dc < 36) h += (CABIN.y - 0.12 - h) * smooth(36, 24, dc);
+    // and keep the ground over the study below it (so it stays underground)
+    {
+      const lx = (z - CABIN.z) / CABIN.S, lz = -(x - CABIN.x) / CABIN.S;   // into the cabin's metres
+      const ox = Math.max(STUDY.x0 - lx, lx - STUDY.x1, 0), oz = Math.max(STUDY.z0 - lz, lz - STUDY.z1, 0);
+      const out = Math.hypot(ox, oz) * CABIN.S;
+      if (out < 16) h = Math.max(h, h + (CABIN.y - 0.12 - h) * smooth(16, 5, out));
+    }
     return h;
   };
 
@@ -137,7 +144,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   scene.fog = new THREE.FogExp2(0xcccccc, 0.004);
 
   /* ---------- terrain ---------- */
-  const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 } };
+  const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 }, uHole: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) } };
+  const FAR = new THREE.Vector4(1e9, 1e9, 1e9, 1e9);
   const tGeo = new THREE.PlaneGeometry(2200, 1800, 300, 245);
   tGeo.rotateX(-Math.PI / 2);
   tGeo.translate(0, 0, -400);
@@ -155,11 +163,13 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y; vXZ = position.xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uLow, uHigh, uSnow; uniform float uSnowLine; varying float vH; varying float vSlope; varying vec2 vXZ;
+        uniform vec3 uLow, uHigh, uSnow; uniform float uSnowLine; uniform vec4 uHole; varying float vH; varying float vSlope; varying vec2 vXZ;
         float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float tn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(th(i), th(i + vec2(1, 0)), f.x), mix(th(i + vec2(0, 1)), th(i + vec2(1, 1)), f.x), f.y); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        // no ground inside the cabin (the floor is there; the cellar stairs go down through it)
+        if (vXZ.x > uHole.x && vXZ.x < uHole.y && vXZ.y > uHole.z && vXZ.y < uHole.w) discard;
         vec3 land = mix(uLow, uHigh, smoothstep(-5.0, 120.0, vH));
         float snow = smoothstep(uSnowLine - 12.0, uSnowLine + 12.0, vH) * (1.0 - smoothstep(0.35, 0.7, vSlope));
         // ground detail: grass patches, soil and small stones (shows up under the flashlight)
@@ -219,6 +229,17 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     return t;
   })();
   const wMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.3, metalness: 0.35, normalMap: rippleTex, normalScale: new THREE.Vector2(0.35, 0.35) });
+  // the lake must not show up inside the study (which is below the water line)
+  const WU = { uStudy: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) } };
+  wMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, WU);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ; uniform vec4 uStudy;')
+      .replace('#include <clipping_planes_fragment>', 'if (vWXZ.x > uStudy.x && vWXZ.x < uStudy.y && vWXZ.y > uStudy.z && vWXZ.y < uStudy.w) discard;\n#include <clipping_planes_fragment>');
+  };
   const water = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), wMat);
   scene.add(water);
 
@@ -296,7 +317,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   })();
   // the spots the home views look from stay clear of rocks and grass
   const CAM_SPOTS = [[0, 105], [0, 140], [-38, 112], [24, 78], [0, 92], [30, 102], [0, 125]].map(([x, z]) => ({ x, z, r: 42 }));
-  const props = createProps({ scene, heightAt, U, snowColor: TU.uSnow, clear: CAM_SPOTS });
+  const props = createProps({ scene, heightAt, U, snowColor: TU.uSnow, clear: CAM_SPOTS, camera });
   // trees share the snow cover with everything else (no moss or frost on the needles)
   const treeMat = coverMaterial({ ...props.shared, uMoss: { value: 0 }, uFrost: props.shared.uSnowCover }, treeU.uTree, { sway: 0.022, color: 0x334033, snowBias: -0.3, crisp: true });
   const TREE_N = 1400;
@@ -643,6 +664,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     U.uSunColor.value.copy(s.sunC); U.uSunDir.value.copy(s.sunDir).normalize(); U.uSunSize.value = s.sunSize;
     U.uStars.value = s.stars; U.uAurora.value = s.aurora; U.uAur1.value.copy(s.aur1); U.uAur2.value.copy(s.aur2);
     scene.fog.color.copy(s.fog); scene.fog.density = s.fogDensity * (1 + gal.focus * 0.35);
+    if (s.pCabin > 0.5) { TU.uHole.value.set(...props.cabin.holeBox); WU.uStudy.value.set(...props.cabin.studyBox); }
+    else { TU.uHole.value.copy(FAR); WU.uStudy.value.copy(FAR); }
     TU.uLow.value.copy(s.low); TU.uHigh.value.copy(s.high); TU.uSnow.value.copy(s.snowC); TU.uSnowLine.value = s.snowLine;
     water.position.y = s.water; wMat.color.copy(s.waterC); wMat.roughness = s.waterRough;
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
@@ -694,7 +717,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     const still = motion !== 'full';
     pointer.sx += (pointer.x - pointer.sx) * 0.035;
     pointer.sy += (pointer.y - pointer.sy) * 0.035;
-    const drift = still ? 0 : 1;
+    const drift = (still ? 0 : 1) * (1 - smooth(0, 35, Math.hypot(ex.px, ex.pz)));
     camera.position.set(
       cur.cam.x + Math.sin(time * 0.05) * 3 * drift + pointer.sx * 6 * drift,
       cur.cam.y + arc + Math.sin(time * 0.07) * 0.8 * drift - pointer.sy * 2.5 * drift,
@@ -712,7 +735,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       // ground under and just around you (so small bumps between terrain points can't poke through)
       let floor = heightAt(px, pz);
       for (let a = 0; a < 6.28; a += 1.57) floor = Math.max(floor, heightAt(px + Math.cos(a) * 4, pz + Math.sin(a) * 4));
-      floor = Math.max(floor, water.position.y, props.floorAt(px, pz, cur));
+      const built = props.floorAt(px, pz, cur);
+      // inside the cabin or down in the study the built floor is all that counts
+      floor = built && built.under ? built.y : Math.max(floor, water.position.y, built ? built.y : -1e9);
       const ground = floor + EYE;
       ex.ground += (ground - ex.ground) * 0.12;   // glide over bumps instead of jolting…
       ex.ground = Math.max(ex.ground, floor + 3); // …but never sink below the ground
@@ -997,7 +1022,12 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   // mouse sensitivity from Settings (1 = normal)
   const sens = () => Math.max(0.2, Math.min(2.5, (window.MEOW_STATE && Number(window.MEOW_STATE.sens)) || 1));
   // Esc leaves the forest: the browser uses Esc to free the pointer, so we listen for that…
-  const leaveScene = () => { if (ex.on && !busy() && window.MEOW_BG) window.MEOW_BG.home(); };
+  const leaveScene = () => {
+    if (!ex.on || busy()) return;
+    if (props.cabin.study.back(performance.now())) return;   // Esc first closes an open book / sends flying books home
+    if (window.MEOW_BG) window.MEOW_BG.home();
+  };
+  const rayAt = (cx, cy) => { ndc.set((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera); return ray; };
   const dot = document.createElement('div');
   dot.className = 'aim-dot';
   document.body.appendChild(dot);
@@ -1047,6 +1077,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (++doorTick % 3) return;                              // checking every third frame is plenty
     const [cx, cy] = locked() ? centre() : [hover.x, hover.y];
     door.aimed = aimAtDoor(cx, cy);
+    // books and tag plates in the study
+    const onBook = props.cabin.study.hover(rayAt(cx, cy), ex.on && !fly.on && cur.pCabin > 0.5 && indoorK > 0.5);
+    root.classList.toggle('on-book', onBook);
     if (door.aimed !== actShown) { actShown = door.aimed; actHint.classList.toggle('show', door.aimed); }
     if (door.aimed) actTxt.textContent = props.cabin.door.open ? t$('doorClose', 'Click to close the door') : t$('doorOpen', 'Click to open the door');
   };
@@ -1120,7 +1153,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     press = null;
     if (wasClick) {
       const [cx, cy] = locked() ? centre() : [e.clientX, e.clientY];
-      // the door comes first when you're aiming at it
+      // the study's books, then the door, then trees
+      if (ex.on && cur.pCabin > 0.5 && indoorK > 0.5 && props.cabin.study.click(rayAt(cx, cy), performance.now())) { wake(); return; }
       if (aimAtDoor(cx, cy)) { toggleDoor(); return; }
       // use the tree that is already lit up under the dot / mouse, so label and click always match
       const id = hover.id >= 0 ? hover.id : pick(cx, cy);
@@ -1327,7 +1361,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         bob.amp = Math.min(1.4, bob.amp + 0.5);
         if (window.MEOW_SOUND && window.MEOW_SOUND.step) {
           const x = camera.position.x, z = camera.position.z, gh = heightAt(x, z);
-          const surf = props.floorAt(x, z, cur) > gh + 0.2 ? 'wood' : gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
+          const surf = (props.floorAt(x, z, cur) || { y: -1e9 }).y > gh + 0.2 ? 'wood' : gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
           window.MEOW_SOUND.step(surf, 1.5); setTimeout(() => window.MEOW_SOUND.step(surf, 1.1), 70);
         }
       }
@@ -1340,6 +1374,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       else if (look.x >= 0 && look.x < edge) ex.yawTo += 1.1 * frameDt * (edge - look.x) / edge;
     }
     updateDoor();
+    props.cabin.feet = ex.on ? ex.ground - EYE : undefined;
     // lock the pointer as soon as the glide into the forest ends; let it go when you leave
     if (ex.on && !fly.on && fly.justLanded) { fly.justLanded = false; lockPointer(); }
     if (!ex.on && locked()) unlockPointer();
@@ -1357,14 +1392,14 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         bob.lastStep = stepNo;
         if (sp > SPEED * 0.25 && window.MEOW_SOUND && window.MEOW_SOUND.step) {
           const wx = camera.position.x, wz = camera.position.z, gh = heightAt(wx, wz);
-          const surface = props.floorAt(wx, wz, cur) > gh + 0.2 ? 'wood' : gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
+          const surface = (props.floorAt(wx, wz, cur) || { y: -1e9 }).y > gh + 0.2 ? 'wood' : gh < water.position.y + 0.6 ? 'water' : (sceneName === 'snow' || gh > TU.uSnowLine.value - 6) ? 'snow' : 'grass';
           window.MEOW_SOUND.step(surface, Math.min(1.5, sp / SPEED));
         }
         const gh2 = heightAt(camera.position.x, camera.position.z);
         if (sp > SPEED * 0.25 && gh2 > water.position.y + 0.6 && (sceneName === 'snow' || gh2 > TU.uSnowLine.value + 4)) {
           const x = camera.position.x, z = camera.position.z, e = 1.5;
           const n = new THREE.Vector3(heightAt(x - e, z) - heightAt(x + e, z), 2 * e, heightAt(x, z - e) - heightAt(x, z + e)).normalize();
-          prints.place(x, heightAt(x, z), z, Math.atan2(-ex.vx, -ex.vz), n);
+          if (indoorK < 0.5) prints.place(x, heightAt(x, z), z, Math.atan2(-ex.vx, -ex.vz), n);
         }
       }
     }
@@ -1379,10 +1414,10 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     applyState();
     placeCamera(time);
     props.update(cur, time, camera.position, water.position.y);
-    ripples.update(cur.pRipples, camera.position, water.position.y);
+    ripples.update(cur.pRipples * (1 - indoorK), camera.position, water.position.y);
     prints.update(Math.min(1, Math.max(0, (100 - cur.snowLine) / 80)));
     updateLight(now, time);
-    if (hover.pending) { hover.pending = false; setHover(pick(hover.x, hover.y)); }
+    if (hover.pending) { hover.pending = false; setHover(indoorK > 0.5 ? -1 : pick(hover.x, hover.y)); }
     // rack focus
     const dpr = renderer.getPixelRatio();
     const full = motion === 'full';
@@ -1464,7 +1499,14 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     focus(on) { gal.focusTo = on ? 1 : 0; if (on) { unlockPointer(); fly.on = false; ex.homing = true; ex.yawTo = ex.pitchTo = 0; } if (!running) renderOnce(); },
     toggleLight() { toggleLight(); },
     // for testing: stand at an exact spot (world x, z)
-    _standAt(x, z) { ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0; ex.ground = Math.max(heightAt(x, z), water.position.y, props.floorAt(x, z, cur)) + EYE; if (!running) renderOnce(); },
+    _standAt(x, z, level) {
+      ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0;
+      props.cabin.feet = level === 'study' ? CABIN.y + STUDY.floor * CABIN.S : undefined;
+      const b = props.floorAt(x, z, cur);
+      ex.ground = (b && b.under ? b.y : Math.max(heightAt(x, z), water.position.y, b ? b.y : -1e9)) + EYE;
+      props.cabin.feet = ex.ground - EYE;
+      if (!running) renderOnce();
+    },
     _look(x, z) {
       const bx = cur.look.x - cur.cam.x, bz = cur.look.z - cur.cam.z;
       const px = cur.cam.x + ex.px, pz = cur.cam.z + ex.pz;
@@ -1474,6 +1516,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     },
     _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
     _toggleDoor() { props.cabin.door.toggle(performance.now()); },
+    get _study() { return props.cabin.study; }, get _cabin() { return props.cabin; },
     _pos() { const d = new THREE.Vector3(); camera.getWorldDirection(d); return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on, pitch: ex.pitch, lookY: d.y, yaw: ex.yaw, yawTo: ex.yawTo, dx: d.x, dz: d.z, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, ground: ex.ground, homing: ex.homing }; },
     _sites() { return { cabin: props.cabinAt, circle: props.circleAt }; },
     _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
@@ -1481,6 +1524,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     enter() { if (started && !fly.on && !busy() && Math.hypot(ex.px, ex.pz) < 3) { startFly(); lockPointer(); } },
     home() {
       unlockPointer();
+      props.cabin.study.reset(performance.now());
       const turns = Math.round(ex.yaw / (Math.PI * 2)) * Math.PI * 2; ex.yaw -= turns; ex.yawTo -= turns;
       fly.on = false; ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
       if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }

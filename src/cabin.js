@@ -12,10 +12,11 @@
    the door swings open and shut (click it). */
 import * as THREE from 'three';
 import { Parts, M, n3, coverMaterial } from './kit.js';
+import { createStudy, STUDY, STAIR, rampY } from './study.js';
 
 export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
 
-export function createCabin({ scene, shared, U }) {
+export function createCabin({ scene, shared, U, camera }) {
   const S = CABIN.S;
   const W = 6.4, D = 5.0, LR = 0.17, STEP = 0.3145, ROWS = 8;
   const TOP = 2.62, GH = 1.9;                     // wall plate height, gable height
@@ -188,12 +189,94 @@ export function createCabin({ scene, shared, U }) {
     glowP.add(new THREE.BoxGeometry(0.16, 0.2, 0.16), { m: M(-1.3 + s * 0.85, 1.6, dz0 + dockLen - 0.4), color: flat(1, 1, 1) });
   });
 
+  /* ---------- more details outside ---------- */
+  // chinking: pale mortar between the logs (cut round the door and windows)
+  for (let r = 0; r < ROWS - 1; r++) {
+    const y = LR + r * STEP + STEP / 2;
+    [['front', D / 2], ['back', -D / 2]].forEach(([wall, z]) => cut(-W / 2 + 0.05, W / 2 - 0.05, y, OPEN[wall]).forEach(([a, b]) => {
+      ext.add(new THREE.BoxGeometry(b - a, 0.035, 0.02), { m: M((a + b) / 2, y, z + Math.sign(z) * (LR - 0.03)), color: (v) => { const c = 0.72 + n(v.x * 9, v.y * 30, 0) * 0.12; return [c, c * 0.95, c * 0.86]; }, tip: () => 1 });
+    }));
+    [['left', -W / 2], ['right', W / 2]].forEach(([wall, x]) => cut(-D / 2 + 0.05, D / 2 - 0.05, y + STEP / 2, OPEN[wall]).forEach(([a, b]) => {
+      ext.add(new THREE.BoxGeometry(0.02, 0.035, b - a), { m: M(x + Math.sign(x) * (LR - 0.03), y + STEP / 2, (a + b) / 2), color: (v) => { const c = 0.72 + n(0, v.y * 30, v.z * 9) * 0.12; return [c, c * 0.95, c * 0.86]; }, tip: () => 1 });
+    }));
+  }
+  // gutters along both eaves and a downpipe into the rain barrel
+  [-1, 1].forEach((s) => ext.add(new THREE.CylinderGeometry(0.06, 0.06, D + 1.3, 8, 1, true, 0, Math.PI), { m: M(s * (run + 0.06), TOP + GH - rise - 0.14, 0, Math.PI / 2, 0, s > 0 ? Math.PI : 0), color: () => [0.4, 0.4, 0.42], tip: () => 0 }));
+  ext.add(new THREE.CylinderGeometry(0.035, 0.035, TOP + GH - rise - 0.2, 8), { m: M(W / 2 + 0.6, (TOP + GH - rise) / 2 + 0.4, D / 2 - 0.45 - 0.05), color: () => [0.4, 0.4, 0.42], tip: () => 0 });
+  // a weathervane with a little cat on the roof ridge
+  ext.add(new THREE.CylinderGeometry(0.015, 0.02, 0.7, 6), { m: M(0, TOP + GH + 0.5, -1.4), color: () => [0.18, 0.18, 0.19], tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(0.02, 0.02, 0.5), { m: M(0, TOP + GH + 0.62, -1.4), color: () => [0.18, 0.18, 0.19], tip: () => 0 });
+  ext.add(new THREE.ConeGeometry(0.05, 0.1, 4), { m: M(0, TOP + GH + 0.62, -1.15, Math.PI / 2, 0, 0), color: () => [0.18, 0.18, 0.19], tip: () => 0 });
+  {
+    const cat = (geo, x, y, z, sx = 1, sy = 1, sz = 1, rz = 0) => ext.add(geo, { m: M(0, TOP + GH + 0.88 + y, -1.4 + z, 0, Math.PI / 2, rz, sx, sy, sz), color: () => [0.16, 0.16, 0.17], tip: () => 0 });
+    cat(new THREE.BoxGeometry(0.28, 0.13, 0.02), 0, 0, 0);
+    cat(new THREE.BoxGeometry(0.11, 0.1, 0.02), 0, 0.11, -0.13);
+    [-1, 1].forEach((k) => cat(new THREE.ConeGeometry(0.03, 0.06, 3), 0, 0.19, -0.13 + k * 0.035));
+    cat(new THREE.BoxGeometry(0.03, 0.2, 0.02), 0, 0.12, 0.16, 1, 1, 1, 0.4);
+  }
+  // window boxes with little flowers
+  const flowerBox = (lx, lz, ry) => {
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(lx, 0.82, lz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(1, 1, 1));
+    ext.add(new THREE.BoxGeometry(1.3, 0.2, 0.24), { m: m.clone().multiply(M(0, 0, 0.12)), color: wood(0.45), tip: () => 0 });
+    ext.add(new THREE.BoxGeometry(1.24, 0.02, 0.2), { m: m.clone().multiply(M(0, 0.09, 0.12)), color: () => [0.25, 0.18, 0.12], tip: () => 1 });
+    const cols = [[0.75, 0.3, 0.3], [0.85, 0.7, 0.35], [0.75, 0.62, 0.8], [0.9, 0.88, 0.85]];
+    for (let i = 0; i < 9; i++) {
+      const x = -0.55 + i * 0.14, h = 0.1 + n(i, lx, 1) * 0.1;
+      ext.add(new THREE.CylinderGeometry(0.006, 0.006, h, 4), { m: m.clone().multiply(M(x, 0.1 + h / 2, 0.12 + (i % 2 - 0.5) * 0.08)), color: () => [0.3, 0.42, 0.24], tip: () => 0 });
+      ext.add(new THREE.SphereGeometry(0.03, 6, 5), { m: m.clone().multiply(M(x, 0.1 + h, 0.12 + (i % 2 - 0.5) * 0.08)), color: () => cols[i % 4], tip: () => 0 });
+    }
+  };
+  flowerBox(1.35, D / 2 + 0.2, 0);
+  flowerBox(W / 2 + 0.2, -0.3, Math.PI / 2);
+  // doormat, a broom by the door, two crates and a lantern post at the end of the porch
+  ext.add(new THREE.BoxGeometry(1.0, 0.015, 0.6), { m: M((DX0 + DX1) / 2, 0.205, D / 2 + 0.55), color: (v) => (Math.floor((v.x + 9) * 12) % 2 ? [0.42, 0.33, 0.22] : [0.5, 0.4, 0.27]), tip: () => 1 });
+  ext.add(new THREE.CylinderGeometry(0.015, 0.015, 1.2, 6), { m: M(DX0 - 0.3, 0.8, D / 2 + 0.25, 0.08, 0, 0.12), color: wood(0.6), tip: () => 0 });
+  ext.add(new THREE.ConeGeometry(0.12, 0.3, 8), { m: M(DX0 - 0.24, 0.32, D / 2 + 0.24), color: () => [0.68, 0.58, 0.36], tip: () => 0 });
+  [[-2.9, 0.0], [-2.75, 0.32]].forEach(([x, y], i) => {
+    ext.add(new THREE.BoxGeometry(0.48, 0.32, 0.4), { m: M(x, 0.36 + y, D / 2 + 1.9, 0, i * 0.3, 0), color: (v) => { const c = 0.55 + (Math.abs(((v.y + 9) * 9) % 1 - 0.5) < 0.1 ? -0.1 : 0) + n(v.x * 9, v.y, v.z * 9) * 0.08; return [c, c * 0.84, c * 0.62]; }, tip: (v, nn) => (nn.y > 0.5 ? 1 : 0) });
+  });
+  ext.add(new THREE.CylinderGeometry(0.05, 0.06, 1.7, 8), { m: M(PR1 + 0.6, 0.85, D / 2 + 2.9), color: wood(0.4), tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(0.2, 0.05, 0.2), { m: M(PR1 + 0.6, 1.72, D / 2 + 2.9), color: () => [0.15, 0.15, 0.15], tip: () => 1 });
+  glowP.add(new THREE.BoxGeometry(0.15, 0.2, 0.15), { m: M(PR1 + 0.6, 1.84, D / 2 + 2.9), color: () => [1, 1, 1] });
+  ext.add(new THREE.ConeGeometry(0.15, 0.12, 4), { m: M(PR1 + 0.6, 2.0, D / 2 + 2.9, 0, Math.PI / 4, 0), color: () => [0.15, 0.15, 0.15], tip: () => 1 });
+  // stepping stones from the porch step toward the trees
+  for (let i = 0; i < 6; i++) {
+    const x = (DX0 + DX1) / 2 - 1.6 - i * 0.65 + Math.sin(i * 1.7) * 0.2, z = D / 2 + 2.9 + i * 0.35;
+    ext.add(new THREE.CylinderGeometry(0.28 + n(i, 3, 3) * 0.1, 0.3, 0.06, 9), { m: M(x, 0.0, z, 0, i, 0, 1, 1, 0.8), color: stone, tip: () => 1 });
+  }
+
   /* ---------- inside ---------- */
   const IX = W / 2 - LR, IZ = D / 2 - LR;
   // plank floor
   for (let x = -IX, i = 0; x < IX - 0.01; x += 0.2, i++) {
-    inn.add(new THREE.BoxGeometry(0.195, 0.06, IZ * 2 + 0.1), { m: M(x + 0.1, 0.09, 0), color: (v) => { const c = (0.5 + (i % 4) * 0.025) * (0.92 + n(v.x * 4, 0, v.z * 1.2) * 0.16) * (Math.abs(((v.z + 9 + i * 0.37) % 1.6) - 0.8) < 0.01 ? 0.7 : 1); return [c, c * 0.8, c * 0.6]; } });
+    const plank = (v) => { const c = (0.5 + (i % 4) * 0.025) * (0.92 + n(v.x * 4, 0, v.z * 1.2) * 0.16) * (Math.abs(((v.z + 9 + i * 0.37) % 1.6) - 0.8) < 0.01 ? 0.7 : 1); return [c, c * 0.8, c * 0.6]; };
+    const mid = x + 0.1;
+    // planks over the cellar stairs are cut short, leaving the opening
+    const spans = mid > STAIR.x0 && mid < STAIR.x1 ? [[-IZ - 0.05, STAIR.bottom], [STAIR.top, IZ + 0.05]] : [[-IZ - 0.05, IZ + 0.05]];
+    spans.forEach(([a, b]) => { if (b - a > 0.02) inn.add(new THREE.BoxGeometry(0.195, 0.06, b - a), { m: M(mid, 0.09, (a + b) / 2), color: plank }); });
   }
+  // a railing round the opening (open at the top end, where you step down)
+  for (let z = STAIR.bottom; z <= 1.5; z += 0.55) inn.add(new THREE.BoxGeometry(0.05, 0.9, 0.05), { m: M(STAIR.x0 - 0.02, 0.57, z), color: wood(0.5) });
+  inn.add(new THREE.BoxGeometry(0.07, 0.06, 1.5 - STAIR.bottom + 0.05), { m: M(STAIR.x0 - 0.02, 1.04, (STAIR.bottom + 1.5) / 2), color: wood(0.55) });
+  inn.add(new THREE.BoxGeometry(STAIR.x1 - STAIR.x0 + 0.05, 0.06, 0.07), { m: M((STAIR.x0 + STAIR.x1) / 2, 1.04, STAIR.bottom - 0.02), color: wood(0.55) });
+  [STAIR.x0 + 0.5, STAIR.x1 - 0.03].forEach((x) => inn.add(new THREE.BoxGeometry(0.05, 0.9, 0.05), { m: M(x, 0.57, STAIR.bottom - 0.02), color: wood(0.5) }));
+  // a little sign on the post: the study is down here
+  inn.add(new THREE.BoxGeometry(0.03, 0.16, 0.36), { m: M(STAIR.x0 - 0.05, 0.86, 1.5), color: wood(0.62) });
+  /* more life inside: wall clock, pots by the fire, kettle, candles and books on the mantel, a rug by the bed */
+  inn.add(new THREE.CylinderGeometry(0.17, 0.17, 0.04, 24), { m: M(-0.4, 1.8, IZ - 0.03, Math.PI / 2, 0, 0), color: wood(0.45) });
+  inn.add(new THREE.CylinderGeometry(0.14, 0.14, 0.01, 24), { m: M(-0.4, 1.8, IZ - 0.055, Math.PI / 2, 0, 0), color: () => [0.9, 0.87, 0.8] });
+  inn.add(new THREE.BoxGeometry(0.008, 0.1, 0.006), { m: M(-0.4, 1.83, IZ - 0.065, 0, 0, 0.5), color: () => [0.1, 0.1, 0.1] });
+  inn.add(new THREE.BoxGeometry(0.008, 0.12, 0.006), { m: M(-0.4, 1.84, IZ - 0.066, 0, 0, -1.9), color: () => [0.1, 0.1, 0.1] });
+  inn.add(new THREE.CylinderGeometry(0.015, 0.015, 1.5, 6), { m: M(FIRE.x, 1.62, -IZ + 0.62, 0, 0, Math.PI / 2), color: () => [0.2, 0.2, 0.2] });
+  [-0.5, -0.1, 0.35].forEach((dx, i) => {
+    inn.add(new THREE.CylinderGeometry(0.1 - i * 0.015, 0.08 - i * 0.012, 0.13, 12), { m: M(FIRE.x + dx, 1.42, -IZ + 0.64), color: () => [0.62, 0.36, 0.22] });
+    inn.add(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 4), { m: M(FIRE.x + dx, 1.55, -IZ + 0.64), color: () => [0.2, 0.2, 0.2] });
+  });
+  inn.add(new THREE.SphereGeometry(0.12, 12, 8), { m: M(FIRE.x - 0.7, 0.31, -IZ + 0.75, 0, 0, 0, 1, 0.8, 1), color: () => [0.2, 0.2, 0.22] });
+  inn.add(new THREE.CylinderGeometry(0.015, 0.03, 0.12, 6), { m: M(FIRE.x - 0.58, 0.36, -IZ + 0.75, 0, 0, -0.9), color: () => [0.2, 0.2, 0.22] });
+  [[-0.6, 0.14], [-0.5, 0.2], [0.55, 0.1]].forEach(([dx, h]) => inn.add(new THREE.CylinderGeometry(0.025, 0.025, h, 8), { m: M(FIRE.x + dx, 1.52 + h / 2, -IZ + 0.4), color: () => [0.9, 0.86, 0.76] }));
+  [[0.1, [0.4, 0.2, 0.18]], [0.16, [0.24, 0.3, 0.36]], [0.21, [0.5, 0.45, 0.32]]].forEach(([dx, c]) => inn.add(new THREE.BoxGeometry(0.05, 0.22, 0.16), { m: M(FIRE.x + dx, 1.63, -IZ + 0.4), color: () => c }));
+  inn.add(new THREE.BoxGeometry(0.9, 0.012, 0.6), { m: M(-2.0, 0.126, -0.85), color: (v) => (Math.floor((v.x + 3) * 8) % 2 ? [0.62, 0.56, 0.46] : [0.4, 0.42, 0.38]) });
   // rug
   inn.add(new THREE.BoxGeometry(2.3, 0.014, 1.55), { m: M(0.55, 0.127, 0.5), color: (v) => { const band = Math.floor(Math.abs(v.x - 0.55) / 0.17) % 3; const edge = Math.abs(v.x - 0.55) > 1.05 || Math.abs(v.z - 0.5) > 0.68; return edge ? [0.32, 0.2, 0.17] : band === 0 ? [0.55, 0.28, 0.22] : band === 1 ? [0.78, 0.7, 0.58] : [0.36, 0.38, 0.32]; } });
   // beams: two tie beams, a ridge beam and rafters under the roof
@@ -286,8 +369,8 @@ export function createCabin({ scene, shared, U }) {
 
   /* ---------- materials and meshes ---------- */
   const ONE = { value: 1 };
-  const extMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, snowBias: 0.12 });
-  const intMat = coverMaterial({ ...shared, uSnowCover: { value: 0 }, uMoss: { value: 0 }, uFrost: { value: 0 } }, ONE, { color: 0xdccdb9 });
+  const extMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, snowBias: 0.12, grain: 0.02 });
+  const intMat = coverMaterial({ ...shared, uSnowCover: { value: 0 }, uMoss: { value: 0 }, uFrost: { value: 0 } }, ONE, { color: 0xdccdb9, grain: 0.016 });
   const boatMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, side: THREE.DoubleSide });
   const glowMat = new THREE.MeshBasicMaterial({ color: 0x141414 });
   const glassMat = new THREE.MeshBasicMaterial({ color: 0xa9b7c0, transparent: true, opacity: 0.16, depthWrite: false });
@@ -312,6 +395,9 @@ export function createCabin({ scene, shared, U }) {
   });
   group.add(extMesh, intMesh, glowMesh, glassMesh, hinge, boat);
   scene.add(group);
+  group.updateMatrixWorld(true);
+  // the study under the house
+  const study = createStudy({ group, mats: { inn: intMat, glow: glowMat }, camera, U });
   const fireLight = new THREE.PointLight(0xffa058, 0, 46, 1.4);
   fireLight.position.copy(new THREE.Vector3(FIRE.x, 0.9, -IZ + 1.1)).applyAxisAngle(new THREE.Vector3(0, 1, 0), CABIN.yaw).multiplyScalar(S).add(group.position);
   scene.add(fireLight);
@@ -377,6 +463,24 @@ export function createCabin({ scene, shared, U }) {
     [-W / 2 - 1.75, -W / 2 - 1.05, 1.05, 1.75],
     [PR0 + 0.15, PR0 + 0.35, D / 2 + 2.1, D / 2 + 2.3], [PR1 - 0.35, PR1 - 0.15, D / 2 + 2.1, D / 2 + 2.3]
   ];
+  RECTS.push(
+    [STAIR.x0 - 0.07, STAIR.x0 + 0.02, STAIR.bottom - 0.05, 1.5],         // railing round the cellar opening
+    [STAIR.x0, STAIR.x1, STAIR.bottom - 0.09, STAIR.bottom],
+    [-3.2, -2.5, D / 2 + 1.65, D / 2 + 2.15],                              // crates
+    [PR1 + 0.5, PR1 + 0.7, D / 2 + 2.8, D / 2 + 3.0]                       // lantern post
+  );
+  // down in the study
+  const Dk = { x: -0.4, z: -2.6 };
+  const SRECTS = [
+    [STUDY.x0 - 1, STUDY.x1 + 1, STUDY.z0 - 1, STUDY.z0 + 0.45],          // back wall + bookcases
+    [STUDY.x0 - 1, STUDY.x0 + 0.45, STUDY.z0 - 1, STUDY.z1 + 1],          // left wall + bookcases
+    [STUDY.x1 - 0.45, STUDY.x1 + 1, STUDY.z0 - 1, STUDY.z1 + 1],          // right wall + bookcases
+    [STUDY.x0 - 1, STUDY.x1 + 1, STUDY.z1 - 0.02, STUDY.z1 + 1],          // front wall
+    [STAIR.x0 - 0.06, STAIR.x1 + 0.06, -0.6, STUDY.z1],                   // under the stairs
+    [Dk.x - 0.95, Dk.x + 0.95, Dk.z - 0.48, Dk.z + 0.48], [Dk.x - 0.27, Dk.x + 0.27, Dk.z + 0.5, Dk.z + 1.05],
+    [-4.1, -3.1, -5.7, -4.7], [-1.5, -0.5, -6.9, -5.9], [-2.75, -2.05, -6.35, -5.65], [-4.8, -4.4, -6.6, -6.2],
+    [0.86, 1.54, -4.34, -3.66], [-6.1, -5.5, 1.7, 2.4], [4.25, 4.95, STUDY.z0 + 0.42, STUDY.z0 + 1.0]
+  ];
   const DOOR_CLOSED = [DX0, DX1, D / 2 - 0.1, D / 2 + 0.1];
   const DOOR_OPEN = [DX0 - 0.06, DX0 + 0.08, D / 2 - DW - 0.05, D / 2];
   const inRect = (lx, lz, [x0, x1, z0, z1], p) => lx > x0 - p && lx < x1 + p && lz > z0 - p && lz < z1 + p;
@@ -385,27 +489,53 @@ export function createCabin({ scene, shared, U }) {
   // hint shown near the door
   const doorWorld = toWorld((DX0 + DX1) / 2, D / 2);
 
+  // which floor you're on decides what's solid: the cabin, the stairs, or the study
+  const feetM = (self) => (self.feet === undefined ? 1e9 : (self.feet - CABIN.y) / S);
+  const levelOf = (fm) => (fm > -0.7 ? 'ground' : fm < -3.2 ? 'study' : 'stairs');
+  const inStair = (lx, lz) => lx > STAIR.x0 && lx < STAIR.x1 && lz > STAIR.bottom && lz < STAIR.top;
+  const inStudy = (lx, lz) => lx > STUDY.x0 && lx < STUDY.x1 && lz > STUDY.z0 && lz < STUDY.z1;
+  const inHouse = (lx, lz) => lx > -W / 2 + LR - 0.05 && lx < W / 2 - LR + 0.05 && lz > -D / 2 + LR && lz < D / 2 + LR + 0.05;
+  // world-space boxes: the ground shouldn't show inside the house, the lake shouldn't show in the study
+  const box = (x0, x1, z0, z1) => { const pts = [toWorld(x0, z0), toWorld(x1, z0), toWorld(x0, z1), toWorld(x1, z1)]; return [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))]; };
+
   return {
-    group,
+    group, study, feet: undefined,
+    holeBox: box(-W / 2 + LR, W / 2 - LR, -D / 2 + LR, D / 2 - LR),
+    studyBox: box(STUDY.x0 - 0.3, STUDY.x1 + 0.3, STUDY.z0 - 0.3, STUDY.z1 + 0.3),
     // true when (wx, wz) is inside something solid; pad grows everything (world units)
     blocked(wx, wz, pad = 0) {
       const [lx, lz] = toLocal(wx, wz);
-      if (Math.abs(lx) > W / 2 + 3 || lz < -D / 2 - 3 || lz > D / 2 + 4) return false;
-      const p = 0.17 + pad / S;
+      if (Math.abs(lx) > STUDY.x1 + 3 || lz < STUDY.z0 - 3 || lz > D / 2 + 4) return false;
+      const p = 0.17 + pad / S, lv = levelOf(feetM(this));
+      if (lv === 'stairs') return lx < STAIR.x0 + p || lx > STAIR.x1 - p || lz > STAIR.top + 0.05;
+      if (lv === 'study') {
+        if (!inStudy(lx, lz)) return true;
+        for (const r of SRECTS) if (inRect(lx, lz, r, p)) return true;
+        return false;
+      }
+      if (Math.abs(lx) > W / 2 + 3 || lz < -D / 2 - 3) return false;
       for (const r of RECTS) if (inRect(lx, lz, r, p)) return true;
       if (door$.a < 0.5 ? inRect(lx, lz, DOOR_CLOSED, p) : inRect(lx, lz, DOOR_OPEN, p * 0.6)) return true;
       return false;
     },
-    // are you inside the house? (no rain, no mist in here)
-    inside(wx, wz) { const [lx, lz] = toLocal(wx, wz); return Math.abs(lx) < W / 2 && Math.abs(lz) < D / 2; },
-    // height of the floor you'd stand on here (inside, porch, dock), or -Infinity
+    // are you inside? (no rain, no mist in here)
+    inside(wx, wz) { const [lx, lz] = toLocal(wx, wz); return (Math.abs(lx) < W / 2 && Math.abs(lz) < D / 2) || (inStudy(lx, lz) && feetM(this) < -1); },
+    // the floor you'd stand on here: { y, under } — under = ignore the ground (you're in the house / below it)
     floorAt(wx, wz) {
       const [lx, lz] = toLocal(wx, wz);
       const y = (m) => CABIN.y + m * S;
-      if (lx > -W / 2 + LR - 0.05 && lx < W / 2 - LR + 0.05 && lz > -D / 2 + LR && lz < D / 2 + LR + 0.05) return y(0.12);
-      if (lx > -3.3 && lx < 3.4 && lz >= D / 2 + LR + 0.05 && lz < D / 2 + 2.4) return y(0.2);
-      if (lx > -2.25 && lx < -0.35 && lz > dz0 - 0.3 && lz < dz0 + dockLen) return y(0.24 - (lz - dz0) * 0.024);
-      return -Infinity;
+      const fm = feetM(this), cand = [];
+      if (inStair(lx, lz)) cand.push([rampY(lz), true]);
+      else if (inHouse(lx, lz)) cand.push([0.12, true]);
+      if (inStudy(lx, lz)) cand.push([STUDY.floor, true]);
+      if (lx > -3.3 && lx < 3.4 && lz >= D / 2 + LR + 0.05 && lz < D / 2 + 2.4) cand.push([0.2, false]);
+      if (lx > -2.25 && lx < -0.35 && lz > dz0 - 0.3 && lz < dz0 + dockLen) cand.push([0.24 - (lz - dz0) * 0.024, false]);
+      if (!cand.length) return null;
+      // the highest floor you can step onto from where your feet are
+      let best = null;
+      for (const c of cand) if (c[0] <= fm + 0.6 && (!best || c[0] > best[0])) best = c;
+      if (!best) best = cand.reduce((a, c) => (c[0] < a[0] ? c : a));
+      return { y: y(best[0]), under: best[1] };
     },
     door: {
       mesh: door,
@@ -417,6 +547,8 @@ export function createCabin({ scene, shared, U }) {
     },
     update(s, time, now, waterY) {
       const show = s.pCabin, on = show > 0.01;
+      if (on) { if (!(this.syncT > now - 1500)) { this.syncT = now; study.sync(); } study.update(time, now); }
+      study.lampLight.intensity = on ? 120 * (0.96 + 0.04 * Math.sin(time * 3.1)) : 0;
       group.visible = on; smoke.visible = on && show > 0.5;
       group.scale.setScalar(S * Math.max(0.001, show));
       // door swings with a little ease, overshoot on opening, a soft bump on closing

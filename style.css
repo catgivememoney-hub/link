@@ -894,3 +894,35 @@ html.pl .act-hint { bottom: auto; top: calc(50% + 26px); }
 .langs button:hover { transform: translateY(-1px); }
 .langs button[aria-pressed="true"] { background: var(--ink); color: var(--solid); }
 .sens-val { font-size: 0.8rem; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* =====================================================================
+   STUDY — book label under the dot, and the website page in an open book
+   ===================================================================== */
+.book-tip {
+  position: fixed; left: 50%; top: calc(50% + 22px); z-index: 31; transform: translate(-50%, 6px); opacity: 0; pointer-events: none;
+  display: grid; gap: 2px; text-align: center; padding: 8px 14px; border-radius: 14px; max-width: min(320px, 80vw);
+  color: var(--ink); background: var(--glass); border: 1px solid var(--glass-line);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+  transition: opacity 0.25s, transform 0.35s var(--ease);
+}
+.book-tip.show { opacity: 1; transform: translate(-50%, 0); }
+.book-tip strong { font-size: 0.86rem; font-weight: 500; letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-tip small { font-size: 0.68rem; opacity: 0.65; letter-spacing: 0.06em; }
+html.exploring.pl.on-book .aim-dot { transform: scale(1.5); }
+
+.book-page {
+  position: fixed; z-index: 29; display: grid; grid-template-columns: 1fr 1fr; pointer-events: none;
+  opacity: 0; transform: scale(0.98); transition: opacity 0.45s, transform 0.6s var(--ease);
+  color: #2b2418; font-family: Georgia, "Times New Roman", serif;
+}
+.book-page.show { opacity: 1; transform: none; }
+.book-page .bp-left { display: flex; flex-direction: column; justify-content: center; gap: 6%; padding: 9% 10% 9% 12%; text-align: left; }
+.book-page .bp-tag { font-size: clamp(9px, 1.1vw, 13px); letter-spacing: 0.18em; text-transform: uppercase; color: #8a6a2c; }
+.book-page .bp-title { font-size: clamp(14px, 2.2vw, 30px); font-weight: 600; line-height: 1.15; }
+.book-page .bp-host { font-size: clamp(9px, 1.1vw, 14px); opacity: 0.7; font-style: italic; }
+.book-page .bp-go { font-size: clamp(9px, 1vw, 13px); font-style: normal; letter-spacing: 0.08em; color: #6e5426; border-top: 1px solid rgba(110, 84, 38, 0.3); padding-top: 6%; }
+.book-page .bp-right { position: relative; display: grid; place-items: center; padding: 9% 10% 9% 6%; background: linear-gradient(90deg, rgba(80, 60, 30, 0.18), transparent 12%); }
+.book-page .bp-left { background: linear-gradient(270deg, rgba(80, 60, 30, 0.18), transparent 12%); }
+.book-page .bp-right img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 3px; box-shadow: 0 2px 10px rgba(60, 40, 10, 0.35); opacity: 0; transition: opacity 0.5s; filter: sepia(0.12) saturate(0.95); }
+.book-page .bp-right img.ready { opacity: 1; }
+.book-page .bp-wait { position: absolute; font-size: 12px; opacity: 0.6; }

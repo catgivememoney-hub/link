@@ -23,11 +23,12 @@ export const SHOW_KEYS = ['pRocks', 'pLogs', 'pFerns', 'pGrass', 'pReeds', 'pCab
 import { mulberry, h3, n3, Parts, M, coverMaterial } from './kit.js';
 import { createCabin, CABIN } from './cabin.js';
 export { CABIN };
+export { STUDY } from './study.js';
 export { Parts, coverMaterial };
 void h3;
 
 /* ---------- build everything ---------- */
-export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
+export function createProps({ scene, heightAt, U, snowColor, clear = [], camera }) {
   const R = mulberry(20260707);
   const rr = (a, b) => a + R() * (b - a);
   const shared = {
@@ -166,7 +167,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
   const woodMat = coverMaterial(shared, show.pLogs, { color: 0xb7a99a });
 
   /* ===== the log cabin (its own module: walk-in house with a door) ===== */
-  const cabin = createCabin({ scene, shared, U });
+  const cabin = createCabin({ scene, shared, U, camera });
 
   /* ===== stone circle ===== */
   const stonesMesh = (() => {
@@ -325,7 +326,8 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       return cur.pCabin > 0.5 && cabin.blocked(x, z, pad);
     },
     // a built floor here (cabin, porch, dock), else -Infinity
-    floorAt(x, z, cur) { return cur.pCabin > 0.5 ? cabin.floorAt(x, z) : -Infinity; },
+    // a built floor here (cabin, stairs, study, porch, dock): { y, under } or null
+    floorAt(x, z, cur) { return cur.pCabin > 0.5 ? cabin.floorAt(x, z) : null; },
     // second step, after the trees are planted: things that need to know where the trees stand
     plant(treeBase, waterLevel = 0) {
       const near = (x, z, r) => treeBase.some((b) => { const dx = b.p.x - x, dz = b.p.z - z; return dx * dx + dz * dz < r * r; });

@@ -3,10 +3,9 @@
    click it: the tree sways, rings its own chime note, and does its job.
 
    Tree jobs (decided by the tree's number, so every tree always does the same thing):
-     · every 13th tree  → Lucky: opens a random link
-     · every 11th tree  → Meow: tells a cat fact
      · every 7th tree   → Scene: switches to the next scene
-     · all other trees  → holds one of your links (from links.js); click for open / copy */
+     · all other trees  → Meow: tells a cat fact
+   Your links live as books in the study under the cabin (src/study.js). */
 (() => {
   'use strict';
 
@@ -71,12 +70,9 @@
 
   const links = () => window.MEOW_LINKS_DATA || [];
   const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
-  const kind = (id) => {
-    if (id % 13 === 0) return 'lucky';
-    if (id % 11 === 0) return 'meow';
-    if (id % 7 === 0) return 'scene';
-    return links().length ? 'link' : 'meow';
-  };
+  // trees don't hold links any more (the books in the study do): every 7th tree changes the scene,
+  // the others tell a cat fact
+  const kind = (id) => (id % 7 === 0 ? 'scene' : 'meow');
   const linkFor = (id) => { const L = links(); return L[id % L.length]; };
 
   const toast = (msg) => {
