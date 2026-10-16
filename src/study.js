@@ -12,7 +12,7 @@
 
    Everything here is built in the cabin's own metres (the cabin group scales it). */
 import * as THREE from 'three';
-import { Parts, M, n3 } from './kit.js';
+import { Parts, M, n3, kind } from './kit.js';
 
 // the room, in the cabin's metres
 export const STUDY = { x0: -6.5, x1: 6.5, z0: -9.5, z1: 2.4, floor: -3.5, ceil: -0.3 };
@@ -28,10 +28,10 @@ export function createStudy({ group, mats, camera, U }) {
   const F = STUDY.floor, C = STUDY.ceil, H = C - F;
   const P = new Parts(), G = new Parts();
   const n = (x, y, z) => n3(x, y, z);
-  const wood = (base) => (v) => { const c = base * (0.86 + n(v.x * 3, v.y * 9, v.z * 3) * 0.28); return [c, c * 0.78, c * 0.58]; };
+  const wood = (base) => kind('wood', (v) => { const c = base * (0.86 + n(v.x * 3, v.y * 9, v.z * 3) * 0.28); const w = n(v.x * 0.6, v.y * 2, v.z * 0.6); return [c * (1.0 + w * 0.08), c * (0.74 + w * 0.04), c * (0.52 - w * 0.05)]; });
   const dark = wood(0.34), mid = wood(0.46), light = wood(0.6);
-  const flat = (r, g, b) => () => [r, g, b];
-  const stone = (v) => { const c = 0.42 + n(v.x * 4, v.y * 4, v.z * 4) * 0.22; return [c, c * 0.97, c * 0.93]; };
+  const flat = (r, g, b, k) => (k ? kind(k, () => [r, g, b]) : () => [r, g, b]);
+  const stone = kind('stone', (v) => { const c = 0.42 + n(v.x * 4, v.y * 4, v.z * 4) * 0.22; return [c, c * 0.96, c * 0.9]; });
 
   /* ---------- the room ---------- */
   const W = STUDY.x1 - STUDY.x0, D = STUDY.z1 - STUDY.z0, cx = (STUDY.x0 + STUDY.x1) / 2, cz = (STUDY.z0 + STUDY.z1) / 2;
@@ -41,14 +41,14 @@ export function createStudy({ group, mats, camera, U }) {
     for (let z = STUDY.z0 - off, j = 0; z < STUDY.z1; z += 2.7, j++) {
       const a = Math.max(z, STUDY.z0), b = Math.min(z + 2.7, STUDY.z1);
       if (b - a < 0.05) continue;
-      P.add(new THREE.BoxGeometry(0.215, 0.05, b - a - 0.006), { m: M(x + 0.11, F - 0.025, (a + b) / 2), color: (v) => { const c = (0.36 + ((i * 7 + j * 3) % 5) * 0.018) * (0.88 + n(v.x * 3, 0, v.z * 0.8) * 0.24); return [c, c * 0.76, c * 0.55]; } });
+      P.add(new THREE.BoxGeometry(0.215, 0.05, b - a - 0.006), { m: M(x + 0.11, F - 0.025, (a + b) / 2), color: kind('wood', (v) => { const c = (0.36 + ((i * 7 + j * 3) % 5) * 0.018) * (0.88 + n(v.x * 3, 0, v.z * 0.8) * 0.24); return [c * 1.04, c * 0.74, c * 0.5]; }) });
     }
   }
   // ceiling: plaster with dark beams (a hole for the stairs)
   const hole = (x, z) => x > STAIR.x0 - 0.05 && x < STAIR.x1 + 0.05 && z > STAIR.bottom - 0.05 && z < STAIR.top + 0.2;
   for (let x = STUDY.x0; x < STUDY.x1 - 0.01; x += 0.5) for (let z = STUDY.z0; z < STUDY.z1 - 0.01; z += 0.5) {
     if (hole(x + 0.25, z + 0.25)) continue;
-    P.add(new THREE.PlaneGeometry(0.5, 0.5), { m: M(x + 0.25, C, z + 0.25, Math.PI / 2, 0, 0), color: (v) => { const c = 0.62 + n(v.x * 2, 0, v.z * 2) * 0.08; return [c, c * 0.96, c * 0.9]; } });
+    P.add(new THREE.PlaneGeometry(0.5, 0.5), { m: M(x + 0.25, C, z + 0.25, Math.PI / 2, 0, 0), color: kind('plaster', (v) => { const c = 0.62 + n(v.x * 2, 0, v.z * 2) * 0.08; return [c, c * 0.95, c * 0.86]; }) });
   }
   for (let z = STUDY.z0 + 1.2; z < STUDY.z1; z += 1.8) {
     const segs = z > STAIR.bottom - 0.1 && z < STAIR.top + 0.2 ? [[STUDY.x0, STAIR.x0 - 0.05], [STAIR.x1 + 0.05, STUDY.x1]] : [[STUDY.x0, STUDY.x1]];
@@ -68,7 +68,7 @@ export function createStudy({ group, mats, camera, U }) {
         P.add(g, { m, color });
       };
       put(F, F + 1.0, stone);
-      put(F + 1.0, C, (v) => { const c = 0.33 + n(v.x * 2, v.y * 6, v.z * 2) * 0.08 + (Math.abs(((v.x + v.z) * 1.67 + 50) % 1 - 0.5) < 0.02 ? -0.06 : 0); return [c, c * 0.78, c * 0.58]; });
+      put(F + 1.0, C, kind('wood', (v) => { const c = 0.33 + n(v.x * 2, v.y * 6, v.z * 2) * 0.08 + (Math.abs(((v.x + v.z) * 1.67 + 50) % 1 - 0.5) < 0.02 ? -0.06 : 0); return [c * 1.02, c * 0.76, c * 0.54]; }));
     }
     // dado rail and skirting
     const len = b - a, m0 = (a + b) / 2;
@@ -115,7 +115,7 @@ export function createStudy({ group, mats, camera, U }) {
     for (let r = 0; r < ROWS; r++) add(new THREE.BoxGeometry(CASE_W - 0.08, 0.04, 0.02), M(0, ROW_Y0 + r * ROW_H + 0.005, CASE_D / 2 - 0.005), light);   // lip
   });
   // a rolling ladder on a brass rail along the back wall
-  P.add(new THREE.CylinderGeometry(0.015, 0.015, 12, 6), { m: M(0, F + 2.55, STUDY.z0 + CASE_D + 0.04, 0, 0, Math.PI / 2), color: flat(0.62, 0.5, 0.28) });
+  P.add(new THREE.CylinderGeometry(0.015, 0.015, 12, 6), { m: M(0, F + 2.55, STUDY.z0 + CASE_D + 0.04, 0, 0, Math.PI / 2), color: flat(0.62, 0.5, 0.28, 'metal') });
   {
     const lx = 4.6, lean = 0.22;
     [-0.22, 0.22].forEach((dx) => P.add(new THREE.BoxGeometry(0.05, 2.75, 0.06), { m: M(lx + dx, F + 1.36, STUDY.z0 + CASE_D + 0.42, -lean, 0, 0), color: light }));
@@ -124,13 +124,13 @@ export function createStudy({ group, mats, camera, U }) {
 
   /* ---------- furniture ---------- */
   // big rug
-  P.add(new THREE.BoxGeometry(5.2, 0.012, 3.8), { m: M(-0.4, F + 0.006, -4.6), color: (v) => {
+  P.add(new THREE.BoxGeometry(5.2, 0.012, 3.8), { m: M(-0.4, F + 0.006, -4.6), color: kind('fabric', (v) => {
     const dx = Math.abs(v.x + 0.4), dz = Math.abs(v.z + 4.6);
     if (dx > 2.45 || dz > 1.75) return [0.3, 0.16, 0.13];
     if (dx > 2.25 || dz > 1.55) return [0.62, 0.5, 0.3];
     const k = Math.sin(dx * 6) * Math.sin(dz * 6);
     return k > 0.4 ? [0.55, 0.2, 0.17] : k < -0.4 ? [0.2, 0.25, 0.3] : [0.42, 0.18, 0.15];
-  } });
+  }) });
   // desk with drawers, a green reading lamp, an open notebook and a pen
   const Dk = { x: -0.4, z: -2.6 };
   P.add(new THREE.BoxGeometry(1.9, 0.07, 0.95), { m: M(Dk.x, F + 0.78, Dk.z), color: light });
@@ -138,23 +138,23 @@ export function createStudy({ group, mats, camera, U }) {
     P.add(new THREE.BoxGeometry(0.5, 0.74, 0.88), { m: M(Dk.x + s * 0.68, F + 0.37, Dk.z), color: mid });
     for (let d = 0; d < 3; d++) {
       P.add(new THREE.BoxGeometry(0.44, 0.2, 0.02), { m: M(Dk.x + s * 0.68, F + 0.15 + d * 0.23, Dk.z - 0.45), color: light });
-      P.add(new THREE.BoxGeometry(0.08, 0.02, 0.03), { m: M(Dk.x + s * 0.68, F + 0.17 + d * 0.23, Dk.z - 0.47), color: flat(0.62, 0.5, 0.28) });
+      P.add(new THREE.BoxGeometry(0.08, 0.02, 0.03), { m: M(Dk.x + s * 0.68, F + 0.17 + d * 0.23, Dk.z - 0.47), color: flat(0.62, 0.5, 0.28, 'metal') });
     }
   });
-  P.add(new THREE.BoxGeometry(0.5, 0.012, 0.36), { m: M(Dk.x - 0.15, F + 0.82, Dk.z - 0.05, 0, 0.15, 0), color: flat(0.9, 0.87, 0.78) });
+  P.add(new THREE.BoxGeometry(0.5, 0.012, 0.36), { m: M(Dk.x - 0.15, F + 0.82, Dk.z - 0.05, 0, 0.15, 0), color: flat(0.9, 0.87, 0.78, 'paper') });
   P.add(new THREE.CylinderGeometry(0.006, 0.006, 0.16, 5), { m: M(Dk.x + 0.15, F + 0.825, Dk.z, 0, 0.6, Math.PI / 2), color: flat(0.12, 0.12, 0.13) });
-  P.add(new THREE.CylinderGeometry(0.07, 0.09, 0.03, 12), { m: M(Dk.x + 0.62, F + 0.83, Dk.z + 0.2), color: flat(0.62, 0.5, 0.28) });
-  P.add(new THREE.CylinderGeometry(0.01, 0.01, 0.34, 6), { m: M(Dk.x + 0.62, F + 1.0, Dk.z + 0.2), color: flat(0.62, 0.5, 0.28) });
-  P.add(new THREE.CylinderGeometry(0.06, 0.14, 0.12, 14, 1, true), { m: M(Dk.x + 0.62, F + 1.18, Dk.z + 0.12, 0.5, 0, 0), color: flat(0.18, 0.36, 0.26) });
+  P.add(new THREE.CylinderGeometry(0.07, 0.09, 0.03, 12), { m: M(Dk.x + 0.62, F + 0.83, Dk.z + 0.2), color: flat(0.62, 0.5, 0.28, 'metal') });
+  P.add(new THREE.CylinderGeometry(0.01, 0.01, 0.34, 6), { m: M(Dk.x + 0.62, F + 1.0, Dk.z + 0.2), color: flat(0.62, 0.5, 0.28, 'metal') });
+  P.add(new THREE.CylinderGeometry(0.06, 0.14, 0.12, 14, 1, true), { m: M(Dk.x + 0.62, F + 1.18, Dk.z + 0.12, 0.5, 0, 0), color: flat(0.18, 0.36, 0.26, 'metal') });
   G.add(new THREE.SphereGeometry(0.035, 8, 6), { m: M(Dk.x + 0.62, F + 1.14, Dk.z + 0.1), color: flat(1, 1, 1) });
   // desk chair
-  P.add(new THREE.BoxGeometry(0.5, 0.06, 0.48), { m: M(Dk.x, F + 0.48, Dk.z + 0.75), color: flat(0.32, 0.16, 0.12) });
-  P.add(new THREE.BoxGeometry(0.5, 0.6, 0.06), { m: M(Dk.x, F + 0.82, Dk.z + 1.0), color: flat(0.32, 0.16, 0.12) });
+  P.add(new THREE.BoxGeometry(0.5, 0.06, 0.48), { m: M(Dk.x, F + 0.48, Dk.z + 0.75), color: flat(0.32, 0.16, 0.12, 'leather') });
+  P.add(new THREE.BoxGeometry(0.5, 0.6, 0.06), { m: M(Dk.x, F + 0.82, Dk.z + 1.0), color: flat(0.32, 0.16, 0.12, 'leather') });
   [[-0.2, 0.55], [0.2, 0.55], [-0.2, 0.95], [0.2, 0.95]].forEach(([dx, dz]) => P.add(new THREE.BoxGeometry(0.04, 0.46, 0.04), { m: M(Dk.x + dx, F + 0.23, Dk.z + dz), color: dark }));
   // two leather armchairs and a small round table by a standing lamp
   const armchair = (x, z, ry) => {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, F, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(1, 1, 1));
-    const leather = (v) => { const c = 0.34 + n(v.x * 12, v.y * 12, v.z * 12) * 0.06; return [c, c * 0.52, c * 0.38]; };
+    const leather = kind('leather', (v) => { const c = 0.34 + n(v.x * 12, v.y * 12, v.z * 12) * 0.06; return [c, c * 0.52, c * 0.38]; });
     const a = (geo, mx) => P.add(geo, { m: m.clone().multiply(mx), color: leather });
     a(new THREE.BoxGeometry(0.85, 0.42, 0.8), M(0, 0.25, 0));
     a(new THREE.BoxGeometry(0.85, 0.65, 0.2), M(0, 0.72, -0.32, -0.12, 0, 0));
@@ -169,17 +169,17 @@ export function createStudy({ group, mats, camera, U }) {
   P.add(new THREE.CylinderGeometry(0.04, 0.035, 0.1, 10), { m: M(-2.3, F + 0.65, -5.95), color: flat(0.8, 0.78, 0.74) });   // tea cup
   // standing lamp
   P.add(new THREE.CylinderGeometry(0.15, 0.17, 0.03, 14), { m: M(-4.6, F + 0.015, -6.4), color: dark });
-  P.add(new THREE.CylinderGeometry(0.015, 0.015, 1.6, 6), { m: M(-4.6, F + 0.8, -6.4), color: flat(0.62, 0.5, 0.28) });
-  P.add(new THREE.CylinderGeometry(0.16, 0.24, 0.26, 16, 1, true), { m: M(-4.6, F + 1.68, -6.4), color: flat(0.85, 0.78, 0.62) });
+  P.add(new THREE.CylinderGeometry(0.015, 0.015, 1.6, 6), { m: M(-4.6, F + 0.8, -6.4), color: flat(0.62, 0.5, 0.28, 'metal') });
+  P.add(new THREE.CylinderGeometry(0.16, 0.24, 0.26, 16, 1, true), { m: M(-4.6, F + 1.68, -6.4), color: flat(0.85, 0.78, 0.62, 'fabric') });
   G.add(new THREE.SphereGeometry(0.06, 8, 6), { m: M(-4.6, F + 1.62, -6.4), color: flat(1, 1, 1) });
   // a globe on a stand
   P.add(new THREE.SphereGeometry(0.28, 20, 14), { m: M(1.2, F + 1.05, -4.0, 0.4, 0, 0.2), color: (v) => { const land = n(v.x * 9 + 3, v.y * 9, v.z * 9) > 0.55; return land ? [0.62, 0.55, 0.38] : [0.3, 0.42, 0.46]; } });
-  P.add(new THREE.TorusGeometry(0.31, 0.012, 6, 32), { m: M(1.2, F + 1.05, -4.0, 0, Math.PI / 2, 0.2), color: flat(0.62, 0.5, 0.28) });
+  P.add(new THREE.TorusGeometry(0.31, 0.012, 6, 32), { m: M(1.2, F + 1.05, -4.0, 0, Math.PI / 2, 0.2), color: flat(0.62, 0.5, 0.28, 'metal') });
   P.add(new THREE.CylinderGeometry(0.03, 0.06, 0.75, 8), { m: M(1.2, F + 0.38, -4.0), color: dark });
   [0, 2.1, 4.2].forEach((a) => P.add(new THREE.BoxGeometry(0.04, 0.03, 0.4), { m: M(1.2 + Math.sin(a) * 0.17, F + 0.03, -4.0 + Math.cos(a) * 0.17, 0, a, 0), color: dark }));
   // a tall clock
   P.add(new THREE.BoxGeometry(0.55, 2.1, 0.35), { m: M(-5.8, F + 1.05, 1.9), color: dark });
-  P.add(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 24), { m: M(-5.8, F + 1.7, 1.72, Math.PI / 2, 0, 0), color: flat(0.88, 0.84, 0.74) });
+  P.add(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 24), { m: M(-5.8, F + 1.7, 1.72, Math.PI / 2, 0, 0), color: flat(0.88, 0.84, 0.74, 'paper') });
   P.add(new THREE.BoxGeometry(0.01, 0.13, 0.01), { m: M(-5.8, F + 1.74, 1.71, 0, 0, 0.6), color: flat(0.1, 0.1, 0.1) });
   P.add(new THREE.BoxGeometry(0.01, 0.17, 0.01), { m: M(-5.8, F + 1.76, 1.71, 0, 0, -0.2), color: flat(0.1, 0.1, 0.1) });
   // pendant lights over the room
@@ -190,7 +190,7 @@ export function createStudy({ group, mats, camera, U }) {
   });
   // candles on the desk side
   [[Dk.x - 0.75, Dk.z + 0.3], [Dk.x - 0.62, Dk.z + 0.32]].forEach(([x, z], i) => {
-    P.add(new THREE.CylinderGeometry(0.025, 0.025, 0.12 + i * 0.05, 8), { m: M(x, F + 0.81 + (0.12 + i * 0.05) / 2, z), color: flat(0.88, 0.84, 0.74) });
+    P.add(new THREE.CylinderGeometry(0.025, 0.025, 0.12 + i * 0.05, 8), { m: M(x, F + 0.81 + (0.12 + i * 0.05) / 2, z), color: flat(0.88, 0.84, 0.74, 'paper') });
     G.add(new THREE.SphereGeometry(0.014, 6, 4), { m: M(x, F + 0.83 + 0.12 + i * 0.05, z, 0, 0, 0, 1, 1.8, 1), color: flat(1, 1, 1) });
   });
 
@@ -252,12 +252,12 @@ export function createStudy({ group, mats, camera, U }) {
     const put = (geo, x, yy, color, sx = 1, sy = 1, sz = 1) => { const p = at(x, yy, 0.02); orn.add(geo, { m: new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), c.ry), new THREE.Vector3(sx, sy, sz)), color }); };
     const off = (seed * 1.3 % 1 - 0.5) * 1.0;
     if (k === 0) { put(new THREE.CylinderGeometry(0.06, 0.09, 0.26, 12), off, y + 0.13, flat(0.55, 0.6, 0.58)); put(new THREE.SphereGeometry(0.07, 10, 8), off + 0.3, y + 0.07, flat(0.7, 0.55, 0.35)); }
-    else if (k === 1) { put(new THREE.BoxGeometry(0.3, 0.16, 0.22), off, y + 0.08, wood(0.5)); put(new THREE.BoxGeometry(0.3, 0.02, 0.22), off, y + 0.165, flat(0.62, 0.5, 0.28)); }
+    else if (k === 1) { put(new THREE.BoxGeometry(0.3, 0.16, 0.22), off, y + 0.08, wood(0.5)); put(new THREE.BoxGeometry(0.3, 0.02, 0.22), off, y + 0.165, flat(0.62, 0.5, 0.28, 'metal')); }
     else if (k === 2) { // a little cat statue
       put(new THREE.SphereGeometry(0.06, 10, 8), off, y + 0.07, flat(0.25, 0.24, 0.24), 1, 1.2, 0.9);
       put(new THREE.SphereGeometry(0.04, 10, 8), off, y + 0.17, flat(0.25, 0.24, 0.24));
       [-1, 1].forEach((s) => put(new THREE.ConeGeometry(0.015, 0.035, 4), off + s * 0.022, y + 0.215, flat(0.25, 0.24, 0.24)));
-    } else if (k === 3) { put(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12), off, y + 0.01, flat(0.62, 0.5, 0.28)); put(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 8), off, y + 0.09, flat(0.88, 0.84, 0.74)); }
+    } else if (k === 3) { put(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12), off, y + 0.01, flat(0.62, 0.5, 0.28, 'metal')); put(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 8), off, y + 0.09, flat(0.88, 0.84, 0.74, 'paper')); }
     else { put(new THREE.BoxGeometry(0.02, 0.24, 0.18), off, y + 0.12, wood(0.4)); put(new THREE.PlaneGeometry(0.14, 0.18), off + 0.012, y + 0.12, flat(0.75, 0.72, 0.62)); }
   };
   let ornMesh = null;
@@ -301,7 +301,7 @@ export function createStudy({ group, mats, camera, U }) {
       }
     });
     // ornaments on a few of the empty rows
-    orn.p.length = orn.n.length = orn.c.length = orn.t.length = 0;
+    orn.clear();
     slots.forEach(([c, r], i) => { if (used.has(c.x + ',' + c.z + ',' + r)) return; const s = hashS('o' + i); if (s < 0.55) ornament(c, r, s / 0.55); });
     ornMesh = new THREE.Mesh(orn.geometry(), inn); group.add(ornMesh);
     books = new THREE.InstancedMesh(bookGeo, bookMat, Math.max(1, B.length));

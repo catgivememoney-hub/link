@@ -11,7 +11,7 @@
    The walls and furniture are solid; floors (inside, porch, dock) can be walked on;
    the door swings open and shut (click it). */
 import * as THREE from 'three';
-import { Parts, M, n3, coverMaterial } from './kit.js';
+import { Parts, M, n3, coverMaterial, kind } from './kit.js';
 import { createStudy, STUDY, STAIR, rampY } from './study.js';
 
 export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
@@ -28,15 +28,19 @@ export function createCabin({ scene, shared, U, camera }) {
   const n = (x, y, z) => n3(x, y, z);
 
   /* ---------- colours ---------- */
-  const wood = (base, k = 1) => (v) => { const c = base * (0.88 + n(v.x * 3, v.y * 9, v.z * 3) * 0.24) * k; return [c, c * 0.8, c * 0.6]; };
-  const logCol = (axis) => (v, nn) => {
+  const wood = (base, k = 1) => kind('wood', (v) => { const c = base * (0.88 + n(v.x * 3, v.y * 9, v.z * 3) * 0.24) * k; const w = n(v.x * 0.7, v.y * 2, v.z * 0.7); return [c * (1.02 + w * 0.06), c * (0.79 + w * 0.03), c * (0.56 - w * 0.04)]; });
+  const logCol = (axis) => kind('log', (v, nn) => {
     const end = axis === 'x' ? Math.abs(nn.x) > 0.9 : Math.abs(nn.z) > 0.9;
     if (end) { const r = axis === 'x' ? Math.hypot(v.y % 1, v.z) : Math.hypot(v.y % 1, v.x); const c = 0.68 + Math.sin(r * 90) * 0.04; return [c * 1.02, c * 0.86, c * 0.66]; }
     const c = 0.5 + n(v.x * 2.5, v.y * 8, v.z * 2.5) * 0.2 + Math.sin((axis === 'x' ? v.x : v.z) * 23) * 0.015;
-    return [c, c * 0.79, c * 0.58];
-  };
-  const stone = (v) => { const c = 0.45 + n(v.x * 5, v.y * 5, v.z * 5) * 0.25; return [c * 0.98, c * 0.97, c * 0.95]; };
-  const flat = (r, g, b) => () => [r, g, b];
+    // each log a slightly different shade: honey, amber, a greyer weathered one now and then
+    const t = n(Math.floor(v.y / 0.31) * 3.7, axis === 'x' ? 1 : 2, 0.5);
+    return t < 0.25 ? [c * 0.95, c * 0.82, c * 0.68] : t > 0.75 ? [c * 1.08, c * 0.8, c * 0.52] : [c, c * 0.79, c * 0.58];
+  });
+  const stone = kind('stone', (v) => { const c = 0.45 + n(v.x * 5, v.y * 5, v.z * 5) * 0.25; const w = n(v.x * 2, v.y * 2, v.z * 2); return [c * (0.96 + w * 0.08), c * 0.95, c * (0.9 + (1 - w) * 0.08)]; });
+  const flat = (r, g, b, k) => (k ? kind(k, () => [r, g, b]) : () => [r, g, b]);
+  const metal = (r, g, b) => kind('metal', () => [r, g, b]);
+  const cloth = (fn) => kind('fabric', fn);
   const outward = (axis, fixed) => (v) => ((axis === 'z' ? (v.z - fixed) * Math.sign(fixed) : (v.x - fixed) * Math.sign(fixed)) > 0 ? 1 : 0);
 
   /* ---------- log walls with openings ---------- */
@@ -59,12 +63,12 @@ export function createCabin({ scene, shared, U, camera }) {
     const yF = LR + r * STEP, yS = LR + STEP / 2 + r * STEP;
     [['front', D / 2], ['back', -D / 2]].forEach(([wall, z]) => {
       cut(-W / 2 - 0.3, W / 2 + 0.3, yF, OPEN[wall]).forEach(([a, b]) => {
-        ext.add(new THREE.CylinderGeometry(LR, LR * 0.97, b - a, 9, 1), { m: M((a + b) / 2, yF, z, 0, 0, Math.PI / 2), color: logCol('x'), tip: outward('z', z) });
+        ext.add(new THREE.CylinderGeometry(LR, LR * 0.97, b - a, 16, 1), { m: M((a + b) / 2, yF, z, 0, 0, Math.PI / 2), color: logCol('x'), tip: outward('z', z) });
       });
     });
     if (yS + LR < TOP + 0.12) [['left', -W / 2], ['right', W / 2]].forEach(([wall, x]) => {
       cut(-D / 2 - 0.3, D / 2 + 0.3, yS, OPEN[wall]).forEach(([a, b]) => {
-        ext.add(new THREE.CylinderGeometry(LR, LR * 0.97, b - a, 9, 1), { m: M(x, yS, (a + b) / 2, Math.PI / 2, 0, 0), color: logCol('z'), tip: outward('x', x) });
+        ext.add(new THREE.CylinderGeometry(LR, LR * 0.97, b - a, 16, 1), { m: M(x, yS, (a + b) / 2, Math.PI / 2, 0, 0), color: logCol('z'), tip: outward('x', x) });
       });
     });
   }
@@ -84,7 +88,7 @@ export function createCabin({ scene, shared, U, camera }) {
   [-1, 1].forEach((s) => {
     const z = s * D / 2;
     const A = [-W / 2 - 0.05, TOP, z], B = [W / 2 + 0.05, TOP, z], C = [0, TOP + GH, z];
-    const boards = (v) => { const c = 0.48 + n(v.x * 9, 0, s) * 0.1; const seam = Math.abs(((v.x + 10) % 0.24) - 0.12) < 0.012 ? 0.75 : 1; return [c * seam, c * 0.8 * seam, c * 0.6 * seam]; };
+    const boards = kind('wood', (v) => { const c = 0.48 + n(v.x * 9, 0, s) * 0.1; const seam = Math.abs(((v.x + 10) % 0.24) - 0.12) < 0.012 ? 0.75 : 1; return [c * seam, c * 0.8 * seam, c * 0.6 * seam]; });
     ext.tris(s > 0 ? [A, B, C] : [B, A, C], boards, () => 0);
     inn.tris(s > 0 ? [B, A, C] : [A, B, C], (v) => { const c = boards(v); return [c[0] * 0.85, c[1] * 0.85, c[2] * 0.85]; });
   });
@@ -99,7 +103,7 @@ export function createCabin({ scene, shared, U, camera }) {
       const cx = s * (run * (t0 + 0.5 / rows)), cy = TOP + GH - rise * (t0 + 0.5 / rows) + 0.1;
       ext.add(new THREE.BoxGeometry(len, 0.045, D + 1.3, 1, 1, 10), {
         m: M(cx, cy, 0, 0, 0, -s * (ang + 0.05)),
-        color: (v) => { const k = Math.floor((v.z + 5) * 3.3); const c = 0.3 + n(k, i, s) * 0.12 + (i % 2) * 0.02; return [c, c * 0.93, c * 0.88]; },
+        color: kind('shingle', (v) => { const k = Math.floor((v.z + 5) * 3.3); const c = 0.3 + n(k, i, s) * 0.12 + (i % 2) * 0.02; return [c * 1.02, c * 0.9, c * 0.8]; }),
         tip: () => 1
       });
     }
@@ -159,14 +163,14 @@ export function createCabin({ scene, shared, U, camera }) {
   ext.add(new THREE.BoxGeometry(1.4, 0.06, 0.4), { m: M(1.45, 0.47, D / 2 + 0.48), color: wood(0.55), tip: () => 1 });
   [[0.85], [2.05]].forEach(([x]) => ext.add(new THREE.BoxGeometry(0.06, 0.3, 0.36), { m: M(x, 0.32, D / 2 + 0.48), color: wood(0.45), tip: () => 0 }));
   // wall lantern beside the door
-  ext.add(new THREE.BoxGeometry(0.04, 0.04, 0.3), { m: M(-0.5, 2.0, D / 2 + 0.3), color: flat(0.15, 0.15, 0.15), tip: () => 0 });
-  ext.add(new THREE.BoxGeometry(0.2, 0.04, 0.2), { m: M(-0.5, 1.98, D / 2 + 0.42), color: flat(0.15, 0.15, 0.15), tip: () => 1 });
+  ext.add(new THREE.BoxGeometry(0.04, 0.04, 0.3), { m: M(-0.5, 2.0, D / 2 + 0.3), color: metal(0.15, 0.15, 0.15), tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(0.2, 0.04, 0.2), { m: M(-0.5, 1.98, D / 2 + 0.42), color: metal(0.15, 0.15, 0.15), tip: () => 1 });
   glowP.add(new THREE.BoxGeometry(0.15, 0.22, 0.15), { m: M(-0.5, 1.84, D / 2 + 0.42), color: flat(1, 1, 1) });
 
   /* ---------- around the house ---------- */
   // rain barrel
   ext.add(new THREE.CylinderGeometry(0.32, 0.29, 0.85, 14), { m: M(W / 2 + 0.55, 0.42, D / 2 - 0.45), color: (v) => { const c = 0.45 + Math.sin(Math.atan2(v.z, v.x) * 14) * 0.03; return [c, c * 0.8, c * 0.6]; }, tip: (v, nn) => (nn.y > 0.5 ? 1 : 0) });
-  [0.12, 0.72].forEach((y) => ext.add(new THREE.CylinderGeometry(0.33, 0.33, 0.04, 14, 1, true), { m: M(W / 2 + 0.55, y, D / 2 - 0.45), color: flat(0.2, 0.2, 0.21), tip: () => 0 }));
+  [0.12, 0.72].forEach((y) => ext.add(new THREE.CylinderGeometry(0.33, 0.33, 0.04, 14, 1, true), { m: M(W / 2 + 0.55, y, D / 2 - 0.45), color: metal(0.2, 0.2, 0.21), tip: () => 0 }));
   // stacked firewood along the left wall, end grain showing
   for (let r = 0; r < 4; r++) for (let i = 0; i < 9 - r; i++) {
     const z = -1.6 + i * 0.19 + r * 0.09, y = 0.11 + r * 0.18;
@@ -175,7 +179,7 @@ export function createCabin({ scene, shared, U, camera }) {
   // chopping block with an axe
   ext.add(new THREE.CylinderGeometry(0.3, 0.34, 0.5, 10), { m: M(-W / 2 - 1.4, 0.25, 1.4), color: (v, nn) => (nn.y > 0.5 ? [0.7, 0.58, 0.42] : wood(0.45)(v)), tip: (v, nn) => (nn.y > 0.5 ? 1 : 0) });
   ext.add(new THREE.CylinderGeometry(0.025, 0.03, 0.75, 6), { m: M(-W / 2 - 1.3, 0.75, 1.4, 0, 0, -0.55), color: wood(0.62), tip: () => 0 });
-  ext.add(new THREE.BoxGeometry(0.2, 0.12, 0.03), { m: M(-W / 2 - 1.48, 0.52, 1.4, 0, 0, -0.55), color: flat(0.35, 0.36, 0.38), tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(0.2, 0.12, 0.03), { m: M(-W / 2 - 1.48, 0.52, 1.4, 0, 0, -0.55), color: metal(0.35, 0.36, 0.38), tip: () => 0 });
 
   /* ---------- dock, posts, lanterns ---------- */
   for (let i = 0; i < dockLen / 0.5; i++) {
@@ -201,14 +205,14 @@ export function createCabin({ scene, shared, U, camera }) {
     }));
   }
   // gutters along both eaves and a downpipe into the rain barrel
-  [-1, 1].forEach((s) => ext.add(new THREE.CylinderGeometry(0.06, 0.06, D + 1.3, 8, 1, true, 0, Math.PI), { m: M(s * (run + 0.06), TOP + GH - rise - 0.14, 0, Math.PI / 2, 0, s > 0 ? Math.PI : 0), color: () => [0.4, 0.4, 0.42], tip: () => 0 }));
-  ext.add(new THREE.CylinderGeometry(0.035, 0.035, TOP + GH - rise - 0.2, 8), { m: M(W / 2 + 0.6, (TOP + GH - rise) / 2 + 0.4, D / 2 - 0.45 - 0.05), color: () => [0.4, 0.4, 0.42], tip: () => 0 });
+  [-1, 1].forEach((s) => ext.add(new THREE.CylinderGeometry(0.06, 0.06, D + 1.3, 8, 1, true, 0, Math.PI), { m: M(s * (run + 0.06), TOP + GH - rise - 0.14, 0, Math.PI / 2, 0, s > 0 ? Math.PI : 0), color: metal(0.4, 0.4, 0.42), tip: () => 0 }));
+  ext.add(new THREE.CylinderGeometry(0.035, 0.035, TOP + GH - rise - 0.2, 8), { m: M(W / 2 + 0.6, (TOP + GH - rise) / 2 + 0.4, D / 2 - 0.45 - 0.05), color: metal(0.4, 0.4, 0.42), tip: () => 0 });
   // a weathervane with a little cat on the roof ridge
-  ext.add(new THREE.CylinderGeometry(0.015, 0.02, 0.7, 6), { m: M(0, TOP + GH + 0.5, -1.4), color: () => [0.18, 0.18, 0.19], tip: () => 0 });
-  ext.add(new THREE.BoxGeometry(0.02, 0.02, 0.5), { m: M(0, TOP + GH + 0.62, -1.4), color: () => [0.18, 0.18, 0.19], tip: () => 0 });
-  ext.add(new THREE.ConeGeometry(0.05, 0.1, 4), { m: M(0, TOP + GH + 0.62, -1.15, Math.PI / 2, 0, 0), color: () => [0.18, 0.18, 0.19], tip: () => 0 });
+  ext.add(new THREE.CylinderGeometry(0.015, 0.02, 0.7, 6), { m: M(0, TOP + GH + 0.5, -1.4), color: metal(0.18, 0.18, 0.19), tip: () => 0 });
+  ext.add(new THREE.BoxGeometry(0.02, 0.02, 0.5), { m: M(0, TOP + GH + 0.62, -1.4), color: metal(0.18, 0.18, 0.19), tip: () => 0 });
+  ext.add(new THREE.ConeGeometry(0.05, 0.1, 4), { m: M(0, TOP + GH + 0.62, -1.15, Math.PI / 2, 0, 0), color: metal(0.18, 0.18, 0.19), tip: () => 0 });
   {
-    const cat = (geo, x, y, z, sx = 1, sy = 1, sz = 1, rz = 0) => ext.add(geo, { m: M(0, TOP + GH + 0.88 + y, -1.4 + z, 0, Math.PI / 2, rz, sx, sy, sz), color: () => [0.16, 0.16, 0.17], tip: () => 0 });
+    const cat = (geo, x, y, z, sx = 1, sy = 1, sz = 1, rz = 0) => ext.add(geo, { m: M(0, TOP + GH + 0.88 + y, -1.4 + z, 0, Math.PI / 2, rz, sx, sy, sz), color: metal(0.16, 0.16, 0.17), tip: () => 0 });
     cat(new THREE.BoxGeometry(0.28, 0.13, 0.02), 0, 0, 0);
     cat(new THREE.BoxGeometry(0.11, 0.1, 0.02), 0, 0.11, -0.13);
     [-1, 1].forEach((k) => cat(new THREE.ConeGeometry(0.03, 0.06, 3), 0, 0.19, -0.13 + k * 0.035));
@@ -229,16 +233,16 @@ export function createCabin({ scene, shared, U, camera }) {
   flowerBox(1.35, D / 2 + 0.2, 0);
   flowerBox(W / 2 + 0.2, -0.3, Math.PI / 2);
   // doormat, a broom by the door, two crates and a lantern post at the end of the porch
-  ext.add(new THREE.BoxGeometry(1.0, 0.015, 0.6), { m: M((DX0 + DX1) / 2, 0.205, D / 2 + 0.55), color: (v) => (Math.floor((v.x + 9) * 12) % 2 ? [0.42, 0.33, 0.22] : [0.5, 0.4, 0.27]), tip: () => 1 });
+  ext.add(new THREE.BoxGeometry(1.0, 0.015, 0.6), { m: M((DX0 + DX1) / 2, 0.205, D / 2 + 0.55), color: cloth((v) => (Math.floor((v.x + 9) * 12) % 2 ? [0.42, 0.33, 0.22] : [0.5, 0.4, 0.27])), tip: () => 1 });
   ext.add(new THREE.CylinderGeometry(0.015, 0.015, 1.2, 6), { m: M(DX0 - 0.3, 0.8, D / 2 + 0.25, 0.08, 0, 0.12), color: wood(0.6), tip: () => 0 });
   ext.add(new THREE.ConeGeometry(0.12, 0.3, 8), { m: M(DX0 - 0.24, 0.32, D / 2 + 0.24), color: () => [0.68, 0.58, 0.36], tip: () => 0 });
   [[-2.9, 0.0], [-2.75, 0.32]].forEach(([x, y], i) => {
     ext.add(new THREE.BoxGeometry(0.48, 0.32, 0.4), { m: M(x, 0.36 + y, D / 2 + 1.9, 0, i * 0.3, 0), color: (v) => { const c = 0.55 + (Math.abs(((v.y + 9) * 9) % 1 - 0.5) < 0.1 ? -0.1 : 0) + n(v.x * 9, v.y, v.z * 9) * 0.08; return [c, c * 0.84, c * 0.62]; }, tip: (v, nn) => (nn.y > 0.5 ? 1 : 0) });
   });
   ext.add(new THREE.CylinderGeometry(0.05, 0.06, 1.7, 8), { m: M(PR1 + 0.6, 0.85, D / 2 + 2.9), color: wood(0.4), tip: () => 0 });
-  ext.add(new THREE.BoxGeometry(0.2, 0.05, 0.2), { m: M(PR1 + 0.6, 1.72, D / 2 + 2.9), color: () => [0.15, 0.15, 0.15], tip: () => 1 });
+  ext.add(new THREE.BoxGeometry(0.2, 0.05, 0.2), { m: M(PR1 + 0.6, 1.72, D / 2 + 2.9), color: metal(0.15, 0.15, 0.15), tip: () => 1 });
   glowP.add(new THREE.BoxGeometry(0.15, 0.2, 0.15), { m: M(PR1 + 0.6, 1.84, D / 2 + 2.9), color: () => [1, 1, 1] });
-  ext.add(new THREE.ConeGeometry(0.15, 0.12, 4), { m: M(PR1 + 0.6, 2.0, D / 2 + 2.9, 0, Math.PI / 4, 0), color: () => [0.15, 0.15, 0.15], tip: () => 1 });
+  ext.add(new THREE.ConeGeometry(0.15, 0.12, 4), { m: M(PR1 + 0.6, 2.0, D / 2 + 2.9, 0, Math.PI / 4, 0), color: metal(0.15, 0.15, 0.15), tip: () => 1 });
   // stepping stones from the porch step toward the trees
   for (let i = 0; i < 6; i++) {
     const x = (DX0 + DX1) / 2 - 1.6 - i * 0.65 + Math.sin(i * 1.7) * 0.2, z = D / 2 + 2.9 + i * 0.35;
@@ -249,7 +253,7 @@ export function createCabin({ scene, shared, U, camera }) {
   const IX = W / 2 - LR, IZ = D / 2 - LR;
   // plank floor
   for (let x = -IX, i = 0; x < IX - 0.01; x += 0.2, i++) {
-    const plank = (v) => { const c = (0.5 + (i % 4) * 0.025) * (0.92 + n(v.x * 4, 0, v.z * 1.2) * 0.16) * (Math.abs(((v.z + 9 + i * 0.37) % 1.6) - 0.8) < 0.01 ? 0.7 : 1); return [c, c * 0.8, c * 0.6]; };
+    const plank = kind('wood', (v) => { const c = (0.5 + (i % 4) * 0.025) * (0.92 + n(v.x * 4, 0, v.z * 1.2) * 0.16) * (Math.abs(((v.z + 9 + i * 0.37) % 1.6) - 0.8) < 0.01 ? 0.7 : 1); return [c, c * 0.8, c * 0.6]; });
     const mid = x + 0.1;
     // planks over the cellar stairs are cut short, leaving the opening
     const spans = mid > STAIR.x0 && mid < STAIR.x1 ? [[-IZ - 0.05, STAIR.bottom], [STAIR.top, IZ + 0.05]] : [[-IZ - 0.05, IZ + 0.05]];
@@ -264,21 +268,21 @@ export function createCabin({ scene, shared, U, camera }) {
   inn.add(new THREE.BoxGeometry(0.03, 0.16, 0.36), { m: M(STAIR.x0 - 0.05, 0.86, 1.5), color: wood(0.62) });
   /* more life inside: wall clock, pots by the fire, kettle, candles and books on the mantel, a rug by the bed */
   inn.add(new THREE.CylinderGeometry(0.17, 0.17, 0.04, 24), { m: M(-0.4, 1.8, IZ - 0.03, Math.PI / 2, 0, 0), color: wood(0.45) });
-  inn.add(new THREE.CylinderGeometry(0.14, 0.14, 0.01, 24), { m: M(-0.4, 1.8, IZ - 0.055, Math.PI / 2, 0, 0), color: () => [0.9, 0.87, 0.8] });
+  inn.add(new THREE.CylinderGeometry(0.14, 0.14, 0.01, 24), { m: M(-0.4, 1.8, IZ - 0.055, Math.PI / 2, 0, 0), color: kind('paper', () => [0.9, 0.87, 0.8]) });
   inn.add(new THREE.BoxGeometry(0.008, 0.1, 0.006), { m: M(-0.4, 1.83, IZ - 0.065, 0, 0, 0.5), color: () => [0.1, 0.1, 0.1] });
   inn.add(new THREE.BoxGeometry(0.008, 0.12, 0.006), { m: M(-0.4, 1.84, IZ - 0.066, 0, 0, -1.9), color: () => [0.1, 0.1, 0.1] });
-  inn.add(new THREE.CylinderGeometry(0.015, 0.015, 1.5, 6), { m: M(FIRE.x, 1.62, -IZ + 0.62, 0, 0, Math.PI / 2), color: () => [0.2, 0.2, 0.2] });
+  inn.add(new THREE.CylinderGeometry(0.015, 0.015, 1.5, 6), { m: M(FIRE.x, 1.62, -IZ + 0.62, 0, 0, Math.PI / 2), color: metal(0.2, 0.2, 0.2) });
   [-0.5, -0.1, 0.35].forEach((dx, i) => {
-    inn.add(new THREE.CylinderGeometry(0.1 - i * 0.015, 0.08 - i * 0.012, 0.13, 12), { m: M(FIRE.x + dx, 1.42, -IZ + 0.64), color: () => [0.62, 0.36, 0.22] });
-    inn.add(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 4), { m: M(FIRE.x + dx, 1.55, -IZ + 0.64), color: () => [0.2, 0.2, 0.2] });
+    inn.add(new THREE.CylinderGeometry(0.1 - i * 0.015, 0.08 - i * 0.012, 0.13, 12), { m: M(FIRE.x + dx, 1.42, -IZ + 0.64), color: metal(0.62, 0.36, 0.22) });
+    inn.add(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 4), { m: M(FIRE.x + dx, 1.55, -IZ + 0.64), color: metal(0.2, 0.2, 0.2) });
   });
-  inn.add(new THREE.SphereGeometry(0.12, 12, 8), { m: M(FIRE.x - 0.7, 0.31, -IZ + 0.75, 0, 0, 0, 1, 0.8, 1), color: () => [0.2, 0.2, 0.22] });
-  inn.add(new THREE.CylinderGeometry(0.015, 0.03, 0.12, 6), { m: M(FIRE.x - 0.58, 0.36, -IZ + 0.75, 0, 0, -0.9), color: () => [0.2, 0.2, 0.22] });
+  inn.add(new THREE.SphereGeometry(0.12, 12, 8), { m: M(FIRE.x - 0.7, 0.31, -IZ + 0.75, 0, 0, 0, 1, 0.8, 1), color: metal(0.2, 0.2, 0.22) });
+  inn.add(new THREE.CylinderGeometry(0.015, 0.03, 0.12, 6), { m: M(FIRE.x - 0.58, 0.36, -IZ + 0.75, 0, 0, -0.9), color: metal(0.2, 0.2, 0.22) });
   [[-0.6, 0.14], [-0.5, 0.2], [0.55, 0.1]].forEach(([dx, h]) => inn.add(new THREE.CylinderGeometry(0.025, 0.025, h, 8), { m: M(FIRE.x + dx, 1.52 + h / 2, -IZ + 0.4), color: () => [0.9, 0.86, 0.76] }));
   [[0.1, [0.4, 0.2, 0.18]], [0.16, [0.24, 0.3, 0.36]], [0.21, [0.5, 0.45, 0.32]]].forEach(([dx, c]) => inn.add(new THREE.BoxGeometry(0.05, 0.22, 0.16), { m: M(FIRE.x + dx, 1.63, -IZ + 0.4), color: () => c }));
-  inn.add(new THREE.BoxGeometry(0.9, 0.012, 0.6), { m: M(-2.0, 0.126, -0.85), color: (v) => (Math.floor((v.x + 3) * 8) % 2 ? [0.62, 0.56, 0.46] : [0.4, 0.42, 0.38]) });
+  inn.add(new THREE.BoxGeometry(0.9, 0.012, 0.6), { m: M(-2.0, 0.126, -0.85), color: cloth((v) => (Math.floor((v.x + 3) * 8) % 2 ? [0.62, 0.56, 0.46] : [0.4, 0.42, 0.38])) });
   // rug
-  inn.add(new THREE.BoxGeometry(2.3, 0.014, 1.55), { m: M(0.55, 0.127, 0.5), color: (v) => { const band = Math.floor(Math.abs(v.x - 0.55) / 0.17) % 3; const edge = Math.abs(v.x - 0.55) > 1.05 || Math.abs(v.z - 0.5) > 0.68; return edge ? [0.32, 0.2, 0.17] : band === 0 ? [0.55, 0.28, 0.22] : band === 1 ? [0.78, 0.7, 0.58] : [0.36, 0.38, 0.32]; } });
+  inn.add(new THREE.BoxGeometry(2.3, 0.014, 1.55), { m: M(0.55, 0.127, 0.5), color: cloth((v) => { const band = Math.floor(Math.abs(v.x - 0.55) / 0.17) % 3; const edge = Math.abs(v.x - 0.55) > 1.05 || Math.abs(v.z - 0.5) > 0.68; return edge ? [0.32, 0.2, 0.17] : band === 0 ? [0.58, 0.26, 0.2] : band === 1 ? [0.8, 0.7, 0.52] : [0.28, 0.36, 0.38]; }) });
   // beams: two tie beams, a ridge beam and rafters under the roof
   [-1.1, 1.1].forEach((z) => inn.add(new THREE.BoxGeometry(W - 0.2, 0.2, 0.2), { m: M(0, TOP - 0.02, z), color: wood(0.42) }));
   inn.add(new THREE.BoxGeometry(0.2, 0.22, D + 0.2), { m: M(0, TOP + GH - 0.2, 0), color: wood(0.42) });
@@ -302,14 +306,14 @@ export function createCabin({ scene, shared, U, camera }) {
   [[B0 + 0.05, BZ0 + 0.05, 0.9], [B0 + 0.05, BZ1 - 0.05, 0.9], [B1 - 0.05, BZ0 + 0.05, 0.6], [B1 - 0.05, BZ1 - 0.05, 0.6]].forEach(([x, z, h]) => inn.add(new THREE.BoxGeometry(0.09, h, 0.09), { m: M(x, 0.12 + h / 2, z), color: wood(0.45) }));
   inn.add(new THREE.BoxGeometry(0.06, 0.45, BZ1 - BZ0 - 0.1), { m: M(B0 + 0.05, 0.75, bz), color: wood(0.5) });   // headboard
   inn.add(new THREE.BoxGeometry(B1 - B0, 0.12, BZ1 - BZ0), { m: M(bx, 0.36, bz), color: wood(0.45) });
-  inn.add(new THREE.BoxGeometry(B1 - B0 - 0.1, 0.16, BZ1 - BZ0 - 0.08), { m: M(bx, 0.5, bz), color: flat(0.86, 0.84, 0.78) });   // mattress
-  inn.add(new THREE.BoxGeometry(1.3, 0.05, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.68, 0.6, bz), color: (v) => { const check = (Math.floor(v.x * 6) + Math.floor(v.z * 6)) % 2; return check ? [0.46, 0.2, 0.18] : [0.52, 0.26, 0.22]; } });   // blanket
-  inn.add(new THREE.BoxGeometry(0.08, 0.25, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.03, 0.5, bz), color: flat(0.46, 0.2, 0.18) });
+  inn.add(new THREE.BoxGeometry(B1 - B0 - 0.1, 0.16, BZ1 - BZ0 - 0.08), { m: M(bx, 0.5, bz), color: flat(0.86, 0.84, 0.78, 'fabric') });   // mattress
+  inn.add(new THREE.BoxGeometry(1.3, 0.05, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.68, 0.6, bz), color: cloth((v) => { const check = (Math.floor(v.x * 6) + Math.floor(v.z * 6)) % 2; const st = Math.abs(((v.x * 6) % 1) - 0.5) < 0.06 || Math.abs(((v.z * 6) % 1) - 0.5) < 0.06; return st ? [0.82, 0.74, 0.5] : check ? [0.48, 0.18, 0.16] : [0.36, 0.2, 0.2]; }) });   // blanket
+  inn.add(new THREE.BoxGeometry(0.08, 0.25, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.03, 0.5, bz), color: flat(0.46, 0.2, 0.18, 'fabric') });
   const pillow = new THREE.SphereGeometry(1, 12, 8);
-  inn.add(pillow, { m: M(B0 + 0.32, 0.64, bz, 0, 0, 0, 0.2, 0.08, 0.36), color: flat(0.92, 0.9, 0.86) });
+  inn.add(pillow, { m: M(B0 + 0.32, 0.64, bz, 0, 0, 0, 0.2, 0.08, 0.36), color: flat(0.92, 0.9, 0.86, 'fabric') });
   // chest at the foot of the bed
   inn.add(new THREE.BoxGeometry(0.7, 0.42, 0.42), { m: M(B1 + 0.45, 0.33, BZ0 + 0.25), color: wood(0.5) });
-  inn.add(new THREE.BoxGeometry(0.72, 0.05, 0.44), { m: M(B1 + 0.45, 0.4, BZ0 + 0.25), color: flat(0.25, 0.25, 0.26) });
+  inn.add(new THREE.BoxGeometry(0.72, 0.05, 0.44), { m: M(B1 + 0.45, 0.4, BZ0 + 0.25), color: metal(0.25, 0.25, 0.26) });
   // table with two chairs, lantern, mug, book and a bowl of grey fruit
   const T = { x: 0.9, z: 0.6 };
   inn.add(new THREE.BoxGeometry(1.3, 0.06, 0.85), { m: M(T.x, 0.88, T.z), color: wood(0.55) });
@@ -321,9 +325,9 @@ export function createCabin({ scene, shared, U, camera }) {
     inn.add(new THREE.BoxGeometry(0.44, 0.5, 0.04), { m: M(T.x, 0.85, cz + s * 0.2), color: wood(0.5) });
   });
   glowP.add(new THREE.BoxGeometry(0.12, 0.16, 0.12), { m: M(T.x + 0.35, 1.0, T.z - 0.15), color: flat(1, 1, 1) });
-  inn.add(new THREE.BoxGeometry(0.16, 0.03, 0.16), { m: M(T.x + 0.35, 0.92, T.z - 0.15), color: flat(0.15, 0.15, 0.15) });
-  inn.add(new THREE.BoxGeometry(0.14, 0.03, 0.14), { m: M(T.x + 0.35, 1.09, T.z - 0.15), color: flat(0.15, 0.15, 0.15) });
-  inn.add(new THREE.CylinderGeometry(0.045, 0.04, 0.1, 10), { m: M(T.x - 0.3, 0.96, T.z + 0.2), color: flat(0.75, 0.73, 0.7) });
+  inn.add(new THREE.BoxGeometry(0.16, 0.03, 0.16), { m: M(T.x + 0.35, 0.92, T.z - 0.15), color: metal(0.15, 0.15, 0.15) });
+  inn.add(new THREE.BoxGeometry(0.14, 0.03, 0.14), { m: M(T.x + 0.35, 1.09, T.z - 0.15), color: metal(0.15, 0.15, 0.15) });
+  inn.add(new THREE.CylinderGeometry(0.045, 0.04, 0.1, 10), { m: M(T.x - 0.3, 0.96, T.z + 0.2), color: flat(0.75, 0.73, 0.7, 'paper') });
   inn.add(new THREE.BoxGeometry(0.22, 0.04, 0.3), { m: M(T.x - 0.25, 0.93, T.z - 0.2, 0, 0.3, 0), color: flat(0.3, 0.36, 0.42) });
   inn.add(new THREE.CylinderGeometry(0.16, 0.1, 0.07, 14, 1, true), { m: M(T.x + 0.05, 0.95, T.z + 0.15), color: wood(0.5) });
   [[0, 0], [0.07, 0.05], [-0.06, 0.05], [0.0, -0.07]].forEach(([dx, dz], i) => inn.add(new THREE.SphereGeometry(0.055, 10, 7), { m: M(T.x + 0.05 + dx, 0.99 + (i === 3 ? 0.04 : 0), T.z + 0.15 + dz), color: flat(0.66, 0.66, 0.65) }));
@@ -342,7 +346,7 @@ export function createCabin({ scene, shared, U, camera }) {
   });
   // coat on a peg and boots by the door
   inn.add(new THREE.CylinderGeometry(0.015, 0.015, 0.12, 5), { m: M(-2.6, 1.7, IZ - 0.06, Math.PI / 2, 0, 0), color: wood(0.4) });
-  inn.add(new THREE.BoxGeometry(0.42, 0.85, 0.12), { m: M(-2.6, 1.25, IZ - 0.1), color: (v) => { const c = 0.32 + n(v.x * 9, v.y * 9, 0) * 0.04; return [c * 0.85, c, c * 0.9]; } });
+  inn.add(new THREE.BoxGeometry(0.42, 0.85, 0.12), { m: M(-2.6, 1.25, IZ - 0.1), color: cloth((v) => { const c = 0.32 + n(v.x * 9, v.y * 9, 0) * 0.04; return [c * 0.85, c, c * 0.9]; }) });
   [-2.7, -2.48].forEach((x) => {
     inn.add(new THREE.BoxGeometry(0.11, 0.26, 0.13), { m: M(x, 0.25, IZ - 0.2), color: flat(0.2, 0.16, 0.13) });
     inn.add(new THREE.BoxGeometry(0.11, 0.07, 0.26), { m: M(x, 0.155, IZ - 0.26), color: flat(0.2, 0.16, 0.13) });
@@ -357,8 +361,8 @@ export function createCabin({ scene, shared, U, camera }) {
   for (let i = 0; i < 5; i++) doorP.add(new THREE.BoxGeometry(DW / 5 - 0.008, DH - 0.04, 0.06), { m: M(0.02 + DW / 10 + i * DW / 5, (DH - 0.04) / 2, 0), color: wood(0.5 + (i % 2) * 0.04), tip: () => 0 });
   [0.35, DH - 0.4].forEach((y) => doorP.add(new THREE.BoxGeometry(DW - 0.1, 0.12, 0.04), { m: M(0.02 + DW / 2, y, -0.05), color: wood(0.46), tip: () => 0 }));
   doorP.add(new THREE.BoxGeometry(0.1, Math.hypot(DW - 0.2, DH - 0.95), 0.04), { m: M(0.02 + DW / 2, DH / 2 - 0.02, -0.05, 0, 0, Math.atan2(DW - 0.2, DH - 0.95)), color: wood(0.46), tip: () => 0 });
-  [0.06, -0.08].forEach((z) => doorP.add(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 6), { m: M(DW - 0.1, 1.0, z), color: flat(0.18, 0.18, 0.19), tip: () => 0 }));
-  [0.3, DH - 0.3].forEach((y) => doorP.add(new THREE.BoxGeometry(0.4, 0.05, 0.075), { m: M(0.22, y, 0), color: flat(0.18, 0.18, 0.19), tip: () => 0 }));   // hinges
+  [0.06, -0.08].forEach((z) => doorP.add(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 6), { m: M(DW - 0.1, 1.0, z), color: metal(0.18, 0.18, 0.19), tip: () => 0 }));
+  [0.3, DH - 0.3].forEach((y) => doorP.add(new THREE.BoxGeometry(0.4, 0.05, 0.075), { m: M(0.22, y, 0), color: metal(0.18, 0.18, 0.19), tip: () => 0 }));   // hinges
 
   /* ---------- boat ---------- */
   const boatP = new Parts();
@@ -369,9 +373,9 @@ export function createCabin({ scene, shared, U, camera }) {
 
   /* ---------- materials and meshes ---------- */
   const ONE = { value: 1 };
-  const extMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, snowBias: 0.12, grain: 0.02 });
-  const intMat = coverMaterial({ ...shared, uSnowCover: { value: 0 }, uMoss: { value: 0 }, uFrost: { value: 0 } }, ONE, { color: 0xdccdb9, grain: 0.016 });
-  const boatMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, side: THREE.DoubleSide });
+  const extMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, snowBias: 0.12, grain: 0.022, rich: true });
+  const intMat = coverMaterial({ ...shared, uSnowCover: { value: 0 }, uMoss: { value: 0 }, uFrost: { value: 0 } }, ONE, { color: 0xe2d4c0, grain: 0.018, rich: true, indoor: true });
+  const boatMat = coverMaterial({ ...shared, uFrost: { value: 0 } }, ONE, { color: 0xd2c3b0, snowMask: true, side: THREE.DoubleSide, rich: true, grain: 0.02 });
   const glowMat = new THREE.MeshBasicMaterial({ color: 0x141414 });
   const glassMat = new THREE.MeshBasicMaterial({ color: 0xa9b7c0, transparent: true, opacity: 0.16, depthWrite: false });
 

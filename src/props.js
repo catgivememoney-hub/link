@@ -105,8 +105,10 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
   const rockSets = [[], [], []], pebbles = [];
   const putRock = (x, z, s, list, solid) => {
     const h = heightAt(x, z);
-    list.push({ p: new THREE.Vector3(x, h - s * 0.12, z), q: groundQ(x, z, R() * 6.28, 0.6), s: new THREE.Vector3(s * rr(0.8, 1.25), s * rr(0.6, 1.1), s * rr(0.8, 1.2)) });
-    if (solid) solids.push({ x, z, r: s * 1.05 + 1.2, key: 'pRocks' });
+    const sc = new THREE.Vector3(s * rr(0.8, 1.25), s * rr(0.6, 1.1), s * rr(0.8, 1.2));
+    list.push({ p: new THREE.Vector3(x, h - s * 0.12, z), q: groundQ(x, z, R() * 6.28, 0.6), s: sc });
+    // top: how high it is (you can jump over it or stand on it); rt: the flat-ish area on top
+    if (solid) solids.push({ x, z, r: s * 1.05 + 1.2, key: 'pRocks', top: h - s * 0.12 + sc.y * 0.82, rt: s * 0.75 });
   };
   for (let i = 0, tries = 0; i < 260 && tries < 20000; tries++) {
     const x = rr(-560, 560), z = rr(-560, 230), h = heightAt(x, z);
@@ -317,15 +319,25 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
   return {
     shared, show, groups, solids, zones, cabinAt, circleAt, cabin,
     // is this spot inside something solid? (circles plus the cabin's walls and furniture)
-    blockedAt(x, z, pad, cur) {
+    blockedAt(x, z, pad, cur, feet) {
       for (const c of solids) {
         if (cur[c.key] < 0.5) continue;
+        if (c.top !== undefined && feet !== undefined && feet >= c.top - 0.7) continue;   // you're above it (jumped up / standing on it)
         const dx = c.x - x, dz = c.z - z, r = c.r + pad;
         if (dx * dx + dz * dz < r * r) return true;
       }
       return cur.pCabin > 0.5 && cabin.blocked(x, z, pad);
     },
-    // a built floor here (cabin, porch, dock), else -Infinity
+    // the top of a log, stump or rock you're standing on (after jumping up), else -Infinity
+    solidTop(x, z, feet, cur) {
+      let best = -Infinity;
+      for (const c of solids) {
+        if (c.top === undefined || cur[c.key] < 0.5 || c.top <= best || feet < c.top - 1.2) continue;
+        const dx = c.x - x, dz = c.z - z;
+        if (dx * dx + dz * dz < c.rt * c.rt) best = c.top;
+      }
+      return best;
+    },
     // a built floor here (cabin, stairs, study, porch, dock): { y, under } or null
     floorAt(x, z, cur) { return cur.pCabin > 0.5 ? cabin.floorAt(x, z) : null; },
     // second step, after the trees are planted: things that need to know where the trees stand
@@ -344,7 +356,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
         const h1 = heightAt(x + ex, z + ez), h2 = heightAt(x - ex, z - ez);
         const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(R() * 6.28, yaw, Math.atan2(h1 - h2, len), 'YZX'));
         logs.push({ p: new THREE.Vector3(x, (h1 + h2) / 2 + rad * 0.55, z), q, s: new THREE.Vector3(len, rad, rad) });
-        for (let k = -0.5; k <= 0.5; k += 0.25) solids.push({ x: x + ex * 2 * k, z: z + ez * 2 * k, r: rad + 1.6, key: 'pLogs' });
+        for (let k = -0.5; k <= 0.5; k += 0.125) solids.push({ x: x + ex * 2 * k, z: z + ez * 2 * k, r: rad + 1.6, key: 'pLogs', top: (h1 + h2) / 2 + rad * 0.55 + (h1 - h2) * k + rad, rt: rad * 1.1 });
         i++;
       }
       for (let i = 0, tries = 0; i < 90 && tries < 8000; tries++) {
@@ -352,8 +364,9 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
         const a = R() * 6.28, d = rr(6, 16), x = b.p.x + Math.cos(a) * d, z = b.p.z + Math.sin(a) * d;
         const h = heightAt(x, z); if (h < 1.5 || h > 70 || near(x, z, 5) || inZone(x, z)) continue;
         const r = rr(0.9, 1.7);
-        stumps.push({ p: new THREE.Vector3(x, h - 0.4, z), q: groundQ(x, z, R() * 6.28, 0.4), s: new THREE.Vector3(r, rr(1.4, 3.2), r) });
-        solids.push({ x, z, r: r + 1.3, key: 'pLogs' });
+        const sh = rr(1.4, 3.2);
+        stumps.push({ p: new THREE.Vector3(x, h - 0.4, z), q: groundQ(x, z, R() * 6.28, 0.4), s: new THREE.Vector3(r, sh, r) });
+        solids.push({ x, z, r: r + 1.3, key: 'pLogs', top: h - 0.4 + sh, rt: r * 0.85 });
         i++;
       }
       instanced(logGeo, woodMat, logs, 'pLogs', { cast: true });

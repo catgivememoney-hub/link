@@ -738,6 +738,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       const built = props.floorAt(px, pz, cur);
       // inside the cabin or down in the study the built floor is all that counts
       floor = built && built.under ? built.y : Math.max(floor, water.position.y, built ? built.y : -1e9);
+      // standing on a log, stump or rock you jumped onto
+      if (!(built && built.under)) floor = Math.max(floor, props.solidTop(px, pz, ex.ground - EYE + jump.y, cur));
       const ground = floor + EYE;
       ex.ground += (ground - ex.ground) * 0.12;   // glide over bumps instead of jolting…
       ex.ground = Math.max(ex.ground, floor + 3); // …but never sink below the ground
@@ -1334,7 +1336,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
             if (dx * dx + dz * dz < rr * rr) return false;
           }
         }
-        if (props.blockedAt(wx2, wz2, 0, cur)) return false;
+        if (props.blockedAt(wx2, wz2, 0, cur, ex.ground - EYE + jump.y)) return false;
         return true;
       };
       const nx = ex.px + ex.vx * dtS, nz = ex.pz + ex.vz * dtS;
@@ -1516,7 +1518,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     },
     _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
     _toggleDoor() { props.cabin.door.toggle(performance.now()); },
-    get _study() { return props.cabin.study; }, get _cabin() { return props.cabin; },
+    get _study() { return props.cabin.study; }, get _cabin() { return props.cabin; }, get _props() { return props; }, get _cur() { return cur; },
     _pos() { const d = new THREE.Vector3(); camera.getWorldDirection(d); return { x: cur.cam.x + ex.px, z: cur.cam.z + ex.pz, fly: fly.on, pitch: ex.pitch, lookY: d.y, yaw: ex.yaw, yawTo: ex.yawTo, dx: d.x, dz: d.z, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, ground: ex.ground, homing: ex.homing }; },
     _sites() { return { cabin: props.cabinAt, circle: props.circleAt }; },
     _nearTree(i, d = 16) { const b = treeBase[i % treeBase.length]; if (b) this._standAt(b.p.x, b.p.z + d); },
