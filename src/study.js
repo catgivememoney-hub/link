@@ -27,6 +27,9 @@ export const rampY = (z) => { const t = (STAIR.top - Math.min(STAIR.top, Math.ma
 // the spiral stair from the gallery down to the main floor (1¼ turns, top facing +x)
 export const SPIRAL = { x: 0.55, z: -0.4, r: 1.05, turns: 1.25 };
 const LAND = { x0: 0.55, x1: GAL.right, z0: -1.45, z1: -0.4 };   // little landing at the top
+// the tall window behind the desk, and the little landscape you see through it (view.js)
+export const WINDOW = { x0: -0.95, x1: 0.95, y0: STUDY.floor + 0.55, y1: STUDY.floor + 2.62, depth: 0.42 };
+export const VIEW = { x0: -10, x1: 10, z0: STUDY.z0 - 11, z1: STUDY.z0 - WINDOW.depth, y0: STUDY.floor - 0.6, y1: -0.55 };
 const RISE = STUDY.mezz - STUDY.floor, TAU = Math.PI * 2;
 const spiralAR = (lx, lz) => { const a = Math.atan2(lz - SPIRAL.z, lx - SPIRAL.x); return [((a % TAU) + TAU) % TAU, Math.hypot(lx - SPIRAL.x, lz - SPIRAL.z)]; };
 const helix = (a) => { const out = []; for (let k = 0; k < 2; k++) { const u = (a + TAU * k) / (TAU * SPIRAL.turns); if (u <= 1) out.push(STUDY.mezz - u * RISE); } return out; };
@@ -248,14 +251,23 @@ export function createStudy({ group, mats, camera, U }) {
   /* ---------- walls: stone at the foot, panelled wood above, crown moulding ---------- */
   const panelWood = kind('wood', (v) => { const c = 0.34 + n(v.x * 2, v.y * 6, v.z * 2) * 0.08; return [c * 1.06, c * 0.74, c * 0.5]; });
   [['z', Z0, X0, X1, 1], ['z', Z1, X0, X1, -1], ['x', X0, Z0, Z1, 1], ['x', X1, Z0, Z1, -1]].forEach(([axis, fixed, a, b, face]) => {
-    for (let t = a; t < b - 0.01; t += 0.6) {
-      const w = Math.min(0.6, b - t), m2 = t + w / 2;
+    // the back wall has a real opening for the window
+    const hole = axis === 'z' && fixed === Z0 ? WINDOW : null;
+    const cuts = []; for (let t = a; t < b - 0.01; t += 0.6) cuts.push(t); cuts.push(b);
+    if (hole) { cuts.push(hole.x0, hole.x1); cuts.sort((p, q) => p - q); }
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const t = cuts[i], w = cuts[i + 1] - t; if (w < 0.005) continue;
+      const m2 = t + w / 2;
       const wall = (y0, y1, color) => P.add(new THREE.PlaneGeometry(w, y1 - y0), { m: axis === 'z' ? M(m2, (y0 + y1) / 2, fixed, 0, face > 0 ? 0 : Math.PI, 0) : M(fixed, (y0 + y1) / 2, m2, 0, face > 0 ? Math.PI / 2 : -Math.PI / 2, 0), color });
-      wall(F, F + 0.9, stone); wall(F + 0.9, C, panelWood);
+      if (hole && m2 > hole.x0 && m2 < hole.x1) { wall(F, hole.y0, stone); wall(hole.y1, C, panelWood); }
+      else { wall(F, F + 0.9, stone); wall(F + 0.9, C, panelWood); }
     }
-    const len = b - a, m0 = (a + b) / 2;
     [[F + 0.9, 0.06, 0.05], [F + 0.06, 0.12, 0.03], [C - 0.07, 0.14, 0.09], [C - 0.17, 0.05, 0.05]].forEach(([y, h, d]) => {
-      P.add(rbox(axis === 'z' ? len : d, h, axis === 'z' ? d : len, 0.015, 1), { m: axis === 'z' ? M(m0, y, fixed + face * d / 2) : M(fixed + face * d / 2, y, m0), color: mid });
+      const spans = hole && y > hole.y0 && y < hole.y1 ? [[a, hole.x0 - 0.2], [hole.x1 + 0.2, b]] : [[a, b]];
+      spans.forEach(([s0, s1]) => {
+        const len = s1 - s0, m0 = (s0 + s1) / 2;
+        P.add(rbox(axis === 'z' ? len : d, h, axis === 'z' ? d : len, 0.015, 1), { m: axis === 'z' ? M(m0, y, fixed + face * d / 2) : M(fixed + face * d / 2, y, m0), color: mid });
+      });
     });
   });
   // raised panels on the front wall of the tall room (behind the sofa)
@@ -268,8 +280,16 @@ export function createStudy({ group, mats, camera, U }) {
 
   /* ---------- the tall window behind the desk (with shutters) ---------- */
   {
-    const wx0 = -0.95, wx1 = 0.95, y0 = F + 0.55, y1 = F + 2.62, z = Z0 + 0.02;
-    G.add(new THREE.PlaneGeometry(wx1 - wx0, y1 - y0, 1, 10), { m: M(0, (y0 + y1) / 2, z + 0.01), color: (v) => { const t = (v.y - y0) / (y1 - y0); return [1.0 - t * 0.32, 0.98 - t * 0.14, 0.94 + t * 0.06]; } });
+    const wx0 = WINDOW.x0, wx1 = WINDOW.x1, y0 = WINDOW.y0, y1 = WINDOW.y1, z = Z0 + 0.02;
+    // the deep stone reveal of the opening (the wall is thick here)
+    const dz = WINDOW.depth;
+    P.add(new THREE.PlaneGeometry(dz, y1 - y0), { m: M(wx0, (y0 + y1) / 2, Z0 - dz / 2, 0, Math.PI / 2, 0), color: stone });
+    P.add(new THREE.PlaneGeometry(dz, y1 - y0), { m: M(wx1, (y0 + y1) / 2, Z0 - dz / 2, 0, -Math.PI / 2, 0), color: stone });
+    P.add(new THREE.PlaneGeometry(wx1 - wx0, dz), { m: M(0, y1, Z0 - dz / 2, Math.PI / 2, 0, 0), color: stone });
+    P.add(new THREE.PlaneGeometry(wx1 - wx0, dz), { m: M(0, y0, Z0 - dz / 2, -Math.PI / 2, 0, 0), color: stone });
+    // the glass: barely there, a faint cool sheen
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(wx1 - wx0, y1 - y0), new THREE.MeshBasicMaterial({ color: 0xcfe0ea, transparent: true, opacity: 0.07, depthWrite: false }));
+    glass.position.set(0, (y0 + y1) / 2, z + 0.03); glass.renderOrder = 2; group.add(glass);
     const bar = (w, h, x, y, d = 0.05) => P.add(rbox(w, h, d, 0.008, 1), { m: M(x, y, z + 0.05), color: light });
     for (let i = 1; i < 3; i++) bar(0.035, y1 - y0, wx0 + i * (wx1 - wx0) / 3, (y0 + y1) / 2);
     for (let j = 1; j < 5; j++) bar(wx1 - wx0, 0.035, 0, y0 + j * (y1 - y0) / 5);

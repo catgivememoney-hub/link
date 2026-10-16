@@ -3,7 +3,7 @@
    tree placement, walking and the cabin site all use it. */
 import * as THREE from 'three';
 import { CABIN } from './cabin.js';
-import { STUDY } from './study.js';
+import { STUDY, VIEW } from './study.js';
 
 /* ---------- small deterministic noise ---------- */
 export const hash2 = (x, z) => { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -34,17 +34,17 @@ export const heightAt = (x, z) => {
     const ax = 205, az = -130, bx = 92, bz = -116;
     const t = Math.min(1, Math.max(0, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / ((bx - ax) ** 2 + (bz - az) ** 2)));
     const d = Math.hypot(x - (ax + (bx - ax) * t), z - (az + (bz - az) * t));
-    const k = smooth(34, 12, d) * smooth(1.04, 0.9, t);
+    const k = smooth(48, 12, d) * smooth(1.04, 0.9, t);   // a wide, gentle bank down to the water
     const top = 4.6 + (fbm(x * 0.05, z * 0.05, 2) - 0.5) * 1.6 - t * 0.6;
     if (k > 0) h = h + (Math.max(h, top) - h) * k;
   }
   // level ground where the cabin stands
   const dc = Math.hypot(x - CABIN.x, z - CABIN.z);
-  if (dc < 36) h += (CABIN.y - 0.12 - h) * smooth(36, 24, dc);
+  if (dc < 44) h += (CABIN.y - 0.12 - h) * smooth(44, 22, dc);
   {
-    // and over the library below it, so it stays underground
+    // and over the library (and the little landscape behind its window), so they stay underground
     const lx = (z - CABIN.z) / CABIN.S, lz = -(x - CABIN.x) / CABIN.S;
-    const ox = Math.max(STUDY.x0 - lx, lx - STUDY.x1, 0), oz = Math.max(STUDY.z0 - lz, lz - STUDY.z1, 0);
+    const ox = Math.max(Math.min(STUDY.x0, VIEW.x0) - lx, lx - Math.max(STUDY.x1, VIEW.x1), 0), oz = Math.max(VIEW.z0 - lz, lz - STUDY.z1, 0);
     const out = Math.hypot(ox, oz) * CABIN.S;
     if (out < 16) h = Math.max(h, h + (CABIN.y - 0.12 - h) * smooth(16, 5, out));
   }
@@ -54,7 +54,7 @@ export const heightAt = (x, z) => {
 /* ---------- terrain mesh ---------- */
 export function createTerrain(scene) {
   // uHole: no ground drawn inside the cabin (its floor is there, and the stairs go down through it)
-  const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 }, uSand: { value: 0 }, uHole: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) } };
+  const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 }, uSand: { value: 0 }, uHole: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) }, uWaterY: { value: 0 }, uWaterC: { value: new THREE.Color(0x6d7378) } };
   const geo = new THREE.PlaneGeometry(2200, 1800, 300, 245);
   geo.rotateX(-Math.PI / 2);
   geo.translate(0, 0, -400);
@@ -69,7 +69,7 @@ export function createTerrain(scene) {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y; vXZ = position.xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uLow, uHigh, uSnow; uniform float uSnowLine, uSand; uniform vec4 uHole; varying float vH; varying float vSlope; varying vec2 vXZ;
+        uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; varying float vH; varying float vSlope; varying vec2 vXZ;
         float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float tn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(th(i), th(i + vec2(1, 0)), f.x), mix(th(i + vec2(0, 1)), th(i + vec2(1, 1)), f.x), f.y); }`)
@@ -80,8 +80,14 @@ export function createTerrain(scene) {
         float d1 = tn(vXZ * 0.08), d2 = tn(vXZ * 0.45), d3 = tn(vXZ * 2.2);
         land *= 0.82 + 0.22 * d1 + 0.12 * d2 + 0.08 * d3;
         land = mix(land, land * vec3(0.92, 0.88, 0.84), smoothstep(0.35, 0.75, vSlope));
-        float beach = (1.0 - smoothstep(1.2, 3.5, vH)) * smoothstep(-3.0, -0.5, vH) * uSand;
+        float beach = (1.0 - smoothstep(uWaterY + 1.2, uWaterY + 3.5, vH)) * smoothstep(uWaterY - 3.0, uWaterY - 0.5, vH) * uSand;
         land = mix(land, vec3(0.93, 0.85, 0.66) * (0.9 + 0.12 * d3), beach);
+        // where land meets water: a wet, darker band, then the lake bed tinted by the water
+        float wet = smoothstep(uWaterY + 2.2, uWaterY + 0.1, vH) * (0.75 + 0.25 * d2);
+        land *= mix(1.0, 0.7, wet);
+        float under = smoothstep(uWaterY + 0.1, uWaterY - 4.5, vH);
+        land = mix(land, uWaterC * (0.55 + 0.2 * d1), under * 0.85);
+        snow *= 1.0 - smoothstep(uWaterY + 0.6, uWaterY - 0.4, vH);
         float drift = sin(vXZ.x * 0.55 + vXZ.y * 0.18 + d1 * 7.0) * 0.5 + 0.5;
         vec3 snowCol = uSnow * (0.93 + 0.05 * d2 + 0.04 * drift) * mix(vec3(0.94, 0.97, 1.0), vec3(1.0), d1);
         diffuseColor.rgb = mix(land, snowCol, snow);`)
@@ -119,7 +125,19 @@ export function createTerrain(scene) {
 }
 
 /* ---------- water with a moving ripple texture ---------- */
-export function createWater(scene) {
+export function createWater(scene, U) {
+  // the height of the lake bed, baked once, so the water knows how deep it is everywhere:
+  // it turns clear and pale in the shallows and fades softly into the shore, with a little foam
+  const SR = { x0: -700, z0: -800, w: 1400, d: 1300 }, NX = 448, NZ = 416;
+  const shore = (() => {
+    const data = new Uint16Array(NX * NZ);
+    for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+      data[j * NX + i] = THREE.DataUtils.toHalfFloat(heightAt(SR.x0 + (i + 0.5) / NX * SR.w, SR.z0 + (j + 0.5) / NZ * SR.d));
+    }
+    const t = new THREE.DataTexture(data, NX, NZ, THREE.RedFormat, THREE.HalfFloatType);
+    t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
+    return t;
+  })();
   const tex = (() => {
     const c = document.createElement('canvas'); c.width = c.height = 256;
     const g = c.getContext('2d'), img = g.createImageData(256, 256);
@@ -132,19 +150,38 @@ export function createWater(scene) {
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(60, 60);
     return t;
   })();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.3, metalness: 0.35, normalMap: tex, normalScale: new THREE.Vector2(0.35, 0.35) });
+  const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.3, metalness: 0.35, normalMap: tex, normalScale: new THREE.Vector2(0.35, 0.35), transparent: true });
   // the lake must not show inside the library (which is below the water line)
-  const WU = { uStudy: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) } };
+  const WU = { uStudy: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) }, tShore: { value: shore }, uShore: { value: new THREE.Vector4(SR.x0, SR.z0, SR.w, SR.d) }, uLevel: { value: 0 }, uTime: U.uTime };
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, WU);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ; uniform vec4 uStudy;')
-      .replace('#include <clipping_planes_fragment>', 'if (vWXZ.x > uStudy.x && vWXZ.x < uStudy.y && vWXZ.y > uStudy.z && vWXZ.y < uStudy.w) discard;\n#include <clipping_planes_fragment>');
+      .replace('#include <common>', `#include <common>
+        varying vec2 vWXZ; uniform vec4 uStudy, uShore; uniform sampler2D tShore; uniform float uLevel, uTime;
+        float wh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh(i), wh(i + vec2(1, 0)), f.x), mix(wh(i + vec2(0, 1)), wh(i + vec2(1, 1)), f.x), f.y); }`)
+      .replace('#include <clipping_planes_fragment>', 'if (vWXZ.x > uStudy.x && vWXZ.x < uStudy.y && vWXZ.y > uStudy.z && vWXZ.y < uStudy.w) discard;\n#include <clipping_planes_fragment>')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          vec2 suv = (vWXZ - uShore.xy) / uShore.zw;
+          float bed = (suv.x > 0.0 && suv.x < 1.0 && suv.y > 0.0 && suv.y < 1.0) ? texture2D(tShore, suv).r : -100.0;
+          float depth = uLevel - bed;
+          // shallow water is clearer and lighter, deep water keeps its colour
+          float shallow = 1.0 - smoothstep(0.0, 7.0, depth);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.3 + vec3(0.05, 0.07, 0.06), shallow * 0.55);
+          // a thin line of foam that breathes along the shore
+          float n = wn(vWXZ * 0.3 + vec2(uTime * 0.05, 0.0)) + 0.5 * wn(vWXZ * 1.1 - vec2(0.0, uTime * 0.08));
+          float foam = smoothstep(2.6, 0.3, depth) * smoothstep(0.35, 1.0, 0.5 + 0.5 * sin(depth * 3.0 - uTime * 1.1 + n * 6.0)) * smoothstep(0.35, 0.95, n) * 0.55;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.93), clamp(foam, 0.0, 0.4));
+          // and the water fades out softly where it meets the land (no hard line)
+          diffuseColor.a *= smoothstep(-0.1, 3.2, depth) * (1.0 - 0.3 * shallow) + clamp(foam, 0.0, 0.4) * smoothstep(0.0, 1.2, depth) * 0.5;
+        }`);
   };
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), mat);
   scene.add(mesh);
+  mesh.renderOrder = 1;
   return { mesh, mat, tex, WU };
 }

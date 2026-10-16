@@ -26,6 +26,8 @@ import { createPlayer, EYE } from './player.js';
 import { createLens } from './lens.js';
 import { createHandLight } from './handlight.js';
 import { createFish } from './fish.js';
+import { createContactShadows } from './contact.js';
+import { createWindowView } from './view.js';
 
 (() => {
   'use strict';
@@ -60,14 +62,18 @@ import { createFish } from './fish.js';
   scene.add(hemi, sun, sun.target);
   scene.fog = new THREE.FogExp2(0xcccccc, 0.004);
   const terrain = createTerrain(scene);
-  const water = createWater(scene);
+  const water = createWater(scene, U);
   // the spots the home views look from stay clear of rocks and grass
   const CLEAR = [[0, 105], [0, 140], [-38, 112], [24, 78], [0, 92], [30, 102], [0, 125]].map(([x, z]) => ({ x, z, r: 42 }));
   const props = createProps({ scene, heightAt, U, snowColor: terrain.TU.uSnow, clear: CLEAR });
   const trees = createTrees({ scene, shared: props.shared, isClearing: (x, z) => props.inClearing(x, z) });
   props.plant(trees.base, 0);
+  // soft shade on the ground under every tree and around the cabin
+  const treeShade = createContactShadows(scene, heightAt, trees.base.map((b) => ({ x: b.p.x, z: b.p.z, sx: b.s.x * 3.4, sz: b.s.z * 3.4 })), 0.32);
+  const cabinShade = createContactShadows(scene, heightAt, [{ x: CABIN.x, z: CABIN.z, sx: 8.6 * CABIN.S, sz: 7.4 * CABIN.S, yaw: CABIN.yaw }], 0.4);
   const cabin = createCabin({ scene, shared: props.shared, U, camera });
   const study = cabin.study;
+  const windowView = createWindowView({ group: cabin.group, U, trees, shared: props.shared });
   const ripples = createRipples(scene, U);
   const prints = createFootprints(scene, U);
   const weather = createWeather(scene, U, renderer.getPixelRatio());
@@ -133,10 +139,12 @@ import { createFish } from './fish.js';
     terrain.TU.uLow.value.copy(s.low); terrain.TU.uHigh.value.copy(s.high); terrain.TU.uSnow.value.copy(s.snowC);
     terrain.TU.uSnowLine.value = s.snowLine; terrain.TU.uSand.value = s.sand;
     water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = s.waterRough;
+    water.WU.uLevel.value = s.water; terrain.TU.uWaterY.value = s.water; terrain.TU.uWaterC.value.copy(s.waterC);
     water.tex.offset.set(time * 0.004, time * 0.006);
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
     hemi.color.copy(s.hemiSky); hemi.groundColor.copy(s.hemiGround); hemi.intensity = s.hemi * 1.6;
     trees.update(s, now);
+    treeShade.set(s.trees); cabinShade.set(s.pCabin); windowView.update(s);
     props.update(s, time);
     cabin.update(s, time, now, s.water, player.walking ? player.state.feet : undefined);
   };

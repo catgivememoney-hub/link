@@ -186,7 +186,7 @@ export function createTrees({ scene, shared, isClearing }) {
   const solid = () => trees.visible && show.value > 0.5;
 
   return {
-    mesh: trees, fruits, base,
+    mesh: trees, fruits, base, geo: pineGeo, mat,
     get solid() { return solid(); },
     // a trunk within reach of (x, z)? pad = extra room (world units)
     blocks(x, z, pad = 0) {

@@ -169,6 +169,9 @@ export function createCabin({ scene, shared, U, camera }) {
     ext.add(new THREE.BoxGeometry(0.57, 0.08, 2.2), { m: M(x, 0.16, D / 2 + 1.25, 0, (n(i, 2, 2) - 0.5) * 0.01, 0), color: wood(0.52 + (i % 3) * 0.04), tip: () => 1 });
   }
   ext.add(new THREE.BoxGeometry(6.65, 0.14, 0.08), { m: M(0.05, 0.1, D / 2 + 2.36), color: wood(0.45), tip: () => 0 });
+  // skirt boards close the gap under the porch down into the ground (no floating deck)
+  for (let x = -3.28; x < 3.38; x += 0.12) ext.add(new THREE.BoxGeometry(0.1, 1.3, 0.03), { m: M(x + 0.05, -0.55, D / 2 + 2.38), color: wood(0.36 + ((x * 37) % 3) * 0.01), tip: () => 0 });
+  [-3.3, 3.4].forEach((x) => { for (let z = D / 2 + 0.2; z < D / 2 + 2.38; z += 0.12) ext.add(new THREE.BoxGeometry(0.03, 1.3, 0.1), { m: M(x, -0.55, z + 0.05), color: wood(0.36), tip: () => 0 }); });
   ext.add(new THREE.BoxGeometry(1.4, 0.07, 0.3), { m: M((DX0 + DX1) / 2, 0.05, D / 2 + 2.55), color: wood(0.5), tip: () => 1 });
   const PR0 = -3.4, PR1 = 0.6;
   ext.add(new THREE.BoxGeometry(PR1 - PR0, 0.08, 2.55, 4, 1, 4), { m: M((PR0 + PR1) / 2, 2.32, D / 2 + 1.3, -0.12, 0, 0), color: (v, nn) => { const c = (nn.y < 0 ? 0.62 : 0.32) + n(v.x * 3, 0, v.z * 9) * 0.1; return nn.y < 0 ? [c, c * 0.8, c * 0.6] : [c, c * 0.93, c * 0.88]; }, tip: (v, nn) => (nn.y > 0 ? 1 : 0) });

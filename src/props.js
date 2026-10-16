@@ -25,6 +25,7 @@ export const SHOW_KEYS = ['pRocks', 'pLogs', 'pFerns', 'pGrass', 'pReeds', 'pCab
 
 import { mulberry, n3, Parts, M, coverMaterial, kind } from './kit.js';
 import { CABIN } from './cabin.js';
+import { createContactShadows } from './contact.js';
 
 /* ---------- build everything ---------- */
 export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
@@ -57,6 +58,13 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
   };
   // instances are split into patches of land, so whatever is behind you isn't drawn at all
   const CHUNK = 160;
+  // soft contact shadows under things that sit on the ground
+  const blobs = [];
+  const yawOf = (q) => { const d = new THREE.Vector3(1, 0, 0).applyQuaternion(q); return Math.atan2(-d.z, d.x); };
+  const shadowsFor = (list, key, size, strength) => {
+    const items = list.map((it) => { const [sx, sz] = size(it.s); return { x: it.p.x, z: it.p.z, sx, sz, yaw: yawOf(it.q) }; });
+    blobs.push({ key, b: createContactShadows(scene, heightAt, items, strength) });
+  };
   const instanced = (geo, mat, list, key, opts) => {
     const cells = new Map();
     list.forEach((it) => { const k = Math.floor(it.p.x / CHUNK) + ',' + Math.floor(it.p.z / CHUNK); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(it); });
@@ -133,6 +141,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
     putRock(x, z, rr(0.35, 1.0), pebbles, false); i++;
   }
   rockSets.forEach((list, i) => instanced(rockGeo(i * 17.3, 2), rockMat, list, 'pRocks', { cast: true }));
+  shadowsFor(rockSets.flat(), 'pRocks', (sc) => [sc.x * 3.0, sc.z * 3.0], 0.5);
   instanced(rockGeo(5.1, 1), rockMat, pebbles, 'pRocks');
 
   /* ===== fallen logs and stumps ===== */
@@ -396,6 +405,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       beeSpots.push(x, h + 4.5, z);
     });
     instanced(hiveGeo, coverMaterial(shared, show.hives, { rich: true, grain: 0.02 }), hives, 'hives', { cast: true });
+    shadowsFor(hives, 'hives', () => [CABIN.S * 1.2, CABIN.S * 1.1], 0.4);
     // a few bees busy around the hives
     {
       const N = 60, g = new THREE.BufferGeometry(), pos = new Float32Array(N * 3), seed = new Float32Array(N);
@@ -540,6 +550,8 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       }
       instanced(logGeo, woodMat, logs, 'pLogs', { cast: true });
       instanced(stumpGeo, woodMat, stumps, 'pLogs', { cast: true });
+      shadowsFor(logs, 'pLogs', (sc) => [sc.x * 1.2, sc.y * 3.4], 0.45);
+      shadowsFor(stumps, 'pLogs', (sc) => [sc.x * 3.2, sc.z * 3.2], 0.45);
 
       // grass: meadows and forest floor, thicker in clumps
       const grass = [];
@@ -577,6 +589,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
     // per frame: s = the current (cross-faded) scene values
     update(s, time, camPos, waterY) {
       for (const k of SHOW_KEYS) show[k].value = s[k];
+      blobs.forEach(({ key, b }) => b.set(s[key] || 0));
       plantMats.forEach((m) => { m.color.copy(s.low).multiplyScalar(1.7); m.color.r = Math.min(1.1, m.color.r); m.color.g = Math.min(1.1, m.color.g); m.color.b = Math.min(1.1, m.color.b); });
       for (const k of SEASON_KEYS) show[k].value = s[k] || 0;
       if (creekMesh) { creekMat.uniforms.uOpacity.value = Math.min(1, (s.creek || 0) * 1.2); creekMat.uniforms.uColor.value.copy(s.waterC).lerp(new THREE.Color(0.32, 0.52, 0.56), 0.5); }
