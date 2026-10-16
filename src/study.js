@@ -42,9 +42,10 @@ const CD = 0.45;
 const MEZZ_WALK = [[S_.x0 + CD, S_.x1 - CD, S_.z0 + CD, GAL.back], [S_.x0 + CD, GAL.left, S_.z0 + CD, S_.z1], [GAL.right, S_.x1 - CD, S_.z0 + CD, S_.z1], [LAND.x0, GAL.right + 0.4, LAND.z0, 0.1]];
 const POSTS = [[GAL.left, GAL.back], [GAL.right, GAL.back], [GAL.left, -2.6], [GAL.right, -4.4]];
 const MAIN_OBS = [
-  [-0.97, 0.97, -8.47, -7.53], [-0.32, 0.32, -9.25, -8.5],                      // desk, chair
+  [-0.97, 0.97, -8.47, -7.53], [-0.5, 0.5, -9.28, -8.5],                        // desk, chair
   [-2.95, -0.65, -1.9, -0.9], [-2.45, -1.15, -3.12, -2.38], [-4.5, -3.5, -3.4, -2.4],   // sofa, coffee table, club chair
   [-3.4, -3.0, -1.1, -0.7], [4.15, 4.65, 1.35, 1.85], [-6.5, -5.7, 1.4, 2.4],   // floor lamp, globe, clock
+  [4.95, 5.75, -0.75, 0.15],                                                    // the old camera on its tripod
   ...POSTS.map(([x, z]) => [x - 0.14, x + 0.14, z - 0.14, z + 0.14])
 ];
 const MEZZ_OBS = [[3.15, 4.05, -5.05, -4.15], [3.15, 4.05, -3.35, -2.45], [3.35, 4.05, -4.1, -3.4], [5.25, 5.95, -9.1, -8.3]];
@@ -105,6 +106,8 @@ export function createStudy({ group, mats, camera, U }) {
   const F = S_.floor, MZ = S_.mezz, C = S_.ceil, X0 = S_.x0, X1 = S_.x1, Z0 = S_.z0, Z1 = S_.z1;
   const SLAB = MZ - GAL.slab;   // underside of the gallery
   const P = new Parts(), G = new Parts();
+  // furniture that a detailed model (assets.js) replaces once it has loaded
+  const SW = new Parts(); let OUT = P;
   const n = (x, y, z) => n3(x, y, z);
   const wood = (base, warm = 0) => kind('wood', (v) => { const c = base * (0.86 + n(v.x * 3, v.y * 9, v.z * 3) * 0.28); const w = n(v.x * 0.6, v.y * 2, v.z * 0.6); return [c * (1.04 + w * 0.08 + warm), c * (0.7 + w * 0.04), c * (0.47 - w * 0.05 - warm * 0.5)]; });
   const dark = wood(0.25), mid = wood(0.35), light = wood(0.47), cherry = wood(0.38, 0.12);
@@ -116,7 +119,7 @@ export function createStudy({ group, mats, camera, U }) {
   const glowW = flat(1.0, 0.86, 0.62);
   const Yax = new THREE.Vector3(0, 1, 0);
   const at = (x, y, z, ry = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(Yax, ry), new THREE.Vector3(1, 1, 1));
-  const put = (frame, geo, mx, color, parts = P) => parts.add(geo, { m: frame.clone().multiply(mx), color });
+  const put = (frame, geo, mx, color, parts = OUT) => parts.add(geo, { m: frame.clone().multiply(mx), color });
   const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 
   /* ---------- floors ---------- */
@@ -387,6 +390,7 @@ export function createStudy({ group, mats, camera, U }) {
     put(Dm, box(0.3, 0.003, 0.4), M(0.12, 0.809, 0.0, 0, 0.1, 0), flat(0.92, 0.9, 0.82, 'paper'));
   }
   // the chair behind the desk: patterned fabric on a turned-leg frame
+  OUT = SW;
   {
     const Cm = at(0, F, -8.88);
     const damask = kind('fabric', (v) => { const k = Math.sin(v.x * 40) * Math.sin(v.y * 40 + v.z * 30); return k > 0.35 ? [0.74, 0.68, 0.5] : [0.42, 0.48, 0.38]; });
@@ -399,8 +403,11 @@ export function createStudy({ group, mats, camera, U }) {
     put(Cm, rbox(0.46, 0.05, 0.05, 0.015, 1), M(0, 1.06, -0.23, -0.08, 0, 0), dark);
   }
 
+  OUT = P;
+
   /* ---------- sitting area under the chandelier ---------- */
   // chesterfield sofa: deep buttoned back, rolled arms, cushions and two pillows
+  OUT = SW;
   {
     const Sm = at(-1.8, F, -1.4, Math.PI);
     put(Sm, rbox(2.2, 0.32, 0.86, 0.05, 2), M(0, 0.28, 0), leather);
@@ -414,6 +421,7 @@ export function createStudy({ group, mats, camera, U }) {
       put(Sm, rbox(0.42, 0.4, 0.12, 0.07, 2), M(s * 0.66, 0.74, -0.15, -0.3, s * 0.25, s * 0.1), s > 0 ? kind('fabric', (v) => (Math.sin(v.x * 50) > 0.6 ? [0.72, 0.58, 0.3] : [0.56, 0.42, 0.22])) : flat(0.36, 0.42, 0.32, 'fabric'));
     });
   }
+  OUT = P;
   // coffee table with turned legs, a shelf below, an open book on top
   {
     const Tm = at(-1.8, F, -2.75);
@@ -500,6 +508,7 @@ export function createStudy({ group, mats, camera, U }) {
   /* ---------- up on the gallery: two white armchairs and a little round table ---------- */
   {
     const white = kind('fabric', (v) => { const c = 0.84 + n(v.x * 7, v.y * 7, v.z * 7) * 0.05; return [c, c * 0.97, c * 0.9]; });
+    OUT = SW;
     const chair = (z) => {
       const Wm = at(3.6, MZ, z, -Math.PI / 2);
       put(Wm, rbox(0.8, 0.3, 0.78, 0.06, 2), M(0, 0.3, 0), white);
@@ -512,6 +521,7 @@ export function createStudy({ group, mats, camera, U }) {
       put(Wm, rbox(0.38, 0.36, 0.1, 0.06, 2), M(0, 0.72, -0.15, -0.25, 0, 0), flat(0.34, 0.4, 0.5, 'fabric'));
     };
     chair(-4.6); chair(-2.9);
+    OUT = P;
     P.add(new THREE.CylinderGeometry(0.3, 0.3, 0.035, 24), { m: M(3.7, MZ + 0.58, -3.75), color: cherry });
     P.add(lathe([[0.17, 0], [0.17, 0.02], [0.06, 0.06], [0.035, 0.2], [0.05, 0.35], [0.03, 0.5], [0.06, 0.56]], 12), { m: M(3.7, MZ, -3.75), color: dark });
     P.add(lathe([[0.0, 0], [0.05, 0], [0.07, 0.06], [0.05, 0.16], [0.02, 0.2], [0.025, 0.24]], 12), { m: M(3.75, MZ + 0.6, -3.65), color: flat(0.6, 0.66, 0.66) });
@@ -604,6 +614,8 @@ export function createStudy({ group, mats, camera, U }) {
   // lamps, candles and the window always shine down here (it's underground)
   const glowMesh = new THREE.Mesh(G.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
   group.add(roomMesh, glowMesh);
+  const swapMesh = new THREE.Mesh(SW.geometry(), inn); swapMesh.receiveShadow = swapMesh.castShadow = true; swapMesh.layers.enable(5);
+  group.add(swapMesh);
   const chLight = new THREE.PointLight(0xffc27a, 0, 90, 1.2);
   chLight.position.set(CH.x, CH.y - 0.45, CH.z); group.add(chLight);
   // the chandelier throws real shadows (railings, shelves, furniture); only the house is drawn into them (layer 5)
@@ -922,6 +934,7 @@ export function createStudy({ group, mats, camera, U }) {
   };
 
   return {
+    swap: swapMesh,
     // keep the books in step with links.js (they arrive after the page loads)
     sync() {
       const L = window.MEOW_LINKS_DATA || [];

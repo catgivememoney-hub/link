@@ -10,7 +10,7 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `gate.js` | The password screen (one input box). |
 | `settings.js` | ⚙ Settings: language, background, sound, hints, animation, password. |
 | `i18n.js` | All the site's text in 6 languages: English, 中文, 粵語 (Cantonese), Español, हिन्दी (Hindi), 日本語. |
-| `world.js` | The quiet 3D nature world, bundled from the files in `src/` (start: `src/main.js`) with three.js 0.186.1. Scenes: rain, frost, mist, snow, night, aurora, sea, spring (blossom, flowers, beehives, a creek), summer (lush trees, ripe fruit, sandy shore, turquoise water), autumn (red and gold trees, bare trees, leaf piles, falling leaves). After editing `src/`, rebuild: `npx esbuild src/main.js --bundle --minify --format=iife --outfile=world.js` |
+| `world.js` | The quiet 3D nature world, bundled from the files in `src/` (start: `src/main.js`) with three.js 0.186.1. Scenes: rain, frost, mist, snow, night, aurora, sea, spring (blossom, flowers, beehives, a creek), summer (lush trees, ripe fruit, sandy shore, turquoise water), autumn (red and gold trees, bare trees, leaf piles, falling leaves). After editing `src/`, rebuild (with `three@0.186.1` installed): `npx esbuild src/main.js --bundle --minify --format=iife --alias:three-addons=./node_modules/three/examples/jsm --outfile=world.js` |
 | `sound.js` | Sound effects generated in the browser (no audio files): tree chimes, footsteps, flashlight click, lantern flame. No background sound. |
 | `app.js` | The link list, search, tags, hover previews. |
 | `fx.js` | Interaction effects: magnetic buttons, click ripples, input-bar spotlight, MEOW letter parallax. |
@@ -19,6 +19,8 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `src/physics.js` | One place for "what am I standing on" (ground, water, logs and rocks, the cabin floor, stairs, the library floors) and "what's in my way" (trees, rocks, walls, furniture). It works from your real feet height, so stairs and the gallery can't drop you through. |
 | `src/terrain.js`, `src/sky.js`, `src/weather.js`, `src/scenes.js`, `src/trees.js` | The land and lake, the sky, the weather, the scene values and their cross-fade, the pine forest. |
 | `src/view.js` | The real little landscape behind the library window (ground, the forest's own pines, grass, rocks, far hills under the scene's sky). It follows the seasons. |
+| `src/assets.js` | Loads the detailed models in `assets/models/` after the world is on screen (sofa, desk chair, gallery armchairs, an old camera, the lamp post on the dock, the fish). Until one arrives, the hand-built piece stays in its place. |
+| `assets/` | Free models (`.glb`, compressed) and textures (water normal maps, grass detail). Credits below. |
 | `src/contact.js` | Soft contact shadows under rocks, logs, stumps, trees, beehives and the cabin, so things sit in the ground. |
 | `src/lens.js`, `src/handlight.js`, `src/mood.js` | The film-camera look (indoors: real focus on what the dot is on), the flashlight / lantern (F), and indoor light shafts, halos and dust. |
 | `src/props.js` | Things in the landscape (no animals): rocks, fallen logs, stumps, ferns, grass, reeds, a log cabin with a dock and boat (warm windows and chimney smoke at night), a stone circle (frost, aurora), sea stacks and a lighthouse (sea), rain rings on the water, snow on trees and roofs, footprints in the snow. `SHOW` at the top sets how much of each appears in every scene. Bundled into `world.js`. |
@@ -30,6 +32,21 @@ A small link board. It's a pure static site (HTML, CSS and JavaScript) hosted fr
 | `forest.js` | Press W (or click the hint) to glide into the forest, then walk with W A S D / arrow keys (Shift runs, Space jumps (over logs, stumps and smaller rocks — you can stand on top of them), the pointer hides and a white dot marks the centre; move the mouse to look (slide right turns right, slide up looks up), click what the dot is on, Esc leaves the forest; mouse sensitivity is in Settings; F cycles flashlight → warm lantern → off; footsteps and light sounds). Trees don't hold links (the books in the study do): every 7th tree switches the scene, the others tell a cat fact; each rings its own chime. |
 | `cinema.js` | Film layer: grain, letterbox bars with scene titles, rack focus (what you're not looking at softens). |
 | `gallery.js` | 3D floating gallery: pick a category and its links float in the middle as cards (drag, wheel, ← →, Enter, Esc). |
+
+## Asset credits
+
+All free to use. Models were shrunk (WebP textures, meshopt) with gltf-transform; textures resized.
+
+| File | Source | License |
+| --- | --- | --- |
+| `assets/models/SheenWoodLeatherSofa.glb` | [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SheenWoodLeatherSofa): original by Fran Calvente (CC0), improvements by Eric Chadwick / Darmstadt Graphics Group | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `assets/models/ChairDamaskPurplegold.glb` | [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ChairDamaskPurplegold): Eric Chadwick, © 2021 Wayfair | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `assets/models/SheenChair.glb` | [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SheenChair) | CC0 |
+| `assets/models/AntiqueCamera.glb` | [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/AntiqueCamera) (UX3D) | CC0 |
+| `assets/models/Lantern.glb` | [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Lantern) | CC0 |
+| `assets/models/BarramundiFish.glb` | [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BarramundiFish) | CC0 |
+| `assets/textures/water-normal-1.jpg`, `water-normal-2.jpg` | [three.js examples](https://github.com/mrdoob/three.js/tree/dev/examples/textures/water) | MIT (three.js) |
+| `assets/textures/grass-detail.jpg` | `grasslight-big.jpg` from the [three.js examples](https://github.com/mrdoob/three.js/tree/dev/examples/textures/terrain), from [OpenGameArt](https://opengameart.org/) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 ## Notes
 - The homepage must be named `index.html` (all lowercase). GitHub Pages is case-sensitive.

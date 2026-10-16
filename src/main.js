@@ -28,6 +28,7 @@ import { createHandLight } from './handlight.js';
 import { createFish } from './fish.js';
 import { createContactShadows } from './contact.js';
 import { createWindowView } from './view.js';
+import { createAssets } from './assets.js';
 
 (() => {
   'use strict';
@@ -78,6 +79,24 @@ import { createWindowView } from './view.js';
   const prints = createFootprints(scene, U);
   const weather = createWeather(scene, U, renderer.getPixelRatio());
   const fishing = createFish({ scene, camera, heightAt, water: water.mesh });
+  const assets = createAssets({ cabin, fishing });
+  // image-based light: the sky of the moment, caught in a soft cube map every few seconds,
+  // so the water and the detailed models reflect the real sky of each scene
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  { const m = new THREE.Mesh(sky.geometry, sky.material); m.frustumCulled = false; envScene.add(m); }
+  let envRT = null, envT = -1e9;
+  let envSig = '';
+  const refreshEnv = (now) => {
+    if (now - envT < 1500) return;
+    // only when the sky has really changed (a scene change), not every frame
+    const sig = [U.uTop.value, U.uHorizon.value, U.uBottom.value, U.uSunColor.value].map((c) => c.getHexString()).join('') + U.uSunDir.value.toArray().map((v) => v.toFixed(2)).join() + U.uAurora.value.toFixed(2) + U.uSunSize.value.toFixed(3);
+    if (sig === envSig) return;
+    envSig = sig; envT = now;
+    const rt = pmrem.fromScene(envScene, 0, 0.1, 3000, { size: 128 });
+    if (envRT) envRT.dispose();
+    envRT = rt; scene.environment = rt.texture;
+  };
   const hand = createHandLight(scene, U);
   const lens = createLens(U);
 
@@ -147,6 +166,8 @@ import { createWindowView } from './view.js';
     treeShade.set(s.trees); cabinShade.set(s.pCabin); windowView.update(s);
     props.update(s, time);
     cabin.update(s, time, now, s.water, player.walking ? player.state.feet : undefined);
+    assets.update(s, time);
+    refreshEnv(now);
   };
 
   /* ---------- pointer lock: in the world the mouse is hidden and a white dot aims ---------- */
@@ -472,7 +493,7 @@ import { createWindowView } from './view.js';
     _pos() { const ps = player.state; return { x: ps.x, z: ps.z, feet: ps.feet, mode: player.mode, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, yaw: ps.yaw, pitch: ps.pitch, indoor: indoorK }; },
     _toggleDoor() { cabin.door.toggle(performance.now()); },
     _aimDoor(cx, cy) { const r = rayAt(cx, cy); const h = r.intersectObject(cabin.door.mesh, false)[0]; return { hit: !!h, d: h ? h.distance : -1, walking: player.walking, busy: busy(), hover: [hover.x, hover.y], ok: aimAtDoor(cx, cy) }; },
-    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _physics() { return physics; }, get _player() { return player; }, get _cur() { return scenes.cur; },
+    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _assets() { return assets; }, get _physics() { return physics; }, get _player() { return player; }, get _cur() { return scenes.cur; },
     _nearTree(i, d = 16) { const b = trees.base[i % trees.base.length]; if (b) this._standAt(b.p.x, b.p.z + d); }
   };
   void EYE;

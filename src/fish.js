@@ -112,6 +112,8 @@ export function createFish({ scene, camera, heightAt, water }) {
   const end = () => { st.mode = 'idle'; rod.visible = false; float.visible = false; line.visible = false; };
 
   return {
+    // swap in a detailed fish (assets.js); geo is in the same frame: head toward +x, about 2 long
+    setModel(geo, mat) { pop.forEach((f) => { f.m.geometry = geo; f.m.material = mat; }); catchFish.geometry = geo; catchFish.material = mat; },
     get busy() { return st.mode !== 'idle'; },
     reset() { end(); catchFish.visible = false; setHint(''); },
     // R: cast, reel in, or strike when a fish bites

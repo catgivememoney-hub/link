@@ -627,6 +627,8 @@ export function createCabin({ scene, shared, U, camera }) {
     return [dx * c - dz * s, dx * s + dz * c];
   };
   const toWorld = (lx, lz) => { const c = Math.cos(CABIN.yaw), s = Math.sin(CABIN.yaw); return [CABIN.x + (lx * c + lz * s) * S, CABIN.z + (-lx * s + lz * c) * S]; };
+  // where the detailed lamp post stands on the dock (cabin metres; the model comes from assets.js)
+  const LANT = { x: -0.48, z: dz0 + dockLen - 1.6 }; LANT.y = 0.24 - (LANT.z - dz0) * 0.024;
   const RECTS = [
     // walls
     [-W / 2 - 0.3, W / 2 + 0.3, -D / 2 - LR, -D / 2 + LR],
@@ -651,7 +653,8 @@ export function createCabin({ scene, shared, U, camera }) {
     [STAIR.x0 - 0.07, STAIR.x0 + 0.02, STAIR.bottom - 0.05, 1.5],         // railing round the cellar opening
     [STAIR.x0, STAIR.x1, STAIR.bottom - 0.09, STAIR.bottom],
     [-3.2, -2.5, D / 2 + 1.65, D / 2 + 2.15],                              // crates
-    [PR1 + 0.5, PR1 + 0.7, D / 2 + 2.8, D / 2 + 3.0]                       // lantern post
+    [PR1 + 0.5, PR1 + 0.7, D / 2 + 2.8, D / 2 + 3.0],                      // lantern post
+    [LANT.x - 0.12, LANT.x + 0.12, LANT.z - 0.12, LANT.z + 0.12]             // the iron lamp post on the dock (assets.js)
   );
   const DOOR_CLOSED = [DX0, DX1, D / 2 - 0.1, D / 2 + 0.1];
   const DOOR_OPEN = [DX0 - 0.06, DX0 + 0.08, D / 2 - DW - 0.05, D / 2];
@@ -672,7 +675,7 @@ export function createCabin({ scene, shared, U, camera }) {
   const box = (x0, x1, z0, z1) => { const pts = [toWorld(x0, z0), toWorld(x1, z0), toWorld(x0, z1), toWorld(x1, z1)]; return [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))]; };
 
   return {
-    group, study,
+    group, study, LANT,
     holeBox: box(-W / 2 + LR, W / 2 - LR, -D / 2 + LR, D / 2 - LR),
     studyBox: box(STUDY.x0 - 0.3, STUDY.x1 + 0.3, STUDY.z0 - 0.3, STUDY.z1 + 0.3),
     // is (wx, wz) inside something solid for someone whose feet are at feetY? (pad: extra room, world units)
