@@ -70,7 +70,10 @@ export function studyBlocked(lx, lz, p, fm) {
   if (fm > S_.mezz - 0.35) {
     if (!MEZZ_WALK.some((q) => inR(lx, lz, q, p))) return true;
     // the cabin stairs: you can only walk onto them from their low end
-    if (lx > STAIR.x0 - p && lx < STAIR.x1 + p && lz > STAIR.bottom - p && lz < STAIR.top + 0.3 && rampY(lz) > fm + 0.5) return true;
+    if (lx > STAIR.x0 - p && lx < STAIR.x1 + p && lz > STAIR.bottom - p && lz < STAIR.top + 0.3) {
+      if (rampY(lz) > fm + 0.5) return true;
+      if (lz > STAIR.bottom + 0.25 && (lx < STAIR.x0 + p || lx > STAIR.x1 - p)) return true;   // the sides are closed
+    }
     return MEZZ_OBS.some((q) => inR(lx, lz, q, -p));
   }
   return mainBlocked(lx, lz, p, false, a, r);
@@ -577,12 +580,16 @@ export function createStudy({ group, mats, camera, U }) {
   }
 
   /* ---------- meshes (built once; books come later, from links.js) ---------- */
-  const roomMesh = new THREE.Mesh(P.geometry(), inn); roomMesh.receiveShadow = true;
+  const roomMesh = new THREE.Mesh(P.geometry(), inn); roomMesh.receiveShadow = true; roomMesh.castShadow = true; roomMesh.layers.enable(5);
   // lamps, candles and the window always shine down here (it's underground)
   const glowMesh = new THREE.Mesh(G.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
   group.add(roomMesh, glowMesh);
   const chLight = new THREE.PointLight(0xffc27a, 0, 90, 1.2);
-  chLight.position.set(CH.x, CH.y - 0.1, CH.z); group.add(chLight);
+  chLight.position.set(CH.x, CH.y - 0.45, CH.z); group.add(chLight);
+  // the chandelier throws real shadows (railings, shelves, furniture); only the house is drawn into them (layer 5)
+  chLight.castShadow = true; chLight.shadow.autoUpdate = false; chLight.shadow.mapSize.set(512, 512);
+  chLight.shadow.camera.near = 0.5; chLight.shadow.camera.far = 90; chLight.shadow.bias = -0.003; chLight.shadow.normalBias = 0.25;
+  chLight.shadow.camera.layers.set(5);
   // a low warm fill (the lamps and the window), so the gallery's underside isn't black
   const deskLight = new THREE.PointLight(0xffd4a0, 0, 70, 1.2);
   deskLight.position.set(-0.8, F + 2.0, -4.6); group.add(deskLight);
@@ -938,6 +945,7 @@ export function createStudy({ group, mats, camera, U }) {
     },
     // for testing
     _open(i) { openBook(i, performance.now()); }, _ring(tag) { startRing(tag, performance.now()); }, get _n() { return B.length; },
+    shadowLight: chLight, glowSpots: { CH, SLAB, F, MZ, Z0, Z1, C },
     reset(now) { if (st.open >= 0) closeBook(now); if (st.ring !== null) endRing(now); tip.classList.remove('show'); st.hoverKey = ''; },
     lampLight
   };

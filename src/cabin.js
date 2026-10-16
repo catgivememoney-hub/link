@@ -14,6 +14,7 @@
    the door swings open and shut (click it). */
 import * as THREE from 'three';
 import { Parts, M, n3, coverMaterial, kind, rbox, lathe } from './kit.js';
+import { createMood } from './mood.js';
 import { createStudy, STUDY, STAIR, rampY, studyBlocked, studyFloors } from './study.js';
 
 export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
@@ -527,7 +528,7 @@ export function createCabin({ scene, shared, U, camera }) {
   group.rotation.y = CABIN.yaw;
   group.scale.setScalar(S);
   const extMesh = new THREE.Mesh(ext.geometry(), extMat); extMesh.castShadow = true; extMesh.receiveShadow = true;
-  const intMesh = new THREE.Mesh(inn.geometry(), intMat); intMesh.receiveShadow = true;
+  const intMesh = new THREE.Mesh(inn.geometry(), intMat); intMesh.receiveShadow = true; intMesh.castShadow = true;
   const glowMesh = new THREE.Mesh(glowP.geometry(), glowMat);
   const glassMesh = new THREE.Mesh(glassP.geometry(), glassMat); glassMesh.renderOrder = 2;
   const door = new THREE.Mesh(doorP.geometry(), extMat); door.castShadow = true;
@@ -549,6 +550,37 @@ export function createCabin({ scene, shared, U, camera }) {
   const fireLight = new THREE.PointLight(0xffa058, 0, 46, 1.4);
   fireLight.position.copy(new THREE.Vector3(FIRE.x, 0.9, -IZ + 1.1)).applyAxisAngle(new THREE.Vector3(0, 1, 0), CABIN.yaw).multiplyScalar(S).add(group.position);
   scene.add(fireLight);
+  // the fire throws flickering shadows of the furniture across the room (only the house is drawn into them)
+  fireLight.castShadow = true; fireLight.shadow.autoUpdate = false; fireLight.shadow.mapSize.set(512, 512);
+  fireLight.shadow.camera.near = 0.5; fireLight.shadow.camera.far = 46; fireLight.shadow.bias = -0.003; fireLight.shadow.normalBias = 0.2;
+  fireLight.shadow.camera.layers.set(5);
+  [extMesh, intMesh, door].forEach((m) => m.layers.enable(5));
+
+  // light through the windows, dust in the air, halos round flames and lamps
+  const mood = (() => {
+    const SG = study.glowSpots, TAUc = Math.PI * 2;
+    const halos = [
+      { p: [FIRE.x, 0.45, -IZ + 0.45], size: 1.7, color: [1, 0.5, 0.2], flicker: 1 },
+      { p: [0.9 + 0.35, 1.07, 0.6 - 0.15], size: 0.5, color: [1, 0.7, 0.4], flicker: 1 }
+    ];
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * TAUc; halos.push({ p: [SG.CH.x + Math.cos(a) * 0.82, SG.CH.y + 0.2, SG.CH.z + Math.sin(a) * 0.82], size: 0.32, color: [1, 0.72, 0.4], flicker: 1 }); }
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * TAUc + 0.3; halos.push({ p: [SG.CH.x + Math.cos(a) * 0.42, SG.CH.y + 0.6, SG.CH.z + Math.sin(a) * 0.42], size: 0.3, color: [1, 0.72, 0.4], flicker: 1 }); }
+    halos.push({ p: [-3.2, SG.F + 1.52, -0.9], size: 0.9, color: [1, 0.78, 0.5] }, { p: [0.6, SG.F + 1.06, -7.98], size: 0.5, color: [0.9, 0.95, 0.7] });
+    [-1, 1].forEach((s2) => halos.push({ p: [-1.8 + s2 * 1.5, SG.F + 2.37, SG.Z1 - 0.19], size: 0.6, color: [1, 0.75, 0.45] }));
+    [-5.35, -3.0, -0.9, 0.9, 3.0, 5.35].forEach((x) => halos.push({ p: [x, SG.SLAB - 0.02, -8.55], size: 0.36, color: [1, 0.88, 0.7] }));
+    [-6.0, -3.4, -0.8, 1.6].forEach((z) => [-5.45, 2.7, 5.0].forEach((x) => halos.push({ p: [x, SG.SLAB - 0.02, z], size: 0.36, color: [1, 0.88, 0.7] })));
+    const fy = (y0, y1) => [y0, y1];
+    return createMood({
+      group, U,
+      beams: [
+        { rect: [[-0.95, SG.F + 2.62, SG.Z0 + 0.04], [0.95, SG.F + 2.62, SG.Z0 + 0.04], [0.95, SG.F + 0.55, SG.Z0 + 0.04], [-0.95, SG.F + 0.55, SG.Z0 + 0.04]], dir: [0.1, -0.5, 1], len: 6.5, k: 1.2 },
+        { rect: [[0.75, 1.95, D / 2 - 0.2], [1.95, 1.95, D / 2 - 0.2], [1.95, 0.95, D / 2 - 0.2], [0.75, 0.95, D / 2 - 0.2]], dir: [-0.25, -0.55, -1], len: 3.2, k: 1 },
+        { rect: [[W / 2 - 0.2, 1.95, -0.3], [W / 2 - 0.2, 1.95, 0.9], [W / 2 - 0.2, 0.95, 0.9], [W / 2 - 0.2, 0.95, -0.3]], dir: [-1, -0.5, 0.15], len: 3.0, k: 0.8 }
+      ],
+      halos,
+      dust: [{ box: [-4.6, 1.4, SG.F + 0.3, SG.C - 0.5, -9.2, 2.2], n: 520 }, { box: [-2.9, 2.9, 0.3, 2.5, -2.2, 2.2], n: 170 }]
+    });
+  })();
   const fireBase = fireLight.position.clone();
 
   // chimney smoke
@@ -667,7 +699,7 @@ export function createCabin({ scene, shared, U, camera }) {
       // the highest floor you can step onto from where your feet are
       let best = null;
       for (const c of cand) if (c[0] <= fm + 0.6 && (!best || c[0] > best[0])) best = c;
-      if (!best) best = cand.reduce((a, c) => (c[0] < a[0] ? c : a));
+      if (!best) best = cand.reduce((a, c) => (Math.abs(c[0] - fm) < Math.abs(a[0] - fm) ? c : a));   // never fall through: take the nearest
       return { y: y(best[0]), under: best[1] };
     },
     door: {
@@ -682,6 +714,13 @@ export function createCabin({ scene, shared, U, camera }) {
       const show = s.pCabin, on = show > 0.01;
       if (on) { if (!(this.syncT > now - 1500)) { this.syncT = now; study.sync(); } study.update(time, now); }
       study.lampLight.intensity = on ? 120 * (0.96 + 0.04 * Math.sin(time * 3.1)) : 0;
+      // update the indoor shadows only while you're in that room (they're costly)
+      if (on && this.feet !== undefined) {
+        const [clx, clz] = toLocal(camera.position.x, camera.position.z), fm = feetM(this);
+        if (fm > -0.7 && Math.abs(clx) < W / 2 + 1 && Math.abs(clz) < D / 2 + 1 && (this.shF = (this.shF || 0) + 1) % 3 === 0) fireLight.shadow.needsUpdate = true;
+        if (fm < -3.0 && inStudy(clx, clz) && !(this.shL > now - 2500)) { this.shL = now; study.shadowLight.shadow.needsUpdate = true; }
+      }
+      mood.update({ on, day: Math.max(0, Math.min(1, s.light || 0.6)) * (1 - Math.min(1, s.pGlow) * 0.85), beamColor: s.lightC });
       group.visible = on; smoke.visible = on && show > 0.5;
       group.scale.setScalar(S * Math.max(0.001, show));
       // door swings with a little ease, overshoot on opening, a soft bump on closing

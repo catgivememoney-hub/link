@@ -849,6 +849,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       // standing on a log, stump or rock you jumped onto
       if (!(built && built.under)) floor = Math.max(floor, props.solidTop(px, pz, ex.ground - EYE + jump.y, cur));
       const ground = floor + EYE;
+      ex.floorY = floor;   // the floor you're really on (the eye glides after it)
       ex.ground += (ground - ex.ground) * 0.12;   // glide over bumps instead of jolting…
       ex.ground = Math.max(ex.ground, floor + 3); // …but never sink below the ground
       const hb = smooth(0, 35, away);
@@ -1337,10 +1338,12 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
      "Rack focus": the blur breathes during scene changes, deepens behind the
      gallery and starts heavy on entrance, then pulls into focus. */
   const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true });
+  rt.depthTexture = new THREE.DepthTexture(4, 4);   // indoors the lens focuses on what's in the middle of the view
   const LU = {
     tScene: { value: rt.texture }, uRes: { value: new THREE.Vector2(4, 4) }, uTime: U.uTime,
     uBlur: { value: 3 }, uBand: { value: 0.22 }, uFocusY: { value: 0.47 }, uPull: { value: 0 },
-    uAberr: { value: 0.006 }, uSat: { value: 0 }, uGrain: { value: 0.022 }, uVig: { value: 0.32 }, uFlicker: { value: 0.01 }
+    uAberr: { value: 0.006 }, uSat: { value: 0 }, uGrain: { value: 0.022 }, uVig: { value: 0.32 }, uFlicker: { value: 0.01 },
+    tDepth: { value: rt.depthTexture }, uNear: { value: 0.5 }, uFar: { value: 3000 }, uIndoor: { value: 0 }, uBlurIn: { value: 6 }
   };
   const lensScene = new THREE.Scene();
   const lensCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -1350,7 +1353,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */`
-      uniform sampler2D tScene; uniform vec2 uRes;
+      uniform sampler2D tScene, tDepth; uniform vec2 uRes; uniform float uNear, uFar, uIndoor, uBlurIn;
+      float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
       uniform float uTime, uBlur, uBand, uFocusY, uPull, uAberr, uSat, uGrain, uVig, uFlicker;
       varying vec2 vUv;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -1361,6 +1365,14 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         // how out-of-focus this pixel is (in pixels)
         float dy = abs(uv.y - uFocusY);
         float amt = smoothstep(uBand, uBand + 0.34, dy) * uBlur + smoothstep(0.5, 1.0, r) * uBlur * 0.55 + uPull;
+        if (uIndoor > 0.01) {
+          // real focus: sharp at the distance of what the centre dot is on, softer in front and behind
+          float zf = 1e5;
+          for (int i = 0; i < 5; i++) { float a = float(i) * 1.2566; zf = min(zf, lin(texture2D(tDepth, vec2(0.5) + (i == 0 ? vec2(0.0) : vec2(cos(a), sin(a)) * 0.015)).x)); }
+          float z = lin(texture2D(tDepth, uv).x);
+          float coc = clamp(abs(z - zf) / max(z, 1.0) * 1.6, 0.0, 1.0) * uBlurIn + smoothstep(0.55, 1.0, r) * uBlurIn * 0.35;
+          amt = mix(amt, coc + uPull, uIndoor);
+        }
         // 16-tap disc blur (golden-angle spiral) = soft round bokeh
         vec3 col = vec3(0.0);
         vec2 px = 1.0 / uRes;
@@ -1452,7 +1464,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
             if (dx * dx + dz * dz < rr * rr) return false;
           }
         }
-        if (props.blockedAt(wx2, wz2, 0, cur, ex.ground - EYE + jump.y)) return false;
+        if (props.blockedAt(wx2, wz2, 0, cur, (props.cabin.feet ?? ex.ground - EYE + jump.y))) return false;
         return true;
       };
       const nx = ex.px + ex.vx * dtS, nz = ex.pz + ex.vz * dtS;
@@ -1497,7 +1509,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       fishing.update(now, time, { active: ex.on && !fly.on && !busy(), ray: ex.on ? rayAt(fx, fy) : null, waterY: water.position.y, amount: cur.fishy, indoor: indoorK > 0.5 });
       if (fishing.busy && !running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
     }
-    props.cabin.feet = ex.on ? ex.ground - EYE : undefined;
+    // feet = the floor you're on (not the gliding eye), so fast walking up stairs never drops you through them
+    props.cabin.feet = ex.on ? (ex.floorY !== undefined && Math.abs(ex.floorY - (ex.ground - EYE)) < 14 ? ex.floorY : ex.ground - EYE) + jump.y : undefined;
     // lock the pointer as soon as the glide into the forest ends; let it go when you leave
     if (ex.on && !fly.on && fly.justLanded) { fly.justLanded = false; lockPointer(); }
     if (!ex.on && locked()) unlockPointer();
@@ -1522,7 +1535,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         if (sp > SPEED * 0.25 && gh2 > water.position.y + 0.6 && (sceneName === 'snow' || gh2 > TU.uSnowLine.value + 4)) {
           const x = camera.position.x, z = camera.position.z, e = 1.5;
           const n = new THREE.Vector3(heightAt(x - e, z) - heightAt(x + e, z), 2 * e, heightAt(x, z - e) - heightAt(x, z + e)).normalize();
-          if (indoorK < 0.5) prints.place(x, heightAt(x, z), z, Math.atan2(-ex.vx, -ex.vz), n);
+          if (indoorK < 0.5 && !(cur.pCabin > 0.5 && props.cabin.inside(x, z))) prints.place(x, heightAt(x, z), z, Math.atan2(-ex.vx, -ex.vz), n);
         }
       }
     }
@@ -1538,7 +1551,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     placeCamera(time);
     props.update(cur, time, camera.position, water.position.y);
     ripples.update(cur.pRipples * (1 - indoorK), camera.position, water.position.y);
-    prints.update(Math.min(1, Math.max(0, (100 - cur.snowLine) / 80)));
+    prints.update(Math.min(1, Math.max(0, (100 - cur.snowLine) / 80)) * (1 - indoorK));   // no snow prints seen from indoors
     updateLight(now, time);
     if (hover.pending) { hover.pending = false; setHover(indoorK > 0.5 ? -1 : pick(hover.x, hover.y)); }
     // rack focus
@@ -1551,6 +1564,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     LU.uBand.value = 0.22 - gal.focus * 0.1 + walk * 0.12;
     LU.uPull.value = (shotPull * (full ? 1 : 0) + Math.pow(enter, 1.6) * 18 + gal.pulse * 3) * dpr;
     LU.uFlicker.value = full ? 0.012 : 0;
+    LU.uIndoor.value = full ? indoorK : 0; LU.uBlurIn.value = 4.5 * dpr; LU.uNear.value = camera.near; LU.uFar.value = camera.far;
+    LU.uVig.value = 0.32 + indoorK * 0.16;   // a deeper vignette inside: the warm light pools in the middle
     renderer.setRenderTarget(rt);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
@@ -1627,7 +1642,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       props.cabin.feet = level === 'study' ? CABIN.y + STUDY.floor * CABIN.S : level === 'mezz' ? CABIN.y + STUDY.mezz * CABIN.S : undefined;
       const b = props.floorAt(x, z, cur);
       ex.ground = (b && b.under ? b.y : Math.max(heightAt(x, z), water.position.y, b ? b.y : -1e9)) + EYE;
-      props.cabin.feet = ex.ground - EYE;
+      ex.floorY = ex.ground - EYE; props.cabin.feet = ex.floorY;
       if (!running) renderOnce();
     },
     _look(x, z, pitch = 0) {
