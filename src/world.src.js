@@ -1066,7 +1066,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.hypot(dx, dy) > 5) drag.moved = true;
-      ex.yawTo = drag.yaw + dx * 0.0035;
+      ex.yawTo = drag.yaw - dx * 0.0035;
       ex.pitchTo = clamp(drag.pitch - dy * 0.0025, PITCH_MIN, PITCH_MAX);
       root.classList.add('looking');
       wake();
@@ -1074,7 +1074,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     }
     if (locked()) {
       if (ex.on && !fly.on && !busy()) {
-        ex.yawTo += e.movementX * 0.0024;
+        ex.yawTo -= e.movementX * 0.0024;
         ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.002, PITCH_MIN, PITCH_MAX);
         wake();
       }
@@ -1083,9 +1083,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     look.x = e.clientX; look.y = e.clientY; look.inside = true; look.ui = !!overUI(e.target);
     if (busy() || overUI(e.target)) { if (hover.id >= 0) setHover(-1); return; }
     // in the forest, just moving the mouse / one finger on the trackpad turns the view:
-    // slide right → turn left, slide up → look up
+    // slide right → turn right, slide up → look up
     if (ex.on && !fly.on && e.pointerType !== 'touch' && (e.movementX || e.movementY)) {
-      ex.yawTo += e.movementX * 0.0028;
+      ex.yawTo -= e.movementX * 0.0028;
       ex.pitchTo = clamp(ex.pitchTo - e.movementY * 0.0022, PITCH_MIN, PITCH_MAX);
       wake();
     }
@@ -1319,8 +1319,8 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (locked() && ex.on && !busy() && (doorTick % 3 === 1)) { const [cx, cy] = centre(); hover.x = cx; hover.y = cy; hover.pending = true; }
     if (!locked() && ex.on && !fly.on && look.inside && !look.ui && !drag && !busy() && motion === 'full' && look.y > innerHeight * 0.15 && look.y < innerHeight * 0.85) {
       const edge = Math.max(30, innerWidth * 0.04);
-      if (look.x > innerWidth - edge) ex.yawTo += 1.1 * frameDt * (look.x - (innerWidth - edge)) / edge;
-      else if (look.x >= 0 && look.x < edge) ex.yawTo -= 1.1 * frameDt * (edge - look.x) / edge;
+      if (look.x > innerWidth - edge) ex.yawTo -= 1.1 * frameDt * (look.x - (innerWidth - edge)) / edge;
+      else if (look.x >= 0 && look.x < edge) ex.yawTo += 1.1 * frameDt * (edge - look.x) / edge;
     }
     updateDoor();
     // lock the pointer as soon as the glide into the forest ends; let it go when you leave
