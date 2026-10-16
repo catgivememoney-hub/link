@@ -77,6 +77,32 @@ export class Parts {
     return g;
   }
 }
+// a box with soft rounded edges (like real furniture, cushions, mouldings)
+export const rbox = (w, h, d, r = 0.02, k = 2) => {
+  const s = 2 * k + 1, g = new THREE.BoxGeometry(1, 1, 1, s, s, s);
+  const half = [w / 2, h / 2, d / 2], rr = Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4);
+  const P = g.attributes.position, N = g.attributes.normal, p = [0, 0, 0], q = [0, 0, 0];
+  for (let i = 0; i < P.count; i++) {
+    for (let a = 0; a < 3; a++) {
+      const t = Math.round((P.getComponent(i, a) + 0.5) * s), hh = half[a];
+      // the first k and last k segments cover the rounding, the middle one the flat face
+      p[a] = t <= k ? -hh + rr * (t / k) : t >= s - k ? hh - rr * ((s - t) / k) : 0;
+      if (t > k && t < s - k) p[a] = 0;
+      q[a] = Math.max(-(hh - rr), Math.min(hh - rr, p[a]));
+    }
+    // points on a face that are not near an edge: push them to the face
+    let dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2];
+    const nx = N.getX(i), ny = N.getY(i), nz = N.getZ(i);
+    if (Math.abs(nx) > 0.5) dx = Math.sign(nx) * Math.max(Math.abs(dx), 1e-6); if (Math.abs(ny) > 0.5) dy = Math.sign(ny) * Math.max(Math.abs(dy), 1e-6); if (Math.abs(nz) > 0.5) dz = Math.sign(nz) * Math.max(Math.abs(dz), 1e-6);
+    const l = Math.hypot(dx, dy, dz) || 1;
+    P.setXYZ(i, q[0] + dx / l * rr, q[1] + dy / l * rr, q[2] + dz / l * rr);
+    N.setXYZ(i, dx / l, dy / l, dz / l);
+  }
+  return g;
+};
+// a turned shape (table legs, balusters, vases): profile = [[radius, y], …] from bottom to top
+export const lathe = (profile, seg = 10) => new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(Math.max(0.0005, r), y)), seg);
+
 export const M = (x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) =>
   new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ')), new THREE.Vector3(sx, sy, sz));
 
@@ -126,7 +152,7 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         float grainH(vec3 p) { return gN(vec3(p.x * 1.3 + p.z * 0.4, p.y * 24.0, p.z * 1.3)) * 0.65 + gN(p * 11.0) * 0.35; }
         ${rich ? RICH_GLSL : ''}
         varying float vMat; varying vec3 vObjN;
-        float gRichH = 0.0; float gAO = 1.0;
+        float gRichH = 0.0; float gAO = 1.0; float gBounce = 0.0;
         ${tree ? `uniform float uFall, uBloom, uLush; varying float vHash; varying float vLeaf;
         vec3 autumn(float h) {
           return h < 0.25 ? vec3(0.86, 0.42, 0.1) : h < 0.5 ? vec3(0.72, 0.16, 0.08) : h < 0.75 ? vec3(0.92, 0.7, 0.16) : vec3(0.55, 0.3, 0.12);
@@ -164,14 +190,20 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         ${rich ? 'gRichH = richSurface(int(vMat + 0.5), vObj, vObjN, diffuseColor.rgb);' : grain ? 'diffuseColor.rgb *= 0.84 + 0.3 * grainH(vObj);' : ''}
         ${indoor ? `{
           // soft shadow in the corners: near the floor, under the ceiling, along the walls
-          bool low = vObj.y < -1.0;
-          float fy = low ? vObj.y + 3.5 : vObj.y - 0.12, cy = low ? -0.3 - vObj.y : 2.62 - vObj.y;
-          vec2 ext = low ? vec2(6.5, 6.0) : vec2(3.03, 2.33);
+          // three rooms: the cabin, and the library below with its gallery (mezzanine)
+          bool low = vObj.y < -0.2;
+          bool under = vObj.z < -7.6 || vObj.x < -4.8 || vObj.x > 1.6;   // beneath the gallery
+          bool main = vObj.y < -3.55 || !under;
+          float fy = !low ? vObj.y - 0.12 : main ? vObj.y + 6.6 : vObj.y + 3.4;
+          float cy = !low ? 2.62 - vObj.y : (main && under) ? -3.7 - vObj.y : -0.3 - vObj.y;
+          vec2 ext = low ? vec2(6.5, 5.95) : vec2(3.03, 2.33);
           vec2 cen = low ? vec2(0.0, -3.55) : vec2(0.0, 0.0);
           vec2 dw = ext - abs(vObj.xz - cen);
           float inside = step(0.0, min(dw.x, dw.y)) * step(-0.05, fy) * step(-0.05, cy);
           float ao = mix(0.55, 1.0, smoothstep(0.0, 0.6, fy)) * mix(0.75, 1.0, smoothstep(0.0, 0.45, cy)) * mix(0.72, 1.0, smoothstep(0.0, 0.5, min(dw.x, dw.y)));
           gAO = mix(1.0, ao, inside);
+          // light bouncing up off the floor reaches the undersides (gallery, ceiling) in the library
+          gBounce = low ? smoothstep(-0.4, -0.95, vObjN.y) * inside : 0.0;
         }` : ''}
         diffuseColor.rgb = mix(diffuseColor.rgb, uMossC * (0.7 + 0.3 * diffuseColor.g), clamp(vMossA, 0.0, 0.8));
         diffuseColor.rgb = mix(diffuseColor.rgb, uSnowC, clamp(vSnowA * 1.5 - 0.2, 0.0, 1.0));
@@ -183,6 +215,7 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
       prev(sh);
       sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', `#include <aomap_fragment>
         reflectedLight.indirectDiffuse *= 0.62 * gAO;
+        reflectedLight.indirectDiffuse += diffuseColor.rgb * gBounce * 0.42;
         reflectedLight.directDiffuse *= mix(1.0, gAO, 0.7);`);
     };
   }

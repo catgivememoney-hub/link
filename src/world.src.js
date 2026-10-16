@@ -767,7 +767,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     U.uTop.value.copy(s.skyTop); U.uHorizon.value.copy(s.skyHorizon); U.uBottom.value.copy(s.skyBottom);
     U.uSunColor.value.copy(s.sunC); U.uSunDir.value.copy(s.sunDir).normalize(); U.uSunSize.value = s.sunSize;
     U.uStars.value = s.stars; U.uAurora.value = s.aurora; U.uAur1.value.copy(s.aur1); U.uAur2.value.copy(s.aur2);
-    scene.fog.color.copy(s.fog); scene.fog.density = s.fogDensity * (1 + gal.focus * 0.35);
+    scene.fog.color.copy(s.fog); scene.fog.density = s.fogDensity * (1 + gal.focus * 0.35) * (1 - 0.85 * indoorK);   // little haze indoors
     if (s.pCabin > 0.5) { TU.uHole.value.set(...props.cabin.holeBox); WU.uStudy.value.set(...props.cabin.studyBox); }
     else { TU.uHole.value.copy(FAR); WU.uStudy.value.copy(FAR); }
     TU.uLow.value.copy(s.low); TU.uHigh.value.copy(s.high); TU.uSnow.value.copy(s.snowC); TU.uSnowLine.value = s.snowLine;
@@ -790,7 +790,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       m.material.opacity = s.mist * 0.5 * smooth(12, 80, d) * (1 - indoorK); m.material.color.copy(s.fog); m.visible = s.mist > 0.01 && indoorK < 0.99;
     });
     // colour amount of the whole picture: 0 = black & white, 1 = full (we stay well below)
-    LU.uSat.value = s.sat;
+    LU.uSat.value = s.sat + (Math.max(s.sat, 0.8) - s.sat) * indoorK;   // warm colour comes back inside
   };
 
   /* ---------- camera: glide + gentle drift + mouse parallax ---------- */
@@ -1624,18 +1624,18 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     // for testing: stand at an exact spot (world x, z)
     _standAt(x, z, level) {
       ex.px = x - cur.cam.x; ex.pz = z - cur.cam.z; ex.vx = ex.vz = 0;
-      props.cabin.feet = level === 'study' ? CABIN.y + STUDY.floor * CABIN.S : undefined;
+      props.cabin.feet = level === 'study' ? CABIN.y + STUDY.floor * CABIN.S : level === 'mezz' ? CABIN.y + STUDY.mezz * CABIN.S : undefined;
       const b = props.floorAt(x, z, cur);
       ex.ground = (b && b.under ? b.y : Math.max(heightAt(x, z), water.position.y, b ? b.y : -1e9)) + EYE;
       props.cabin.feet = ex.ground - EYE;
       if (!running) renderOnce();
     },
-    _look(x, z) {
+    _look(x, z, pitch = 0) {
       const bx = cur.look.x - cur.cam.x, bz = cur.look.z - cur.cam.z;
       const px = cur.cam.x + ex.px, pz = cur.cam.z + ex.pz;
       let y = Math.atan2(bz, bx) - Math.atan2(z - pz, x - px);
       y = Math.atan2(Math.sin(y), Math.cos(y));
-      ex.yaw = ex.yawTo = y; ex.pitch = ex.pitchTo = 0; if (!running) renderOnce();
+      ex.yaw = ex.yawTo = y; ex.pitch = ex.pitchTo = pitch; if (!running) renderOnce();
     },
     _printAt(x, z, yaw) { prints.place(x, heightAt(x, z), z, yaw, new THREE.Vector3(0, 1, 0)); },
     _toggleDoor() { props.cabin.door.toggle(performance.now()); },

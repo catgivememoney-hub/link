@@ -4,15 +4,17 @@
    Outside: notched log walls on a stone footing, shingled roof with a stone chimney,
    a porch with its own roof, bench, lantern, shutters, rain barrel, firewood and a
    chopping block, a dock with lanterns and a rowboat.
-   Inside: plank floor, rug, fireplace with a fire, bed, chest, table and chairs
-   (lantern, mug, book, a bowl of grey fruit), shelf with jars and books, beams,
-   curtains, a coat and boots by the door.
+   Inside: plank floor, braided and rag rugs, fireplace with a fire, a bed with turned
+   posts and a patchwork quilt, a domed chest, a table with turned legs and Windsor
+   chairs (hurricane lamp, mug, book, a bowl of grey fruit), a rocking chair by the
+   fire, a kitchen counter (basin and pump, bread, plate rack, drying herbs), shelf
+   with jars and books, beams, folded curtains, a coat and boots by the door.
 
    The walls and furniture are solid; floors (inside, porch, dock) can be walked on;
    the door swings open and shut (click it). */
 import * as THREE from 'three';
-import { Parts, M, n3, coverMaterial, kind } from './kit.js';
-import { createStudy, STUDY, STAIR, rampY } from './study.js';
+import { Parts, M, n3, coverMaterial, kind, rbox, lathe } from './kit.js';
+import { createStudy, STUDY, STAIR, rampY, studyBlocked, studyFloors } from './study.js';
 
 export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
 
@@ -41,6 +43,8 @@ export function createCabin({ scene, shared, U, camera }) {
   const flat = (r, g, b, k) => (k ? kind(k, () => [r, g, b]) : () => [r, g, b]);
   const metal = (r, g, b) => kind('metal', () => [r, g, b]);
   const cloth = (fn) => kind('fabric', fn);
+  const box3 = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  const TAU = Math.PI * 2;
   const outward = (axis, fixed) => (v) => ((axis === 'z' ? (v.z - fixed) * Math.sign(fixed) : (v.x - fixed) * Math.sign(fixed)) > 0 ? 1 : 0);
 
   /* ---------- log walls with openings ---------- */
@@ -121,6 +125,15 @@ export function createCabin({ scene, shared, U, camera }) {
   const smokeFrom = new THREE.Vector3(FIRE.x, TOP + 0.2 + 8 * 0.3, FIRE.z);
 
   /* ---------- windows: frame, cross bars, sill, shutters, glass, curtains ---------- */
+  // a curtain hanging in soft folds, gathered where it's tied back
+  const curtainGeo = (() => {
+    const g = new THREE.PlaneGeometry(0.32, 1.15, 16, 12), P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) {
+      const x = P.getX(i), y = P.getY(i), tie = Math.exp(-((y + 0.12) ** 2) * 18);
+      P.setXYZ(i, x * (1 - tie * 0.45) + tie * 0.05, y, Math.sin((x + 0.16) * 58) * (0.02 + tie * 0.015) + 0.02);
+    }
+    g.computeVertexNormals(); return g;
+  })();
   const windowAt = (cx, cy, wall) => {
     // wall: 'front' (z = D/2) or 'right' (x = W/2); w x h = 1.2 x 1.0
     const rot = wall === 'front' ? 0 : Math.PI / 2;
@@ -136,7 +149,11 @@ export function createCabin({ scene, shared, U, camera }) {
     glassP.add(new THREE.PlaneGeometry(1.2, 1.0), { m: M(gx, gy, gz, 0, rot, 0), color: flat(1, 1, 1) });
     glassP.add(new THREE.PlaneGeometry(1.2, 1.0), { m: M(gx, gy, gz, 0, rot + Math.PI, 0), color: flat(1, 1, 1) });
     // curtains inside, tied back
-    [-1, 1].forEach((s) => box(inn, 0.3, 1.15, 0.03, s * 0.78, 0.02, -0.24, (v) => { const c = 0.78 + Math.sin(v.x * 60 + v.z * 60) * 0.04; return [c, c * 0.95, c * 0.86]; }));
+    [-1, 1].forEach((s) => {
+      const [x, y, z] = place(s * 0.78, 0.02, -0.24);
+      const col = cloth((v) => { const c = 0.8 + n(v.x * 30, v.y * 4, v.z * 30) * 0.06; return [c, c * 0.95, c * 0.85]; });
+      [false, true].forEach((flip) => inn.add(curtainGeo, { m: M(x, y, z, 0, rot + Math.PI, 0), color: col, flip }));
+    });
     box(inn, 1.9, 0.03, 0.03, 0, 0.62, -0.24, flat(0.3, 0.25, 0.2));
   };
   windowAt(1.35, 1.45, 'front');
@@ -280,9 +297,6 @@ export function createCabin({ scene, shared, U, camera }) {
   inn.add(new THREE.CylinderGeometry(0.015, 0.03, 0.12, 6), { m: M(FIRE.x - 0.58, 0.36, -IZ + 0.75, 0, 0, -0.9), color: metal(0.2, 0.2, 0.22) });
   [[-0.6, 0.14], [-0.5, 0.2], [0.55, 0.1]].forEach(([dx, h]) => inn.add(new THREE.CylinderGeometry(0.025, 0.025, h, 8), { m: M(FIRE.x + dx, 1.52 + h / 2, -IZ + 0.4), color: () => [0.9, 0.86, 0.76] }));
   [[0.1, [0.4, 0.2, 0.18]], [0.16, [0.24, 0.3, 0.36]], [0.21, [0.5, 0.45, 0.32]]].forEach(([dx, c]) => inn.add(new THREE.BoxGeometry(0.05, 0.22, 0.16), { m: M(FIRE.x + dx, 1.63, -IZ + 0.4), color: () => c }));
-  inn.add(new THREE.BoxGeometry(0.9, 0.012, 0.6), { m: M(-2.0, 0.126, -0.85), color: cloth((v) => (Math.floor((v.x + 3) * 8) % 2 ? [0.62, 0.56, 0.46] : [0.4, 0.42, 0.38])) });
-  // rug
-  inn.add(new THREE.BoxGeometry(2.3, 0.014, 1.55), { m: M(0.55, 0.127, 0.5), color: cloth((v) => { const band = Math.floor(Math.abs(v.x - 0.55) / 0.17) % 3; const edge = Math.abs(v.x - 0.55) > 1.05 || Math.abs(v.z - 0.5) > 0.68; return edge ? [0.32, 0.2, 0.17] : band === 0 ? [0.58, 0.26, 0.2] : band === 1 ? [0.8, 0.7, 0.52] : [0.28, 0.36, 0.38]; }) });
   // beams: two tie beams, a ridge beam and rafters under the roof
   [-1.1, 1.1].forEach((z) => inn.add(new THREE.BoxGeometry(W - 0.2, 0.2, 0.2), { m: M(0, TOP - 0.02, z), color: wood(0.42) }));
   inn.add(new THREE.BoxGeometry(0.2, 0.22, D + 0.2), { m: M(0, TOP + GH - 0.2, 0), color: wood(0.42) });
@@ -300,37 +314,166 @@ export function createCabin({ scene, shared, U, camera }) {
   // firewood basket
   inn.add(new THREE.CylinderGeometry(0.28, 0.24, 0.32, 10, 1, true), { m: M(F.x - 1.25, 0.28, -IZ + 0.35), color: wood(0.5) });
   for (let i = 0; i < 5; i++) inn.add(new THREE.CylinderGeometry(0.05, 0.05, 0.55, 6), { m: M(F.x - 1.25 + (i - 2) * 0.08, 0.42 + (i % 2) * 0.04, -IZ + 0.35, 0.2 * (i - 2), 0, Math.PI / 2 + 0.1), color: wood(0.5) });
-  // bed in the back-left corner
+  /* ---------- painted surfaces: rugs and the quilt (crisp patterns on canvas) ---------- */
+  const pics = [];
+  let pseed = 11; const prnd = () => { pseed = (pseed * 16807) % 2147483647; return pseed / 2147483647; };
+  const canvasPiece = (CW, CH, draw, geo, m, alpha = false) => {
+    const cv = document.createElement('canvas'); cv.width = CW; cv.height = CH; draw(cv.getContext('2d'), CW, CH);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: t, color: 0xbdb3a8, alphaTest: alpha ? 0.5 : 0 }));
+    mesh.applyMatrix4(m); mesh.receiveShadow = true; pics.push(mesh); return mesh;
+  };
+  const wool = (g, CW, CH, k = 0.05) => { for (let i = 0; i < CW * CH * k; i++) { g.fillStyle = prnd() < 0.5 ? 'rgba(0,0,0,0.12)' : 'rgba(255,245,225,0.09)'; g.fillRect(prnd() * CW, prnd() * CH, 1.5, 1.5); } };
+  // braided oval rug: rings of plaited cloth
+  const braided = (cols) => (g, CW, CH) => {
+    g.clearRect(0, 0, CW, CH);
+    const N = 16, st = (CH / 2 - 2) / N;
+    for (let k = 0; k < N; k++) {
+      const rx = CW / 2 - 2 - k * st, ry = CH / 2 - 2 - k * st;
+      g.fillStyle = cols[(k * 5 + (k % 3)) % cols.length];
+      g.beginPath(); g.ellipse(CW / 2, CH / 2, Math.max(rx, 1), Math.max(ry, 1), 0, 0, TAU); g.fill();
+      // the plait: little slanted strokes all round the ring
+      g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 1.2;
+      const per = Math.PI * (rx + ry), cnt = Math.floor(per / 7);
+      for (let i = 0; i < cnt; i++) {
+        const a = (i / cnt) * TAU, x = CW / 2 + Math.cos(a) * (rx - st / 2), y = CH / 2 + Math.sin(a) * (ry - st / 2), d = (k % 2 ? 1 : -1) * st * 0.35;
+        g.beginPath(); g.moveTo(x - Math.sin(a) * d - Math.cos(a) * st * 0.4, y + Math.cos(a) * d - Math.sin(a) * st * 0.4); g.lineTo(x + Math.sin(a) * d + Math.cos(a) * st * 0.4, y - Math.cos(a) * d + Math.sin(a) * st * 0.4); g.stroke();
+      }
+    }
+    g.globalCompositeOperation = 'source-atop'; wool(g, CW, CH, 0.03); g.globalCompositeOperation = 'source-over';
+  };
+  // rag rug: woven stripes with fringe at the ends
+  const ragRug = (g, CW, CH) => {
+    g.clearRect(0, 0, CW, CH);
+    const fr = 14, cols = ['#7d3b2e', '#c7b48c', '#3e5363', '#a5622f', '#e0d4b6', '#5b6b4b'];
+    for (let y = 2; y < CH - 2; y += 4) { g.fillStyle = '#ddd2b8'; g.fillRect(0, y, fr + 1, 2); g.fillRect(CW - fr - 1, y, fr + 1, 2); }
+    for (let x = fr, i = 0; x < CW - fr; i++) { const w = 6 + Math.floor(prnd() * 14); g.fillStyle = cols[i % cols.length]; g.fillRect(x, 0, Math.min(w, CW - fr - x), CH); x += w; }
+    for (let y = 0; y < CH; y += 3) { g.fillStyle = 'rgba(0,0,0,0.1)'; g.fillRect(fr, y, CW - 2 * fr, 1); }
+    wool(g, CW, CH, 0.04);
+  };
+  // patchwork quilt with stitching
+  const quilt = (g, CW, CH) => {
+    const cols = ['#8b2f2a', '#c9b98e', '#3f566a', '#6d7f52', '#b36a35', '#e6dcc4', '#5a3d52', '#a44b3e'];
+    const nx = 10, ny = 7, w = CW / nx, h = CH / ny;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      g.fillStyle = cols[Math.floor(prnd() * cols.length)]; g.fillRect(i * w, j * h, w, h);
+      if (prnd() < 0.5) { g.fillStyle = cols[Math.floor(prnd() * cols.length)]; g.beginPath(); g.moveTo(i * w, j * h); g.lineTo(i * w + w, j * h + h); g.lineTo(i * w, j * h + h); g.fill(); }
+      if (prnd() < 0.3) { g.fillStyle = 'rgba(255,255,255,0.18)'; for (let k = 0; k < 6; k++) g.fillRect(i * w + prnd() * w, j * h + prnd() * h, 3, 3); }
+    }
+    g.strokeStyle = 'rgba(250,240,220,0.55)'; g.setLineDash([4, 4]); g.lineWidth = 1.2;
+    for (let i = 0; i <= nx; i++) { g.beginPath(); g.moveTo(i * w + 3, 0); g.lineTo(i * w + 3, CH); g.stroke(); }
+    for (let j = 0; j <= ny; j++) { g.beginPath(); g.moveTo(0, j * h + 3); g.lineTo(CW, j * h + 3); g.stroke(); }
+    g.setLineDash([]); wool(g, CW, CH, 0.02);
+  };
+  const flatOn = (x, y, z, ry = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, ry, 0, 'YXZ')), new THREE.Vector3(1, 1, 1));
+  canvasPiece(768, 512, braided(['#7a3a2c', '#b78d5c', '#4a5a66', '#d8c8a4', '#8a5a3a', '#5d6a4c', '#9e4632']), new THREE.PlaneGeometry(2.4, 1.6), flatOn(0.55, 0.124, 0.5), true);
+  canvasPiece(512, 320, ragRug, new THREE.PlaneGeometry(1.0, 0.62), flatOn(-1.95, 0.124, -0.85), true);
+  canvasPiece(512, 256, ragRug, new THREE.PlaneGeometry(0.9, 0.45), flatOn((DX0 + DX1) / 2, 0.124, IZ - 0.45), true);
+
+  // bed in the back-left corner: turned posts, spindle headboard, soft mattress, patchwork quilt
   const B0 = -IX + 0.02, B1 = B0 + 1.95, BZ0 = -IZ + 0.02, BZ1 = BZ0 + 1.0;
   const bx = (B0 + B1) / 2, bz = (BZ0 + BZ1) / 2;
-  [[B0 + 0.05, BZ0 + 0.05, 0.9], [B0 + 0.05, BZ1 - 0.05, 0.9], [B1 - 0.05, BZ0 + 0.05, 0.6], [B1 - 0.05, BZ1 - 0.05, 0.6]].forEach(([x, z, h]) => inn.add(new THREE.BoxGeometry(0.09, h, 0.09), { m: M(x, 0.12 + h / 2, z), color: wood(0.45) }));
-  inn.add(new THREE.BoxGeometry(0.06, 0.45, BZ1 - BZ0 - 0.1), { m: M(B0 + 0.05, 0.75, bz), color: wood(0.5) });   // headboard
-  inn.add(new THREE.BoxGeometry(B1 - B0, 0.12, BZ1 - BZ0), { m: M(bx, 0.36, bz), color: wood(0.45) });
-  inn.add(new THREE.BoxGeometry(B1 - B0 - 0.1, 0.16, BZ1 - BZ0 - 0.08), { m: M(bx, 0.5, bz), color: flat(0.86, 0.84, 0.78, 'fabric') });   // mattress
-  inn.add(new THREE.BoxGeometry(1.3, 0.05, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.68, 0.6, bz), color: cloth((v) => { const check = (Math.floor(v.x * 6) + Math.floor(v.z * 6)) % 2; const st = Math.abs(((v.x * 6) % 1) - 0.5) < 0.06 || Math.abs(((v.z * 6) % 1) - 0.5) < 0.06; return st ? [0.82, 0.74, 0.5] : check ? [0.48, 0.18, 0.16] : [0.36, 0.2, 0.2]; }) });   // blanket
-  inn.add(new THREE.BoxGeometry(0.08, 0.25, BZ1 - BZ0 + 0.04), { m: M(B1 - 0.03, 0.5, bz), color: flat(0.46, 0.2, 0.18, 'fabric') });
-  const pillow = new THREE.SphereGeometry(1, 12, 8);
-  inn.add(pillow, { m: M(B0 + 0.32, 0.64, bz, 0, 0, 0, 0.2, 0.08, 0.36), color: flat(0.92, 0.9, 0.86, 'fabric') });
-  // chest at the foot of the bed
-  inn.add(new THREE.BoxGeometry(0.7, 0.42, 0.42), { m: M(B1 + 0.45, 0.33, BZ0 + 0.25), color: wood(0.5) });
-  inn.add(new THREE.BoxGeometry(0.72, 0.05, 0.44), { m: M(B1 + 0.45, 0.4, BZ0 + 0.25), color: metal(0.25, 0.25, 0.26) });
-  // table with two chairs, lantern, mug, book and a bowl of grey fruit
-  const T = { x: 0.9, z: 0.6 };
-  inn.add(new THREE.BoxGeometry(1.3, 0.06, 0.85), { m: M(T.x, 0.88, T.z), color: wood(0.55) });
-  [[-0.58, -0.36], [0.58, -0.36], [-0.58, 0.36], [0.58, 0.36]].forEach(([dx, dz]) => inn.add(new THREE.BoxGeometry(0.07, 0.73, 0.07), { m: M(T.x + dx, 0.48, T.z + dz), color: wood(0.45) }));
-  [-1, 1].forEach((s) => {
-    const cz = T.z + s * 0.68;
-    inn.add(new THREE.BoxGeometry(0.44, 0.05, 0.42), { m: M(T.x, 0.58, cz), color: wood(0.5) });
-    [[-0.18, -0.17], [0.18, -0.17], [-0.18, 0.17], [0.18, 0.17]].forEach(([dx, dz]) => inn.add(new THREE.BoxGeometry(0.045, 0.46, 0.045), { m: M(T.x + dx, 0.35, cz + dz), color: wood(0.45) }));
-    inn.add(new THREE.BoxGeometry(0.44, 0.5, 0.04), { m: M(T.x, 0.85, cz + s * 0.2), color: wood(0.5) });
+  const post = (h) => lathe([[0.045, 0], [0.045, 0.1], [0.032, 0.13], [0.03, h * 0.4], [0.048, h * 0.47], [0.032, h * 0.55], [0.028, h - 0.12], [0.042, h - 0.08], [0.02, h - 0.05], [0.032, h - 0.02], [0.0, h]], 10);
+  [[B0 + 0.05, BZ0 + 0.05, 1.05], [B0 + 0.05, BZ1 - 0.05, 1.05], [B1 - 0.05, BZ0 + 0.05, 0.72], [B1 - 0.05, BZ1 - 0.05, 0.72]].forEach(([x, z, h]) => inn.add(post(h), { m: M(x, 0.12, z), color: wood(0.45) }));
+  [[B0 + 0.05, 0.95, 0.3], [B1 - 0.05, 0.68, 0.18]].forEach(([x, top, hh]) => {
+    inn.add(rbox(0.06, 0.08, BZ1 - BZ0 - 0.1, 0.02, 1), { m: M(x, top, bz), color: wood(0.5) });
+    inn.add(rbox(0.05, 0.06, BZ1 - BZ0 - 0.1, 0.015, 1), { m: M(x, top - hh, bz), color: wood(0.5) });
+    for (let z = BZ0 + 0.16; z < BZ1 - 0.1; z += 0.11) inn.add(new THREE.CylinderGeometry(0.012, 0.012, hh, 6), { m: M(x, top - hh / 2, z), color: wood(0.48) });
   });
-  glowP.add(new THREE.BoxGeometry(0.12, 0.16, 0.12), { m: M(T.x + 0.35, 1.0, T.z - 0.15), color: flat(1, 1, 1) });
-  inn.add(new THREE.BoxGeometry(0.16, 0.03, 0.16), { m: M(T.x + 0.35, 0.92, T.z - 0.15), color: metal(0.15, 0.15, 0.15) });
-  inn.add(new THREE.BoxGeometry(0.14, 0.03, 0.14), { m: M(T.x + 0.35, 1.09, T.z - 0.15), color: metal(0.15, 0.15, 0.15) });
-  inn.add(new THREE.CylinderGeometry(0.045, 0.04, 0.1, 10), { m: M(T.x - 0.3, 0.96, T.z + 0.2), color: flat(0.75, 0.73, 0.7, 'paper') });
-  inn.add(new THREE.BoxGeometry(0.22, 0.04, 0.3), { m: M(T.x - 0.25, 0.93, T.z - 0.2, 0, 0.3, 0), color: flat(0.3, 0.36, 0.42) });
-  inn.add(new THREE.CylinderGeometry(0.16, 0.1, 0.07, 14, 1, true), { m: M(T.x + 0.05, 0.95, T.z + 0.15), color: wood(0.5) });
+  [BZ0 + 0.05, BZ1 - 0.05].forEach((z) => inn.add(rbox(B1 - B0 - 0.1, 0.14, 0.05, 0.015, 1), { m: M(bx, 0.36, z), color: wood(0.45) }));
+  inn.add(box3(B1 - B0 - 0.1, 0.04, BZ1 - BZ0 - 0.1), { m: M(bx, 0.33, bz), color: wood(0.4) });
+  inn.add(rbox(B1 - B0 - 0.12, 0.17, BZ1 - BZ0 - 0.08, 0.06, 2), { m: M(bx, 0.48, bz), color: flat(0.88, 0.86, 0.8, 'fabric') });
+  canvasPiece(512, 360, quilt, rbox(1.4, 0.035, BZ1 - BZ0 + 0.06, 0.015, 1), M(B1 - 0.75, 0.585, bz + 0.02));
+  canvasPiece(512, 120, quilt, rbox(1.4, 0.26, 0.025, 0.01, 1), M(B1 - 0.75, 0.46, BZ1 + 0.03));
+  inn.add(rbox(0.4, 0.06, BZ1 - BZ0 - 0.06, 0.025, 2), { m: M(B1 - 0.24, 0.62, bz), color: cloth((v) => (Math.sin(v.z * 60) > 0.5 ? [0.32, 0.2, 0.18] : [0.5, 0.24, 0.2])) });
+  [[bz - 0.22, 0.1], [bz + 0.2, -0.12]].forEach(([z, r]) => inn.add(rbox(0.34, 0.12, 0.42, 0.06, 2), { m: M(B0 + 0.3, 0.63, z, 0, r, 0.25), color: flat(0.93, 0.91, 0.87, 'fabric') }));
+  // chest at the foot of the bed: domed lid, iron bands and handles
+  {
+    const cx = B1 + 0.45, cz = BZ0 + 0.25;
+    inn.add(rbox(0.7, 0.36, 0.42, 0.02, 1), { m: M(cx, 0.31, cz), color: wood(0.5) });
+    inn.add(new THREE.CylinderGeometry(0.21, 0.21, 0.7, 16, 1, false, -Math.PI / 2, Math.PI), { m: M(cx, 0.49, cz, 0, 0, Math.PI / 2, 1, 1, 0.45), color: wood(0.52) });
+    [-0.24, 0, 0.24].forEach((dx) => inn.add(new THREE.CylinderGeometry(0.215, 0.215, 0.035, 16, 1, true, -Math.PI / 2, Math.PI), { m: M(cx + dx, 0.49, cz, 0, 0, Math.PI / 2, 1, 1, 0.46), color: metal(0.2, 0.2, 0.21) }));
+    [-0.24, 0, 0.24].forEach((dx) => inn.add(box3(0.035, 0.36, 0.43), { m: M(cx + dx, 0.31, cz), color: metal(0.2, 0.2, 0.21) }));
+    inn.add(rbox(0.1, 0.12, 0.02, 0.01, 1), { m: M(cx, 0.44, cz + 0.22), color: metal(0.55, 0.45, 0.25) });
+    [-1, 1].forEach((s) => inn.add(new THREE.TorusGeometry(0.04, 0.008, 4, 10, Math.PI), { m: M(cx + s * 0.36, 0.38, cz, 0, Math.PI / 2, Math.PI), color: metal(0.2, 0.2, 0.21) }));
+  }
+  // table with turned legs, two Windsor chairs, a hurricane lamp, mug, book and a bowl of grey fruit
+  const T = { x: 0.9, z: 0.6 };
+  inn.add(rbox(1.3, 0.055, 0.85, 0.02, 2), { m: M(T.x, 0.885, T.z), color: wood(0.55) });
+  inn.add(rbox(1.12, 0.09, 0.68, 0.01, 1), { m: M(T.x, 0.81, T.z), color: wood(0.46) });
+  const tleg = lathe([[0.03, 0], [0.036, 0.04], [0.026, 0.12], [0.04, 0.3], [0.03, 0.48], [0.036, 0.56], [0.034, 0.64], [0.034, 0.7]], 8);
+  [[-0.56, -0.34], [0.56, -0.34], [-0.56, 0.34], [0.56, 0.34]].forEach(([dx, dz]) => inn.add(tleg, { m: M(T.x + dx, 0.12, T.z + dz), color: wood(0.45) }));
+  const cleg = lathe([[0.016, 0], [0.02, 0.05], [0.015, 0.16], [0.022, 0.28], [0.018, 0.4], [0.02, 0.44]], 6);
+  [-1, 1].forEach((s) => {
+    // chair frame: its back is at local -z, away from the table
+    const CF = new THREE.Matrix4().compose(new THREE.Vector3(T.x, 0.12, T.z + s * 0.68), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), s < 0 ? 0 : Math.PI), new THREE.Vector3(1, 1, 1));
+    const a = (geo, mx, color) => inn.add(geo, { m: CF.clone().multiply(mx), color });
+    a(rbox(0.44, 0.045, 0.42, 0.02, 2), M(0, 0.46, 0), wood(0.52));
+    [[-0.17, -0.15], [0.17, -0.15], [-0.17, 0.15], [0.17, 0.15]].forEach(([dx, dz]) => a(cleg, M(dx * 1.08, 0, dz * 1.08, dz * 0.4, 0, -dx * 0.4), wood(0.45)));
+    a(new THREE.CylinderGeometry(0.01, 0.01, 0.36, 6), M(0, 0.16, 0, 0, 0, Math.PI / 2), wood(0.45));   // stretcher
+    // spindle back under a bent top rail
+    for (let i = -2; i <= 2; i++) { const x = i * 0.075, z = 0.31 - Math.sqrt(0.25 - x * x); a(new THREE.CylinderGeometry(0.009, 0.011, 0.5, 6), M(x, 0.73, z - 0.01, -0.08, 0, 0), wood(0.5)); }
+    a(new THREE.TorusGeometry(0.5, 0.022, 6, 16, 0.9), M(0, 0.98, 0.31 - 0.02, -Math.PI / 2, 0, Math.PI / 2 - 0.45), wood(0.52));
+  });
+  // hurricane lamp: brass base, glass chimney with the flame inside
+  inn.add(lathe([[0.0, 0], [0.07, 0], [0.075, 0.02], [0.05, 0.05], [0.055, 0.09], [0.03, 0.1]], 12), { m: M(T.x + 0.35, 0.91, T.z - 0.15), color: metal(0.6, 0.47, 0.25) });
+  glassP.add(lathe([[0.03, 0], [0.06, 0.06], [0.065, 0.12], [0.035, 0.22], [0.03, 0.28]], 12), { m: M(T.x + 0.35, 1.01, T.z - 0.15), color: flat(1, 1, 1) });
+  glowP.add(new THREE.SphereGeometry(0.018, 8, 6), { m: M(T.x + 0.35, 1.07, T.z - 0.15, 0, 0, 0, 1, 2, 1), color: flat(1, 1, 1) });
+  inn.add(lathe([[0.04, 0], [0.045, 0.01], [0.042, 0.1], [0.046, 0.105]], 12), { m: M(T.x - 0.3, 0.91, T.z + 0.2), color: flat(0.75, 0.73, 0.7, 'paper') });
+  inn.add(new THREE.TorusGeometry(0.025, 0.007, 5, 10), { m: M(T.x - 0.25, 0.965, T.z + 0.2, 0, 0, Math.PI / 2), color: flat(0.75, 0.73, 0.7, 'paper') });
+  inn.add(rbox(0.22, 0.04, 0.3, 0.008, 1), { m: M(T.x - 0.25, 0.93, T.z - 0.2, 0, 0.3, 0), color: flat(0.3, 0.36, 0.42, 'leather') });
+  inn.add(lathe([[0.0, 0], [0.08, 0], [0.14, 0.04], [0.165, 0.075], [0.155, 0.08]], 16), { m: M(T.x + 0.05, 0.91, T.z + 0.15), color: wood(0.5) });
   [[0, 0], [0.07, 0.05], [-0.06, 0.05], [0.0, -0.07]].forEach(([dx, dz], i) => inn.add(new THREE.SphereGeometry(0.055, 10, 7), { m: M(T.x + 0.05 + dx, 0.99 + (i === 3 ? 0.04 : 0), T.z + 0.15 + dz), color: flat(0.66, 0.66, 0.65) }));
+  // a rocking chair by the fire
+  {
+    const R = new THREE.Matrix4().compose(new THREE.Vector3(0.05, 0.12, -1.0), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 2.12), new THREE.Vector3(1, 1, 1));
+    const a = (geo, mx, color) => inn.add(geo, { m: R.clone().multiply(mx), color });
+    [-1, 1].forEach((s) => {
+      const pts = []; for (let z = -0.36; z <= 0.361; z += 0.06) pts.push(new THREE.Vector3(s * 0.22, 0.03 + 0.75 - Math.sqrt(0.5625 - z * z), z));
+      a(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.02, 5), M(), wood(0.42));   // rockers
+      a(new THREE.CylinderGeometry(0.018, 0.02, 0.4, 6), M(s * 0.22, 0.2, 0.18), wood(0.45));
+      a(new THREE.CylinderGeometry(0.018, 0.02, 0.95, 6), M(s * 0.22, 0.5, -0.2, -0.18, 0, 0), wood(0.45));
+      a(rbox(0.05, 0.03, 0.5, 0.012, 1), M(s * 0.25, 0.62, 0.0), wood(0.52));
+    });
+    a(rbox(0.48, 0.045, 0.44, 0.02, 2), M(0, 0.4, 0.0), wood(0.5));
+    a(rbox(0.42, 0.05, 0.4, 0.025, 2), M(0, 0.44, 0.01), cloth(() => [0.5, 0.24, 0.2]));
+    for (let i = 0; i < 4; i++) a(rbox(0.4, 0.07, 0.015, 0.006, 1), M(0, 0.58 + i * 0.12, -0.25 - i * 0.02, -0.18, 0, 0), wood(0.5));
+    a(rbox(0.36, 0.34, 0.03, 0.015, 1), M(0.03, 0.82, -0.3, -0.18, 0, 0.05), cloth((v) => (Math.sin(v.y * 90) > 0 ? [0.66, 0.6, 0.48] : [0.58, 0.52, 0.4])));   // a knitted throw over the back
+    a(rbox(0.38, 0.05, 0.08, 0.02, 1), M(0.03, 1.0, -0.33, 0, 0, 0.05), cloth(() => [0.62, 0.56, 0.44]));
+  }
+  // kitchen counter on the left wall: cupboards, butcher-block top, enamel basin and pump,
+  // bread on a board, plates on a rack, herbs drying above
+  {
+    const K = new THREE.Matrix4().compose(new THREE.Vector3(-IX, 0.12, -0.45), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), new THREE.Vector3(1, 1, 1));
+    const a = (geo, mx, color, parts = inn) => parts.add(geo, { m: K.clone().multiply(mx), color });
+    a(rbox(1.5, 0.74, 0.52, 0.012, 1), M(0, 0.45, 0.27), wood(0.46));
+    a(box3(1.46, 0.08, 0.46), M(0, 0.04, 0.24), wood(0.3));
+    [-0.49, 0, 0.49].forEach((x, i) => {
+      a(rbox(0.45, 0.6, 0.03, 0.008, 1), M(x, 0.46, 0.54), wood(0.52));
+      a(rbox(0.31, 0.44, 0.02, 0.015, 1), M(x, 0.46, 0.56), wood(0.44));
+      a(new THREE.SphereGeometry(0.016, 8, 6), M(x + (i === 1 ? 0 : (x < 0 ? 0.17 : -0.17)), 0.62, 0.575), metal(0.2, 0.2, 0.21));
+    });
+    a(rbox(1.56, 0.06, 0.6, 0.015, 2), M(0, 0.85, 0.3), kind('wood', (v) => { const c = 0.58 + (Math.abs((v.x * 12.5) % 1) < 0.06 ? -0.08 : 0) + n(v.x * 9, v.y, v.z * 3) * 0.08; return [c * 1.04, c * 0.8, c * 0.56]; }));
+    a(lathe([[0.0, -0.13], [0.12, -0.12], [0.19, -0.06], [0.21, 0.0], [0.225, 0.01]], 18), M(-0.35, 0.99, 0.3), flat(0.9, 0.9, 0.86, 'metal'));
+    a(new THREE.TorusGeometry(0.222, 0.01, 5, 24), M(-0.35, 1.0, 0.3, Math.PI / 2, 0, 0), flat(0.15, 0.2, 0.36, 'metal'));
+    a(new THREE.CylinderGeometry(0.045, 0.05, 0.42, 10), M(-0.35, 1.08, 0.06), metal(0.16, 0.16, 0.17));
+    a(new THREE.CylinderGeometry(0.02, 0.025, 0.2, 8), M(-0.35, 1.22, 0.16, Math.PI / 2 - 0.3, 0, 0), metal(0.16, 0.16, 0.17));
+    a(new THREE.CylinderGeometry(0.012, 0.012, 0.42, 6), M(-0.35, 1.38, 0.0, 0.9, 0, 0), metal(0.16, 0.16, 0.17));
+    a(rbox(0.42, 0.03, 0.28, 0.01, 1), M(0.35, 0.895, 0.32, 0, 0.15, 0), wood(0.62));
+    a(rbox(0.28, 0.12, 0.14, 0.06, 2), M(0.33, 0.97, 0.32, 0, 0.1, 0), kind('plain', (v) => (v.y > 0.99 ? [0.62, 0.38, 0.18] : [0.75, 0.55, 0.3])));
+    a(rbox(0.2, 0.01, 0.03, 0.004, 1), M(0.55, 0.915, 0.42, 0, -0.3, 0), metal(0.7, 0.7, 0.72));
+    // plate rack
+    a(rbox(0.9, 0.03, 0.16, 0.008, 1), M(0.1, 1.52, 0.08), wood(0.48));
+    a(rbox(0.9, 0.025, 0.02, 0.006, 1), M(0.1, 1.6, 0.15), wood(0.48));
+    [-0.22, 0.02, 0.26].forEach((x, i) => a(new THREE.CylinderGeometry(0.12, 0.12, 0.015, 20), M(x, 1.66, 0.06, Math.PI / 2 - 0.15, 0, 0), i === 1 ? flat(0.82, 0.84, 0.86, 'metal') : flat(0.86, 0.84, 0.78, 'plaster')));
+    [0.42, 0.52].forEach((x) => a(lathe([[0.0, 0], [0.035, 0], [0.04, 0.09], [0.042, 0.095]], 10), M(x, 1.535, 0.08), flat(0.3, 0.4, 0.5, 'plaster')));
+    // herbs drying from a pole above
+    a(new THREE.CylinderGeometry(0.015, 0.015, 1.4, 6), M(0, 2.05, 0.25, 0, 0, Math.PI / 2), wood(0.4));
+    [-0.55, -0.3, -0.05, 0.2, 0.45].forEach((x, i) => {
+      a(new THREE.CylinderGeometry(0.002, 0.002, 0.14, 3), M(x, 1.97, 0.25), flat(0.5, 0.45, 0.35));
+      a(new THREE.ConeGeometry(0.06 + (i % 2) * 0.02, 0.26, 7), M(x, 1.78, 0.25, Math.PI, i, 0), i % 3 === 0 ? flat(0.42, 0.46, 0.28, 'fabric') : i % 3 === 1 ? flat(0.55, 0.5, 0.32, 'fabric') : flat(0.5, 0.36, 0.42, 'fabric'));
+    });
+  }
   // shelf on the left wall with jars and books
   [1.35, 1.75].forEach((y) => {
     inn.add(new THREE.BoxGeometry(0.26, 0.04, 1.3), { m: M(-IX + 0.14, y, 0.9), color: wood(0.5) });
@@ -398,6 +541,7 @@ export function createCabin({ scene, shared, U, camera }) {
     f.position.set(FIRE.x + dx, 0.3, -IZ + 0.42); f.userData.h = h; group.add(f); return f;
   });
   group.add(extMesh, intMesh, glowMesh, glassMesh, hinge, boat);
+  pics.forEach((m) => group.add(m));
   scene.add(group);
   group.updateMatrixWorld(true);
   // the study under the house
@@ -460,6 +604,7 @@ export function createCabin({ scene, shared, U, camera }) {
     [T.x - 0.65, T.x + 0.65, T.z - 0.43, T.z + 0.43], [T.x - 0.25, T.x + 0.25, T.z - 0.95, T.z - 0.45], [T.x - 0.25, T.x + 0.25, T.z + 0.45, T.z + 0.95],
     [F.x - 1.0, F.x + 1.0, -IZ - 0.1, -IZ + 1.0], [F.x - 1.55, F.x - 0.95, -IZ, -IZ + 0.65],
     [-IX, -IX + 0.3, 0.25, 1.55],
+    [-IX, -IX + 0.62, -1.22, 0.32], [-0.3, 0.4, -1.4, -0.65],          // kitchen counter, rocking chair
     // outside
     [0.8, 2.15, D / 2 + 0.26, D / 2 + 0.7],
     [-W / 2 - 0.95, -W / 2 - 0.2, -1.75, 0.0],
@@ -473,18 +618,6 @@ export function createCabin({ scene, shared, U, camera }) {
     [-3.2, -2.5, D / 2 + 1.65, D / 2 + 2.15],                              // crates
     [PR1 + 0.5, PR1 + 0.7, D / 2 + 2.8, D / 2 + 3.0]                       // lantern post
   );
-  // down in the study
-  const Dk = { x: -0.4, z: -2.6 };
-  const SRECTS = [
-    [STUDY.x0 - 1, STUDY.x1 + 1, STUDY.z0 - 1, STUDY.z0 + 0.45],          // back wall + bookcases
-    [STUDY.x0 - 1, STUDY.x0 + 0.45, STUDY.z0 - 1, STUDY.z1 + 1],          // left wall + bookcases
-    [STUDY.x1 - 0.45, STUDY.x1 + 1, STUDY.z0 - 1, STUDY.z1 + 1],          // right wall + bookcases
-    [STUDY.x0 - 1, STUDY.x1 + 1, STUDY.z1 - 0.02, STUDY.z1 + 1],          // front wall
-    [STAIR.x0 - 0.06, STAIR.x1 + 0.06, -0.6, STUDY.z1],                   // under the stairs
-    [Dk.x - 0.95, Dk.x + 0.95, Dk.z - 0.48, Dk.z + 0.48], [Dk.x - 0.27, Dk.x + 0.27, Dk.z + 0.5, Dk.z + 1.05],
-    [-4.1, -3.1, -5.7, -4.7], [-1.5, -0.5, -6.9, -5.9], [-2.75, -2.05, -6.35, -5.65], [-4.8, -4.4, -6.6, -6.2],
-    [0.86, 1.54, -4.34, -3.66], [-6.1, -5.5, 1.7, 2.4], [4.25, 4.95, STUDY.z0 + 0.42, STUDY.z0 + 1.0]
-  ];
   const DOOR_CLOSED = [DX0, DX1, D / 2 - 0.1, D / 2 + 0.1];
   const DOOR_OPEN = [DX0 - 0.06, DX0 + 0.08, D / 2 - DW - 0.05, D / 2];
   const inRect = (lx, lz, [x0, x1, z0, z1], p) => lx > x0 - p && lx < x1 + p && lz > z0 - p && lz < z1 + p;
@@ -512,11 +645,7 @@ export function createCabin({ scene, shared, U, camera }) {
       if (Math.abs(lx) > STUDY.x1 + 3 || lz < STUDY.z0 - 3 || lz > D / 2 + 4) return false;
       const p = 0.17 + pad / S, lv = levelOf(feetM(this));
       if (lv === 'stairs') return lx < STAIR.x0 + p || lx > STAIR.x1 - p || lz > STAIR.top + 0.05;
-      if (lv === 'study') {
-        if (!inStudy(lx, lz)) return true;
-        for (const r of SRECTS) if (inRect(lx, lz, r, p)) return true;
-        return false;
-      }
+      if (lv === 'study') return studyBlocked(lx, lz, p, feetM(this));
       if (Math.abs(lx) > W / 2 + 3 || lz < -D / 2 - 3) return false;
       for (const r of RECTS) if (inRect(lx, lz, r, p)) return true;
       if (door$.a < 0.5 ? inRect(lx, lz, DOOR_CLOSED, p) : inRect(lx, lz, DOOR_OPEN, p * 0.6)) return true;
@@ -531,7 +660,7 @@ export function createCabin({ scene, shared, U, camera }) {
       const fm = feetM(this), cand = [];
       if (inStair(lx, lz)) cand.push([rampY(lz), true]);
       else if (inHouse(lx, lz)) cand.push([0.12, true]);
-      if (inStudy(lx, lz)) cand.push([STUDY.floor, true]);
+      for (const h of studyFloors(lx, lz)) cand.push([h, true]);
       if (lx > -3.3 && lx < 3.4 && lz >= D / 2 + LR + 0.05 && lz < D / 2 + 2.4) cand.push([0.2, false]);
       if (lx > -2.25 && lx < -0.35 && lz > dz0 - 0.3 && lz < dz0 + dockLen) cand.push([0.24 - (lz - dz0) * 0.024, false]);
       if (!cand.length) return null;
