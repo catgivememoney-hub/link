@@ -8,6 +8,7 @@
 
    API used by settings.js:  window.MEOW_BG.setScene(name), setMotion('full'|'reduced'), start() */
 import * as THREE from 'three';
+import { createFish } from './fish.js';
 import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMaterial, Parts, CABIN, STUDY } from './props.js';
 
 (() => {
@@ -117,17 +118,22 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
           float s = hash(g);
           float star = step(0.9972, s) * smoothstep(0.02, 0.2, h);
           col += vec3(star * (0.55 + 0.45 * sin(uTime * 1.2 + s * 90.0))) * uStars;
-          // aurora ribbons
+          // aurora: curtains of light with a sharp lower edge, rays and slow folds
           if (uAurora > 0.001) {
-            float a = 0.0;
+            float az = atan(d.x, -d.z);
+            vec3 acc = vec3(0.0);
             for (int i = 0; i < 3; i++) {
               float fi = float(i);
-              float band = 0.30 + fi * 0.07 + sin(d.x * 2.6 + fi * 1.9 + uTime * 0.04 * (fi + 1.0)) * 0.07;
-              float w = exp(-pow((h - band) * 13.0, 2.0));
-              float curtain = 0.55 + 0.45 * sin(d.x * 22.0 + uTime * 0.25 + fi * 2.0);
-              a += w * curtain * (1.0 - fi * 0.25);
+              float base = 0.13 + fi * 0.055 + 0.05 * sin(az * 1.6 + fi * 2.1 + uTime * 0.03) + 0.025 * sin(az * 4.1 - uTime * 0.05 + fi * 1.7);
+              float above = h - base;
+              float shape = smoothstep(-0.012, 0.012, above) * exp(-max(above, 0.0) * (6.0 + fi * 2.5));
+              float rays = 0.55 + 0.45 * sin(az * 70.0 + sin(az * 6.0 + uTime * 0.15) * 4.0 + uTime * 0.35 + fi * 5.0);
+              rays *= 0.65 + 0.35 * sin(az * 23.0 - uTime * 0.21 + fi);
+              float folds = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(az * 2.6 + uTime * 0.05 * (fi + 1.0) + fi * 1.3), 2.0);
+              float a = shape * (0.3 + 0.7 * rays) * folds * (1.0 - fi * 0.2);
+              acc += mix(uAur1, uAur2, smoothstep(0.0, 0.16, above)) * a;
             }
-            col += mix(uAur1, uAur2, clamp(d.x * 0.6 + 0.5, 0.0, 1.0)) * a * uAurora * smoothstep(0.1, -0.6, d.z);
+            col += acc * uAurora * 1.9 * smoothstep(-0.35, 0.4, -d.z) * smoothstep(0.03, 0.09, h);
           }
           gl_FragColor = vec4(col, 1.0);
           #include <tonemapping_fragment>
@@ -144,7 +150,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   scene.fog = new THREE.FogExp2(0xcccccc, 0.004);
 
   /* ---------- terrain ---------- */
-  const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 }, uHole: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) } };
+  const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 }, uSand: { value: 0 }, uHole: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) } };
   const FAR = new THREE.Vector4(1e9, 1e9, 1e9, 1e9);
   const tGeo = new THREE.PlaneGeometry(2200, 1800, 300, 245);
   tGeo.rotateX(-Math.PI / 2);
@@ -163,7 +169,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y; vXZ = position.xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uLow, uHigh, uSnow; uniform float uSnowLine; uniform vec4 uHole; varying float vH; varying float vSlope; varying vec2 vXZ;
+        uniform vec3 uLow, uHigh, uSnow; uniform float uSnowLine, uSand; uniform vec4 uHole; varying float vH; varying float vSlope; varying vec2 vXZ;
         float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float tn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(th(i), th(i + vec2(1, 0)), f.x), mix(th(i + vec2(0, 1)), th(i + vec2(1, 1)), f.x), f.y); }`)
@@ -176,6 +182,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
         float d1 = tn(vXZ * 0.08), d2 = tn(vXZ * 0.45), d3 = tn(vXZ * 2.2);
         land *= 0.82 + 0.22 * d1 + 0.12 * d2 + 0.08 * d3;
         land = mix(land, land * vec3(0.92, 0.88, 0.84), smoothstep(0.35, 0.75, vSlope));   // rocky on slopes
+        // summer: a pale sandy beach where the land meets the water
+        float beach = (1.0 - smoothstep(1.2, 3.5, vH)) * smoothstep(-3.0, -0.5, vH) * uSand;
+        land = mix(land, vec3(0.93, 0.85, 0.66) * (0.9 + 0.12 * d3), beach);
         // snow: soft wind ripples and a faint cool tint in the hollows
         float drift = sin(vXZ.x * 0.55 + vXZ.y * 0.18 + d1 * 7.0) * 0.5 + 0.5;
         vec3 snowCol = uSnow * (0.93 + 0.05 * d2 + 0.04 * drift) * mix(vec3(0.94, 0.97, 1.0), vec3(1.0), d1);
@@ -291,7 +300,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       const cone = new THREE.ConeGeometry(r, h, 14, 3, true);
       shape(cone, false);
       cone.translate(0, base + h / 2, 0);
-      parts.add(cone, {
+      parts.add(cone, { mat: 13,
         color: (v) => {
           const up = (v.y - base) / h, rad = Math.min(1, Math.hypot(v.x, v.z) / r);
           const c = 0.55 + 0.5 * rad + 0.22 * up + 0.08 * (hash2(v.x * 9.1, v.z * 7.3 + v.y) - 0.5) + t * 0.03;
@@ -304,7 +313,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       const under = new THREE.ConeGeometry(r * 0.97, h * 0.38, 14, 1, true);
       shape(under, true);
       under.translate(0, base + h * 0.19 - 0.02, 0);
-      parts.add(under, {
+      parts.add(under, { mat: 13,
         flip: true,
         color: (v) => { const rad = Math.min(1, Math.hypot(v.x, v.z) / r); const c = 0.42 + 0.3 * rad; return [c * 0.95, c, c * 0.9]; },
         normal: (v, n) => n.set(v.x * 0.3, -1, v.z * 0.3).normalize()
@@ -312,14 +321,16 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       topY = base + h;
     }
     // the leader: a thin spike at the very top
-    parts.add(new THREE.ConeGeometry(0.05, 0.5, 5, 1, true).translate(0, topY + 0.18, 0), { color: () => [1.0, 1.02, 0.95], tip: () => 0.7 });
+    parts.add(new THREE.ConeGeometry(0.05, 0.5, 5, 1, true).translate(0, topY + 0.18, 0), { mat: 13, color: () => [1.0, 1.02, 0.95], tip: () => 0.7 });
     return parts.geometry();
   })();
   // the spots the home views look from stay clear of rocks and grass
   const CAM_SPOTS = [[0, 105], [0, 140], [-38, 112], [24, 78], [0, 92], [30, 102], [0, 125]].map(([x, z]) => ({ x, z, r: 42 }));
   const props = createProps({ scene, heightAt, U, snowColor: TU.uSnow, clear: CAM_SPOTS, camera });
   // trees share the snow cover with everything else (no moss or frost on the needles)
-  const treeMat = coverMaterial({ ...props.shared, uMoss: { value: 0 }, uFrost: props.shared.uSnowCover }, treeU.uTree, { sway: 0.022, color: 0x334033, snowBias: -0.3, crisp: true });
+  // seasons on the trees: autumn colours and bare trees, spring blossom, lush summer
+  const SEASON = { uFall: { value: 0 }, uBloom: { value: 0 }, uLush: { value: 0 }, uBare: { value: 0 } };
+  const treeMat = coverMaterial({ ...props.shared, ...SEASON, uMoss: { value: 0 }, uFrost: props.shared.uSnowCover }, treeU.uTree, { sway: 0.022, color: 0x334033, snowBias: -0.3, crisp: true, tree: true });
   const TREE_N = 1400;
   const treeBase = [];                  // base position, size, turn and shade of every tree
   const WHITE = new THREE.Color(1, 1, 1);
@@ -344,6 +355,9 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       m.compose(pos, q, s); trees.setColorAt(n, tint); trees.setMatrixAt(n++, m);
     }
     trees.count = n;
+    // every tree gets its own number: which ones go bare, blossom, or turn red / gold
+    const hs = new Float32Array(TREE_N); for (let i = 0; i < TREE_N; i++) hs[i] = hash2(i * 1.37, 9.1);
+    pineGeo.setAttribute('aHash', new THREE.InstancedBufferAttribute(hs, 1));
   }
   trees.castShadow = true;
   trees.receiveShadow = true;
@@ -385,7 +399,50 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   }
   fruits.castShadow = true;
   scene.add(fruits);
+  // fruit colours: grey most of the year, ripe red / orange / gold in summer
+  const FRUIT = { uFruitCol: { value: 0 } };
+  {
+    const pal = [0xc8402e, 0xe0782a, 0xd9b030, 0x9cba3a, 0xb8302a];
+    treeBase.forEach((b, i) => fruits.setColorAt(i, new THREE.Color(pal[i % pal.length])));
+    fruits.instanceColor.needsUpdate = true;
+    const prev = fruitMat.onBeforeCompile;
+    fruitMat.onBeforeCompile = (sh) => {
+      prev(sh);
+      Object.assign(sh.uniforms, FRUIT);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uFruitCol;')
+        .replace('#include <color_vertex>', `vColor = vec4(1.0);
+          #ifdef USE_COLOR
+            vColor.rgb *= color;
+          #endif
+          #ifdef USE_INSTANCING_COLOR
+            vColor.rgb *= mix(vec3(1.0), instanceColor.rgb * 1.5, uFruitCol);
+          #endif`);
+    };
+  }
+  // bare branches for the trees that lose their needles in autumn
+  const branchGeo = (() => {
+    const P = new Parts();
+    const twig = (y, a, len, tilt, r) => P.add(new THREE.CylinderGeometry(r * 0.35, r, len, 5).translate(0, len / 2, 0),
+      { m: new THREE.Matrix4().compose(new THREE.Vector3(0, y, 0), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, a, tilt, 'YXZ')), new THREE.Vector3(1, 1, 1)), color: () => [0.36, 0.28, 0.22] });
+    for (let i = 0; i < 16; i++) {
+      const y = 0.55 + i * 0.17, len = (1 - i / 18) * 0.9 + 0.12;
+      twig(y, i * 2.4, len, 1.1 + (i % 3) * 0.12, 0.03);
+      twig(y + 0.05, i * 2.4 + 0.9, len * 0.6, 0.8, 0.02);
+    }
+    return P.geometry();
+  })();
+  const branchShow = { value: 0 };
+  const branches = new THREE.InstancedMesh(branchGeo, coverMaterial({ ...props.shared, uMoss: { value: 0 }, uFrost: { value: 0 } }, branchShow, { sway: 0.018, color: 0xb8a898 }), trees.count);
+  {
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0), m = new THREE.Matrix4();
+    treeBase.forEach((b, i) => branches.setMatrixAt(i, hash2(i * 1.37, 9.1) < 0.45 ? m.compose(b.p, b.q, b.s) : zero));
+    branches.computeBoundingSphere();
+  }
+  branches.castShadow = true;
+  scene.add(branches);
   const ripples = createRipples(scene, U);
+  const fishing = createFish({ scene, camera, heightAt, water });
   const prints = createFootprints(scene, U);
 
   /* ---------- hand-held light: flashlight or warm lantern (F) ----------
@@ -546,6 +603,20 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       gl_Position = projectionMatrix * mv;
     }`, 0xf4f6f8, 3.2);
 
+  // autumn leaves drifting down, tumbling as they fall
+  const leafFall = pointsSystem(900, [90, 0, 60, -120, 40], /* glsl */`
+    uniform float uTime, uSize; attribute float aSeed; varying float vA;
+    void main() {
+      vec3 p = position;
+      p.y = mod(p.y - uTime * (1.2 + aSeed * 1.4), 60.0) - 8.0;
+      p.x += sin(uTime * 0.7 + aSeed * 40.0) * 3.0 + uTime * 0.8;
+      p.z += cos(uTime * 0.5 + aSeed * 23.0) * 2.0;
+      p.x = mod(p.x + 90.0, 180.0) - 90.0;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_PointSize = uSize * (0.6 + aSeed) * (60.0 / -mv.z) * (0.55 + 0.45 * abs(sin(uTime * 3.0 + aSeed * 30.0)));
+      vA = 0.9;
+      gl_Position = projectionMatrix * mv;
+    }`, 0xd27a2c, 4.2);
   const fireflies = pointsSystem(260, [160, 1, 14, -220, 30], /* glsl */`
     uniform float uTime, uSize; attribute float aSeed; varying float vA;
     void main() {
@@ -621,6 +692,39 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     }
   };
 
+  Object.assign(PRESETS, {
+    spring: {
+      sat: 0.78, skyTop: '#86acd2', skyHorizon: '#e4eef1', skyBottom: '#c9d8de', fog: '#dbe6e8', fogDensity: 0.0031,
+      low: '#6e8f55', high: '#8ea478', snowC: '#eef2f2', snowLine: 150, water: 0, waterC: '#6a95a6', waterRough: 0.18,
+      sunC: '#fff2d6', sunDir: V(0.4, 0.42, -1), sunSize: 0.0018, lightC: '#fff3df', light: 1.0, lightDir: V(0.4, 0.7, -0.3),
+      hemiSky: '#dde9f1', hemiGround: '#5a6c48', hemi: 0.9, treeC: '#4a7342', trees: 1,
+      rain: 0, snow: 0, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.2,
+      cam: V(-20, 12, 100), look: V(0, 12, -20), bloom: 1, flowers: 1, hives: 1, creek: 1, fishy: 0.3
+    },
+    summer: {
+      sat: 0.92, skyTop: '#3f86cf', skyHorizon: '#cde6f4', skyBottom: '#93c4d6', fog: '#cbe2ec', fogDensity: 0.0021,
+      low: '#5a8e42', high: '#7ba158', snowC: '#f2f4f4', snowLine: 210, water: 0, waterC: '#21b2b4', waterRough: 0.05,
+      sunC: '#fff5d8', sunDir: V(0.2, 0.62, -1), sunSize: 0.0026, lightC: '#fff6e4', light: 1.35, lightDir: V(0.3, 0.85, -0.3),
+      hemiSky: '#cbe6ff', hemiGround: '#4a6a38', hemi: 0.95, treeC: '#3d8a38', trees: 1,
+      rain: 0, snow: 0, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0,
+      cam: V(10, 11, 110), look: V(0, 10, -10), lush: 1, fruitCol: 1, sand: 1, creek: 0.7, flowers: 0.45, fishy: 0.4
+    },
+    fall: {
+      sat: 0.82, skyTop: '#7a93ab', skyHorizon: '#ead7bd', skyBottom: '#b8a38c', fog: '#d8c6ad', fogDensity: 0.0036,
+      low: '#7d6b44', high: '#92805b', snowC: '#efece6', snowLine: 175, water: 0, waterC: '#5c7380', waterRough: 0.2,
+      sunC: '#ffd7a4', sunDir: V(-0.5, 0.24, -1), sunSize: 0.002, lightC: '#ffdaa8', light: 0.95, lightDir: V(-0.5, 0.5, -0.4),
+      hemiSky: '#e5d4bd', hemiGround: '#5a4a34', hemi: 0.85, treeC: '#4c5a3a', trees: 1,
+      rain: 0, snow: 0, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.3,
+      cam: V(-30, 14, 105), look: V(0, 12, -30), fall: 1, bare: 0.4, leaves: 1, creek: 0.5
+    }
+  });
+  // brighter, livelier aurora; less blur in the night skies so the lights stay crisp
+  Object.assign(PRESETS.aurora, { aur1: '#57e0a4', aur2: '#a77de0', dof: 0.3 });
+  Object.assign(PRESETS.night, { dof: 0.6 });
+  PRESETS.rain.fishy = 1;
+  // values every scene has (0 unless a scene sets them)
+  const EXTRA = { fall: 0, bare: 0, bloom: 0, lush: 0, leaves: 0, flowers: 0, hives: 0, creek: 0, fishy: 0, sand: 0, fruitCol: 0, dof: 1 };
+  for (const name in PRESETS) PRESETS[name] = { ...EXTRA, ...PRESETS[name] };
   for (const name in PRESETS) SHOW_KEYS.forEach((k, i) => { PRESETS[name][k] = SHOW[name][i]; });
 
   // Which values are colours / vectors (everything else is a plain number).
@@ -671,6 +775,10 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
     hemi.color.copy(s.hemiSky); hemi.groundColor.copy(s.hemiGround); hemi.intensity = s.hemi * 1.6;
     treeMat.color.copy(s.treeC); treeU.uTree.value = s.trees; trees.visible = s.trees > 0.01; fruits.visible = trees.visible;
+    SEASON.uFall.value = s.fall; SEASON.uBloom.value = s.bloom; SEASON.uLush.value = s.lush; SEASON.uBare.value = s.bare;
+    FRUIT.uFruitCol.value = s.fruitCol; TU.uSand.value = s.sand;
+    branchShow.value = Math.min(1, s.bare * 2.5) * s.trees; branches.visible = branchShow.value > 0.01;
+    leafFall.material.uniforms.uOpacity.value = s.leaves * (1 - indoorK); leafFall.visible = s.leaves * (1 - indoorK) > 0.01;
     rainMat.uniforms.uOpacity.value = s.rain * (1 - indoorK); rain.visible = s.rain * (1 - indoorK) > 0.01;
     snow.material.uniforms.uOpacity.value = s.snow * (1 - indoorK); snow.visible = s.snow * (1 - indoorK) > 0.01;
     fireflies.material.uniforms.uOpacity.value = s.fire; fireflies.visible = s.fire > 0.01;
@@ -786,6 +894,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     // weather volumes follow the camera
     rain.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
     snow.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
+    leafFall.position.set(camera.position.x, camera.position.y - 20, camera.position.z);
     fireflies.position.set(cur.look.x * 0.3, water.position.y, cur.cam.z - 90);
   };
 
@@ -999,6 +1108,12 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
   });
   addEventListener('blur', () => { keys.clear(); look.inside = false; });
   document.addEventListener('mouseleave', () => { look.inside = false; });
+  // R: fishing — cast, reel in, or strike when a fish bites
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyR' || e.repeat || typing(e.target) || busy() || !ex.on || fly.on || e.metaKey || e.ctrlKey) return;
+    if (document.querySelector('.modal:not([hidden])')) return;
+    if (fishing.key(performance.now())) { e.preventDefault(); if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); } }
+  });
   // Space: jump (only out in the world)
   addEventListener('keydown', (e) => {
     if (e.code !== 'Space' || typing(e.target) || busy() || !ex.on || fly.on) return;
@@ -1156,6 +1271,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     if (wasClick) {
       const [cx, cy] = locked() ? centre() : [e.clientX, e.clientY];
       // the study's books, then the door, then trees
+      if (ex.on && fishing.click(performance.now())) return;
       if (ex.on && cur.pCabin > 0.5 && indoorK > 0.5 && props.cabin.study.click(rayAt(cx, cy), performance.now())) { wake(); return; }
       if (aimAtDoor(cx, cy)) { toggleDoor(); return; }
       // use the tree that is already lit up under the dot / mouse, so label and click always match
@@ -1376,6 +1492,11 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
       else if (look.x >= 0 && look.x < edge) ex.yawTo += 1.1 * frameDt * (edge - look.x) / edge;
     }
     updateDoor();
+    {
+      const [fx, fy] = locked() ? centre() : [hover.x, hover.y];
+      fishing.update(now, time, { active: ex.on && !fly.on && !busy(), ray: ex.on ? rayAt(fx, fy) : null, waterY: water.position.y, amount: cur.fishy, indoor: indoorK > 0.5 });
+      if (fishing.busy && !running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }
+    }
     props.cabin.feet = ex.on ? ex.ground - EYE : undefined;
     // lock the pointer as soon as the glide into the forest ends; let it go when you leave
     if (ex.on && !fly.on && fly.justLanded) { fly.justLanded = false; lockPointer(); }
@@ -1426,7 +1547,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     const shotPull = k < 1 ? Math.sin(Math.PI * ease(k)) * 6 : 0;          // focus breathes during scene changes
     const enter = full ? Math.max(0, 1 - (now - entranceAt) / 3600) : 0;    // entrance: from blur into focus
     const walk = smooth(0, 60, Math.hypot(ex.px, ex.pz));   // in the forest everything near you stays sharp
-    LU.uBlur.value = 2.6 * dpr * (1 + gal.focus * 2.6) * (1 - walk * 0.7);
+    LU.uBlur.value = 2.6 * dpr * (1 + gal.focus * 2.6) * (1 - walk * 0.7) * cur.dof;
     LU.uBand.value = 0.22 - gal.focus * 0.1 + walk * 0.12;
     LU.uPull.value = (shotPull * (full ? 1 : 0) + Math.pow(enter, 1.6) * 18 + gal.pulse * 3) * dpr;
     LU.uFlicker.value = full ? 0.012 : 0;
@@ -1527,6 +1648,7 @@ import { createProps, createRipples, createFootprints, SHOW, SHOW_KEYS, coverMat
     home() {
       unlockPointer();
       props.cabin.study.reset(performance.now());
+      fishing.reset();
       const turns = Math.round(ex.yaw / (Math.PI * 2)) * Math.PI * 2; ex.yaw -= turns; ex.yawTo -= turns;
       fly.on = false; ex.homing = true; ex.yawTo = 0; ex.pitchTo = 0; keys.clear();
       if (!running && started) { running = true; tempRun = true; requestAnimationFrame(frame); }

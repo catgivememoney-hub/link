@@ -926,3 +926,48 @@ html.exploring.pl.on-book .aim-dot { transform: scale(1.5); }
 .book-page .bp-right img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 3px; box-shadow: 0 2px 10px rgba(60, 40, 10, 0.35); opacity: 0; transition: opacity 0.5s; filter: sepia(0.12) saturate(0.95); }
 .book-page .bp-right img.ready { opacity: 1; }
 .book-page .bp-wait { position: absolute; font-size: 12px; opacity: 0.6; }
+
+/* =====================================================================
+   SIDEBAR ORGANISING — tag row that folds, view + order, groups, pins
+   ===================================================================== */
+.tags-wrap { display: grid; gap: 4px; }
+.tags.folded { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-mask: linear-gradient(90deg, #000 85%, transparent); mask: linear-gradient(90deg, #000 85%, transparent); }
+.tags.folded::-webkit-scrollbar { display: none; }
+.tags .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.chip-n { font-style: normal; font-size: 0.66rem; opacity: 0.55; font-variant-numeric: tabular-nums; }
+.tags-more { justify-self: start; font-size: 0.7rem; letter-spacing: 0.06em; opacity: 0.6; padding: 2px 4px; }
+.tags-more:hover { opacity: 1; }
+.side-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.seg.mini button { height: 24px; padding: 0 10px; font-size: 0.72rem; }
+.sort { height: 28px; padding: 0 26px 0 12px; border-radius: 999px; border: 1px solid var(--hair); background: transparent; color: var(--ink); font: inherit; font-size: 0.74rem; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='M8 10l4 4 4-4' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; }
+.group-head { list-style: none; margin: 10px 0 2px; }
+.group-head button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.72; border-radius: 8px; }
+.group-head button:hover { opacity: 1; background: var(--hair); }
+.group-head button svg { transition: transform 0.3s var(--ease); }
+.group-head.folded button svg { transform: rotate(-90deg); }
+.group-head i { margin-left: auto; font-style: normal; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.row .pin { opacity: 0.45; }
+.row .pin.on { opacity: 1; }
+.row .pin.on svg path { fill: currentColor; }
+
+/* Settings: the risky things live behind "Advanced" */
+.advanced summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75; padding: 4px 0; }
+.advanced summary::-webkit-details-marker { display: none; }
+.advanced summary svg { transition: transform 0.3s var(--ease); }
+.advanced[open] summary svg { transform: rotate(180deg); }
+.advanced[open] summary { margin-bottom: 10px; }
+.advanced .danger-h { margin-top: 18px; }
+.btn.danger { border: 1px solid rgba(180, 60, 50, 0.5); color: #c0503f; background: transparent; }
+.btn.danger:hover { background: rgba(180, 60, 50, 0.1); }
+
+/* fishing hint (bottom centre, above the walking hints) */
+.fish-hint {
+  position: fixed; left: 50%; bottom: 158px; z-index: 31; transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+  padding: 7px 16px; border-radius: 999px; font-size: 0.78rem; letter-spacing: 0.08em; color: var(--ink);
+  background: var(--glass); border: 1px solid var(--glass-line); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  transition: opacity 0.3s, transform 0.4s var(--ease);
+}
+.fish-hint.show { opacity: 1; transform: translate(-50%, 0); }
+.fish-hint.hot { animation: fishHot 0.5s ease-in-out infinite alternate; font-weight: 600; }
+@keyframes fishHot { from { transform: translate(-50%, 0) scale(1); } to { transform: translate(-50%, 0) scale(1.08); } }

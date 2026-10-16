@@ -98,16 +98,38 @@
   /* ---------- rendering ---------- */
   const all = () => links;
 
+  /* ---------- organising: view (list / groups), order, pinned links, folded groups ---------- */
+  const ORG_KEY = 'meow.org';
+  const org = (() => { try { return { view: 'list', sort: 'added', pins: [], folded: [], tagsOpen: false, ...JSON.parse(localStorage.getItem(ORG_KEY) || '{}') }; } catch { return { view: 'list', sort: 'added', pins: [], folded: [], tagsOpen: false }; } })();
+  const saveOrg = () => { try { localStorage.setItem(ORG_KEY, JSON.stringify(org)); } catch { /* ignore */ } };
+  const pinned = (l) => org.pins.includes(l.url);
+  const togglePin = (l) => { org.pins = pinned(l) ? org.pins.filter((u) => u !== l.url) : [...org.pins, l.url]; saveOrg(); render(); };
+  const sorted = (arr) => {
+    const a = arr.slice();
+    if (org.sort === 'az') a.sort((x, y) => x.title.localeCompare(y.title));
+    else if (org.sort === 'site') a.sort((x, y) => host(x.url).localeCompare(host(y.url)) || x.title.localeCompare(y.title));
+    return a;
+  };
+
   const renderTags = () => {
     const box = $('tags');
     box.replaceChildren();
-    const tags = ['all', ...new Set(all().map((l) => l.tag).filter(Boolean))];
+    const counts = new Map();
+    all().forEach((l) => { if (l.tag) counts.set(l.tag, (counts.get(l.tag) || 0) + 1); });
+    // most used tags first, so the useful ones are always visible
+    const tags = ['all', ...[...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b))];
     if (!tags.includes(activeTag)) activeTag = 'all';
+    // many tags: show one row and a "more" button that opens the rest
+    const many = tags.length > 6;
+    box.classList.toggle('folded', many && !org.tagsOpen);
+    $('tagsMore').hidden = !many;
+    $('tagsMore').textContent = org.tagsOpen ? t('lessTags') : t('moreTags', { n: tags.length - 1 });
     tags.forEach((tag) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'chip' + (tag === activeTag ? ' active' : '');
       b.textContent = tag === 'all' ? t('all') : '#' + tag;
+      if (tag !== 'all') { const n = document.createElement('i'); n.className = 'chip-n'; n.textContent = counts.get(tag); b.appendChild(n); }
       // choosing a category also opens the 3D gallery for it
       b.addEventListener('click', () => { activeTag = tag; render(); if (window.MEOW_GALLERY) window.MEOW_GALLERY.open(tag); });
       box.appendChild(b);
@@ -242,17 +264,64 @@
     cp.addEventListener('click', () => copy(l.url, t('copied')));
     actions.appendChild(cp);
 
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'icon tiny pin' + (pinned(l) ? ' on' : '');
+    pin.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.4 7.2 18.9l.9-5.4-3.9-3.8 5.4-.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    pin.setAttribute('aria-label', (pinned(l) ? t('unpin') : t('pin')) + ': ' + l.title);
+    pin.title = pinned(l) ? t('unpin') : t('pin');
+    pin.addEventListener('click', () => togglePin(l));
+    actions.appendChild(pin);
+
     return row;
+  };
+
+  // a foldable group heading in the list
+  const groupHead = (key, label, n) => {
+    const li = document.createElement('li');
+    li.className = 'group-head' + (org.folded.includes(key) ? ' folded' : '');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const s1 = document.createElement('span'); s1.textContent = label;
+    const s2 = document.createElement('i'); s2.textContent = n;
+    b.append(s1, s2);
+    b.setAttribute('aria-expanded', String(!org.folded.includes(key)));
+    b.addEventListener('click', () => { org.folded = org.folded.includes(key) ? org.folded.filter((k) => k !== key) : [...org.folded, key]; saveOrg(); render(); });
+    li.appendChild(b);
+    return li;
   };
 
   const render = () => {
     renderTags();
+    $('viewSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === org.view)));
+    $('sortSel').value = org.sort;
     const q = $('search').value.trim().toLowerCase();
-    const list = all()
+    const list = sorted(all()
       .filter((l) => activeTag === 'all' || l.tag === activeTag)
-      .filter((l) => !q || (l.title + ' ' + l.url + ' ' + l.tag).toLowerCase().includes(q));
+      .filter((l) => !q || (l.title + ' ' + l.url + ' ' + l.tag).toLowerCase().includes(q)));
     hidePreview();
-    $('list').replaceChildren(...list.map(card));
+    const rows = [];
+    let i = 0;
+    const pins = list.filter(pinned), rest = list.filter((l) => !pinned(l));
+    // pinned links always sit on top
+    if (pins.length) {
+      rows.push(groupHead('★', '★ ' + t('pinned'), pins.length));
+      if (!org.folded.includes('★')) pins.forEach((l) => rows.push(card(l, i++)));
+    }
+    if (org.view === 'groups') {
+      const groups = new Map();
+      rest.forEach((l) => { const k = l.tag || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l); });
+      [...groups.keys()].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b)).forEach((k) => {
+        const g = groups.get(k);
+        rows.push(groupHead('#' + k, k ? '#' + k : t('untagged'), g.length));
+        if (!org.folded.includes('#' + k)) g.forEach((l) => rows.push(card(l, i++)));
+      });
+    } else {
+      if (pins.length && rest.length) rows.push(groupHead('·', t('all'), rest.length));
+      if (!(pins.length && org.folded.includes('·'))) rest.forEach((l) => rows.push(card(l, i++)));
+    }
+    $('list').replaceChildren(...rows);
     $('empty').hidden = list.length > 0;
     $('count').textContent = list.length;
   };
@@ -349,6 +418,9 @@
     initSidebar();
     $('addForm').addEventListener('submit', addLink);
     $('search').addEventListener('input', render);
+    $('viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; org.view = b.dataset.val; saveOrg(); render(); });
+    $('sortSel').addEventListener('change', (e) => { org.sort = e.target.value; saveOrg(); render(); });
+    $('tagsMore').addEventListener('click', () => { org.tagsOpen = !org.tagsOpen; saveOrg(); render(); });
     $('editBtn').href = editUrl();
     $('exportBtn').addEventListener('click', exportJson);
     addEventListener('scroll', hidePreview, { passive: true });

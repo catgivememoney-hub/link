@@ -16,11 +16,14 @@ export const SHOW = {
   snow:   [   1,    1,   0,    0.3,  0.45, 1,   0.6,  0,     0,     0,      1,    1,    0   ],
   night:  [   1,    1,   0.9,  1,    1,    1,   1,    0,     0,     0,      0,    0,    0.5 ],
   aurora: [   1,    1,   0,    0.6,  0.6,  1,   1,    1,     0,     0,      0.8,  0.75, 0   ],
-  ocean:  [   1,    0,   0,    0.7,  0,    0,   0,    0,     1,     0,      0,    0,    0.3 ]
+  ocean:  [   1,    0,   0,    0.7,  0,    0,   0,    0,     1,     0,      0,    0,    0.3 ],
+  spring: [   1,    1,   1,    1,    1,    1,   0.3,  0,     0,     0,      0,    0,    0.5 ],
+  summer: [   1,    1,   0.8,  1,    0.7,  1,   0.2,  0,     0,     0,      0,    0,    0.2 ],
+  fall:   [   1,    1,   0.6,  0.8,  0.9,  1,   0.5,  0,     0,     0,      0,    0,    0.4 ]
 };
 export const SHOW_KEYS = ['pRocks', 'pLogs', 'pFerns', 'pGrass', 'pReeds', 'pCabin', 'pGlow', 'pStones', 'pStacks', 'pRipples', 'pFrost', 'pSnowCover', 'pMoss'];
 
-import { mulberry, h3, n3, Parts, M, coverMaterial } from './kit.js';
+import { mulberry, h3, n3, Parts, M, coverMaterial, kind } from './kit.js';
 import { createCabin, CABIN } from './cabin.js';
 export { CABIN };
 export { STUDY } from './study.js';
@@ -37,6 +40,9 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
     uSnowC: snowColor, uMossC: { value: new THREE.Color('#4f6a3c') }
   };
   const show = {}; SHOW_KEYS.forEach((k) => { show[k] = { value: 0 }; });
+  // season-only things (amounts come straight from the scene values)
+  const SEASON_KEYS = ['leaves', 'flowers', 'hives', 'creek'];
+  SEASON_KEYS.forEach((k) => { show[k] = { value: 0 }; });
   const groups = [];          // [mesh, key]
   const solids = [];          // things you can't walk through: {x, z, r, key}
   const zones = [];           // clearings where no trees grow: {x, z, r}
@@ -285,7 +291,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
     parts.tris(pts, (v) => { const k = v.y / top; return [shade[0] * (0.55 + 0.6 * k), shade[1] * (0.55 + 0.6 * k), shade[2] * (0.55 + 0.6 * k)]; }, (v) => Math.pow(v.y / top, 1.5), new THREE.Vector3(0, 1, 0));
     return parts;
   };
-  const grassGeo = tuft(11, 0.9, 1.8, 0.55, 0.07, [0.62, 0.72, 0.42]).geometry();
+  const grassGeo = tuft(11, 0.9, 1.8, 0.55, 0.07, [0.48, 0.6, 0.3]).geometry();
   const reedParts = tuft(9, 3.2, 5.5, 0.5, 0.06, [0.6, 0.66, 0.42]);
   [[0.15, 0.1], [-0.2, 0.25], [0.05, -0.3]].forEach(([x, z], i) => {
     const h = 4.6 + i * 0.5;
@@ -311,10 +317,166 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
         pts.push(c0, [cm[0] - lx, cm[1] - 0.06, cm[2] - lz], c1);
       }
     }
-    parts.tris(pts, (v) => { const r = Math.hypot(v.x, v.z) / 2.3; return [0.6 + r * 0.3, 0.74 + r * 0.32, 0.42 + r * 0.16]; }, (v) => Math.hypot(v.x, v.z) / 2.3, new THREE.Vector3(0, 1, 0));
+    parts.tris(pts, (v) => { const r = Math.hypot(v.x, v.z) / 2.3; return [0.36 + r * 0.22, 0.52 + r * 0.26, 0.26 + r * 0.12]; }, (v) => Math.hypot(v.x, v.z) / 2.3, new THREE.Vector3(0, 1, 0));
     return parts.geometry();
   })();
   const plantMat = (key, sway) => coverMaterial(shared, show[key], { sway, side: THREE.DoubleSide, color: 0xffffff, snowBias: -1, softBack: true });
+
+  /* ===== seasons: leaf piles (autumn), flowers, beehives and a creek (spring / summer) ===== */
+  let creekMesh = null, creekMat = null, bees = null;
+  const plantSeasons = (treeBase, inZone, near) => {
+    // --- autumn leaf piles: low, bumpy mounds of red, orange and gold leaves
+    const pileGeo = (() => {
+      const P = new Parts();
+      const g = new THREE.SphereGeometry(1, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2);
+      const pos = g.attributes.position, v = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i); const k = 1 + (n3(v.x * 3, v.y * 3, v.z * 3) - 0.5) * 0.4; pos.setXYZ(i, v.x * k, v.y * 0.32 * k, v.z * k); }
+      g.computeVertexNormals();
+      const pal = [[0.86, 0.42, 0.1], [0.72, 0.18, 0.08], [0.92, 0.68, 0.16], [0.55, 0.3, 0.12]];
+      P.add(g, { color: (p) => { const c = pal[Math.floor(n3(p.x * 6, p.y * 6, p.z * 6) * 3.99)]; const k = 0.7 + n3(p.x * 20, 0, p.z * 20) * 0.5; return [c[0] * k, c[1] * k, c[2] * k]; } });
+      // single leaves lying on top
+      for (let i = 0; i < 26; i++) {
+        const a = R() * 6.28, r = Math.sqrt(R()) * 1.15, c = pal[i % 4];
+        P.add(new THREE.PlaneGeometry(0.16, 0.1), { m: M(Math.cos(a) * r, 0.33 * (1 - r * r * 0.6) + 0.02, Math.sin(a) * r, -Math.PI / 2 + rr(-0.4, 0.4), R() * 6, 0), color: () => c });
+      }
+      return P.geometry();
+    })();
+    const piles = [];
+    for (let tries = 0; piles.length < 320 && tries < 6000; tries++) {
+      const b = treeBase[Math.floor(R() * treeBase.length)]; if (!b) break;
+      const a = R() * 6.28, d = rr(2, 9), x = b.p.x + Math.cos(a) * d, z = b.p.z + Math.sin(a) * d, h = heightAt(x, z);
+      if (h < 1 || h > 70 || inZone(x, z)) continue;
+      const k = rr(1.4, 3.2);
+      piles.push({ p: new THREE.Vector3(x, h - 0.1, z), q: groundQ(x, z, R() * 6.28, 0.8), s: new THREE.Vector3(k, k * rr(0.8, 1.3), k * rr(0.7, 1.1)) });
+    }
+    instanced(pileGeo, coverMaterial(shared, show.leaves, { side: THREE.DoubleSide, softBack: true, snowBias: -1 }), piles, 'leaves');
+
+    // --- spring flowers: little clumps in three colours
+    const flowerGeo = (petal, centre) => {
+      const P = new Parts();
+      for (let f = 0; f < 6; f++) {
+        const a = R() * 6.28, r = R() * 0.5, x = Math.cos(a) * r, z = Math.sin(a) * r, h = rr(0.35, 0.7);
+        P.add(new THREE.CylinderGeometry(0.012, 0.016, h, 4).translate(0, h / 2, 0), { m: M(x, 0, z), color: () => [0.32, 0.5, 0.24], tip: () => 0 });
+        for (let p = 0; p < 5; p++) {
+          const pa = p / 5 * 6.28 + a;
+          P.add(new THREE.SphereGeometry(0.06, 6, 4), { m: M(x + Math.cos(pa) * 0.06, h, z + Math.sin(pa) * 0.06, 0, -pa, 0, 1.3, 0.3, 0.7), color: () => petal, tip: () => 1 });
+        }
+        P.add(new THREE.SphereGeometry(0.035, 6, 4), { m: M(x, h + 0.015, z), color: () => centre, tip: () => 1 });
+        P.add(new THREE.PlaneGeometry(0.14, 0.05), { m: M(x + 0.04, h * 0.4, z, 0, a, 0.5), color: () => [0.34, 0.55, 0.26], tip: () => 0 });
+      }
+      return P.geometry();
+    };
+    const fMat = coverMaterial(shared, show.flowers, { sway: 0.08, side: THREE.DoubleSide, softBack: true, snowBias: -1 });
+    [[[0.92, 0.45, 0.62], [0.95, 0.85, 0.3]], [[0.96, 0.84, 0.25], [0.7, 0.45, 0.15]], [[0.72, 0.68, 0.95], [0.98, 0.95, 0.6]], [[0.98, 0.97, 0.95], [0.95, 0.8, 0.25]]].forEach(([petal, centre], vi) => {
+      const list = [];
+      for (let tries = 0; list.length < 520 && tries < 30000; tries++) {
+        const x = rr(-420, 420), z = rr(-420, 190), h = heightAt(x, z);
+        if (h < 1 || h > 55 || inZone(x, z) || !clearOf(x, z) || near(x, z, 3)) continue;
+        if (n3(x * 0.025 + vi * 3, 1, z * 0.025) < 0.5) continue;      // in drifts, like real meadows
+        const k = rr(1.6, 2.6);
+        list.push({ p: new THREE.Vector3(x, h - 0.05, z), q: groundQ(x, z, R() * 6.28, 0.5), s: new THREE.Vector3(k, k, k) });
+      }
+      instanced(flowerGeo(petal, centre), fMat, list, 'flowers');
+    });
+
+    // --- beehives by the cabin (painted boxes on a stand)
+    const hiveGeo = (() => {
+      const P = new Parts();
+      const wood = kind('wood', (v) => { const c = 0.5 + n3(v.x * 6, v.y * 6, v.z * 6) * 0.12; return [c, c * 0.8, c * 0.58]; });
+      [[-0.22, -0.18], [0.22, -0.18], [-0.22, 0.18], [0.22, 0.18]].forEach(([x, z]) => P.add(new THREE.BoxGeometry(0.06, 0.4, 0.06), { m: M(x, 0.2, z), color: wood }));
+      P.add(new THREE.BoxGeometry(0.58, 0.06, 0.5), { m: M(0, 0.42, 0), color: wood });
+      const paint = [[0.92, 0.9, 0.84], [0.86, 0.82, 0.62], [0.78, 0.86, 0.84]];
+      for (let i = 0; i < 3; i++) P.add(new THREE.BoxGeometry(0.5, 0.24, 0.44), { m: M(0, 0.57 + i * 0.245, 0), color: () => paint[i] });
+      P.add(new THREE.BoxGeometry(0.56, 0.05, 0.5), { m: M(0, 1.3, 0), color: () => [0.6, 0.58, 0.55] });
+      [-1, 1].forEach((k) => P.add(new THREE.BoxGeometry(0.34, 0.03, 0.54), { m: M(k * 0.14, 1.38, 0, 0, 0, -k * 0.5), color: () => [0.45, 0.42, 0.4] }));
+      P.add(new THREE.BoxGeometry(0.22, 0.03, 0.02), { m: M(0, 0.49, 0.225), color: () => [0.08, 0.06, 0.05] });     // entrance
+      P.add(new THREE.BoxGeometry(0.3, 0.02, 0.1), { m: M(0, 0.46, 0.27, 0.25, 0, 0), color: wood });                 // landing board
+      return P.geometry();
+    })();
+    const hives = [], beeSpots = [];
+    [[-5.6, -0.6], [-5.6, 0.9], [-5.6, 2.4]].forEach(([lx, lz]) => {
+      const x = CABIN.x - lz * CABIN.S, z = CABIN.z + lx * CABIN.S, h = heightAt(x, z);
+      hives.push({ p: new THREE.Vector3(x, h, z), q: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI + 0.1), s: new THREE.Vector3(CABIN.S, CABIN.S, CABIN.S) });
+      solids.push({ x, z, r: 2.8, key: 'hives' });
+      beeSpots.push(x, h + 4.5, z);
+    });
+    instanced(hiveGeo, coverMaterial(shared, show.hives, { rich: true, grain: 0.02 }), hives, 'hives', { cast: true });
+    // a few bees busy around the hives
+    {
+      const N = 60, g = new THREE.BufferGeometry(), pos = new Float32Array(N * 3), seed = new Float32Array(N);
+      for (let i = 0; i < N; i++) { const k = i % 3; pos.set([beeSpots[k * 3], beeSpots[k * 3 + 1], beeSpots[k * 3 + 2]], i * 3); seed[i] = R(); }
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+      const mat = new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false,
+        uniforms: { uTime: U.uTime, uOpacity: { value: 0 } },
+        vertexShader: `uniform float uTime; attribute float aSeed; varying float vB;
+          void main() {
+            float t = uTime * (1.2 + aSeed) + aSeed * 40.0;
+            vec3 p = position + vec3(sin(t * 1.3) * (1.5 + aSeed * 4.0), sin(t * 2.1) * 1.2 + cos(t * 0.7) * 1.5, cos(t * 1.1) * (1.5 + aSeed * 4.0));
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_PointSize = 26.0 / -mv.z; vB = aSeed;
+            gl_Position = projectionMatrix * mv;
+          }`,
+        fragmentShader: `uniform float uOpacity; varying float vB;
+          void main() { vec2 q = gl_PointCoord - 0.5; float d = length(q); if (d > 0.5) discard;
+            vec3 c = mix(vec3(0.12, 0.1, 0.06), vec3(0.95, 0.75, 0.2), step(0.0, sin(q.x * 30.0)));
+            gl_FragColor = vec4(c, uOpacity * smoothstep(0.5, 0.35, d)); }`
+      });
+      bees = new THREE.Points(g, mat); bees.frustumCulled = false; scene.add(bees);
+    }
+
+    // --- a creek running down from the hills into the lake
+    const path = [];
+    {
+      let x = -275, z = -30, dx = 1, dz = 0;
+      for (let i = 0; i < 260; i++) {
+        const h = heightAt(x, z);
+        path.push([x, z]);
+        if (h < -0.6) break;
+        const e = 2, gx = heightAt(x + e, z) - heightAt(x - e, z), gz = heightAt(x, z + e) - heightAt(x, z - e);
+        const tl = Math.hypot(-x, -20 - z) || 1;
+        let nx = dx * 0.7 - gx * 0.6 + (-x / tl) * 0.25 + (n3(i * 0.1, 3, 1) - 0.5) * 0.5, nz = dz * 0.7 - gz * 0.6 + ((-20 - z) / tl) * 0.25 + (n3(i * 0.1, 7, 2) - 0.5) * 0.5;
+        const l = Math.hypot(nx, nz) || 1; dx = nx / l; dz = nz / l;
+        x += dx * 4; z += dz * 4;
+      }
+    }
+    if (path.length > 4) {
+      const pos = [], uv = [], idx = [];
+      let along = 0;
+      path.forEach(([x, z], i) => {
+        const [px, pz] = path[Math.max(0, i - 1)], [qx, qz] = path[Math.min(path.length - 1, i + 1)];
+        let tx = qx - px, tz = qz - pz; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+        const w = 3.0 + 3.6 * Math.min(1, i / 25) + Math.sin(i * 0.4) * 0.8;   // starts as a trickle, widens
+        const lx = x - tz * w, lz = z + tx * w, rx = x + tz * w, rz = z - tx * w;
+        const y = Math.max(heightAt(lx, lz), heightAt(rx, rz), heightAt(x, z)) + 0.32;
+        if (i) along += Math.hypot(x - path[i - 1][0], z - path[i - 1][1]);
+        pos.push(lx, y, lz, rx, y, rz); uv.push(0, along / 10, 1, along / 10);
+        if (i) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+      creekMat = new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false, fog: true, side: THREE.DoubleSide,
+        uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uOpacity: { value: 0 }, uColor: { value: new THREE.Color(0x6a95a6) } }]),
+        vertexShader: ['varying vec2 vUv;', '#include <fog_pars_vertex>', 'void main() {', '  vUv = uv; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;', '  #include <fog_vertex>', '}'].join('\n'),
+        fragmentShader: ['uniform float uTime, uOpacity; uniform vec3 uColor; varying vec2 vUv;', '#include <fog_pars_fragment>',
+          'float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+          'float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }',
+          'void main() {',
+          '  float edge = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x);',
+          '  float flow = n(vec2(vUv.x * 5.0, vUv.y * 6.0 - uTime * 1.6)) * 0.6 + n(vec2(vUv.x * 11.0, vUv.y * 14.0 - uTime * 2.4)) * 0.4;',
+          '  float foam = smoothstep(0.8, 0.95, flow) * 0.45;',
+          '  vec3 col = mix(uColor * (0.55 + 0.25 * flow), vec3(0.85, 0.92, 0.93), foam) * mix(0.75, 1.0, edge);',
+          '  gl_FragColor = vec4(col, uOpacity * (0.35 + 0.55 * edge));',
+          '  #include <colorspace_fragment>', '  #include <fog_fragment>', '}'].join('\n')
+      });
+      creekMat.uniforms.uTime = U.uTime;
+      creekMesh = new THREE.Mesh(g, creekMat); creekMesh.renderOrder = 1;
+      add(creekMesh, 'creek', { receive: false });
+      creekPath = path;
+    }
+  };
+  let creekPath = null;
 
   return {
     shared, show, groups, solids, zones, cabinAt, circleAt, cabin,
@@ -402,10 +564,14 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [], camera 
         reeds.push({ p: new THREE.Vector3(x, h - 0.2, z), q: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), R() * 6.28), s: new THREE.Vector3(k, k * rr(0.8, 1.2), k) });
       }
       instanced(reedGeo, plantMat('pReeds', 0.012), reeds, 'pReeds');
+      plantSeasons(treeBase, inZone, near);
     },
     // per frame: s = the current (cross-faded) scene values
     update(s, time, camPos, waterY) {
       for (const k of SHOW_KEYS) show[k].value = s[k];
+      for (const k of SEASON_KEYS) show[k].value = s[k] || 0;
+      if (creekMesh) { creekMat.uniforms.uOpacity.value = Math.min(1, (s.creek || 0) * 1.2); creekMat.uniforms.uColor.value.copy(s.waterC).lerp(new THREE.Color(0.32, 0.52, 0.56), 0.5); }
+      if (bees) { bees.material.uniforms.uOpacity.value = s.hives || 0; bees.visible = (s.hives || 0) > 0.05; }
       shared.uSnowCover.value = s.pSnowCover; shared.uMoss.value = s.pMoss; shared.uFrost.value = s.pFrost;
       for (const [obj, key] of groups) obj.visible = s[key] > 0.01;
       cabin.update(s, time, performance.now(), waterY);

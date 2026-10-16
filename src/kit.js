@@ -81,7 +81,7 @@ export const M = (x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, 
   new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ')), new THREE.Vector3(sx, sy, sz));
 
 /* ---------- the shared material: grows with the scene, sways, gets moss / snow / frost ---------- */
-export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, color = 0xffffff, snowBias = 0, sink = 0, softBack = false, crisp = false, snowMask = false, grain = 0, rich = false, indoor = false } = {}) => {
+export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, color = 0xffffff, snowBias = 0, sink = 0, softBack = false, crisp = false, snowMask = false, grain = 0, rich = false, indoor = false, tree = false } = {}) => {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side, color });
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, { uShow: show });
@@ -89,7 +89,8 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
       .replace('#include <common>', `#include <common>
         uniform float uShow, uTime, uSnowCover, uMoss, uFrost;
         attribute float aTip; attribute float aMat;
-        varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj; varying float vMat; varying vec3 vObjN;`)
+        varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj; varying float vMat; varying vec3 vObjN;
+        ${tree ? 'attribute float aHash; uniform float uBare; varying float vHash; varying float vLeaf;' : ''}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vObj = position; vMat = aMat; vObjN = objectNormal;
         mat4 cIM = mat4(1.0);
@@ -109,6 +110,10 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         ${sway ? `float sd = cIP.x * 0.071 + cIP.z * 0.053;
         float sw = (sin(uTime * 1.3 + sd) + 0.45 * sin(uTime * 3.1 + sd * 1.7)) * ${sway.toFixed(4)} * position.y * position.y;
         transformed.x += sw; transformed.z += sw * 0.7;` : ''}
+        ${tree ? `vHash = aHash; vLeaf = step(12.5, aMat);
+        // autumn: some trees drop all their needles (only trunk and branches stay)
+        float bare = step(aHash, uBare) * vLeaf;
+        transformed.xz *= 1.0 - bare * 0.985;` : ''}
         ${sink ? `transformed.y -= (1.0 - uShow) * ${sink.toFixed(1)};` : 'transformed *= uShow;'}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -121,7 +126,11 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         float grainH(vec3 p) { return gN(vec3(p.x * 1.3 + p.z * 0.4, p.y * 24.0, p.z * 1.3)) * 0.65 + gN(p * 11.0) * 0.35; }
         ${rich ? RICH_GLSL : ''}
         varying float vMat; varying vec3 vObjN;
-        float gRichH = 0.0; float gAO = 1.0;`)
+        float gRichH = 0.0; float gAO = 1.0;
+        ${tree ? `uniform float uFall, uBloom, uLush; varying float vHash; varying float vLeaf;
+        vec3 autumn(float h) {
+          return h < 0.25 ? vec3(0.86, 0.42, 0.1) : h < 0.5 ? vec3(0.72, 0.16, 0.08) : h < 0.75 ? vec3(0.92, 0.7, 0.16) : vec3(0.55, 0.3, 0.12);
+        }` : ''}`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
         ${softBack ? '#ifdef DOUBLE_SIDED\n normal *= faceDirection;\n #endif' : ''}
         ${rich ? `{
@@ -141,6 +150,17 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
           normal = normalize(abs(fDet) * normal - vGrad);
         }` : ''}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        ${tree ? `{
+          // seasons on the needles: summer lush green, spring blossom, autumn colours
+          float shade = clamp(dot(vColor.rgb, vec3(0.33)), 0.2, 1.6);
+          vec3 c = diffuseColor.rgb;
+          c = mix(c, c * vec3(0.78, 1.45, 0.62) * 1.25, uLush * vLeaf);
+          vec3 blossom = mix(vec3(0.98, 0.72, 0.8), vec3(0.98, 0.95, 0.92), step(0.86, vHash));
+          c = mix(c, c * vec3(0.95, 1.3, 0.8), uBloom * vLeaf * 0.6);
+          c = mix(c, blossom * shade * 0.75, uBloom * vLeaf * step(0.7, vHash));
+          c = mix(c, autumn(fract(vHash * 7.31)) * shade * 0.8, uFall * vLeaf);
+          diffuseColor.rgb = c;
+        }` : ''}
         ${rich ? 'gRichH = richSurface(int(vMat + 0.5), vObj, vObjN, diffuseColor.rgb);' : grain ? 'diffuseColor.rgb *= 0.84 + 0.3 * grainH(vObj);' : ''}
         ${indoor ? `{
           // soft shadow in the corners: near the floor, under the ceiling, along the walls

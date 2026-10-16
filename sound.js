@@ -201,8 +201,36 @@
     fx(0.9, [['bandpass', 700, 0.6]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.12 * v, t + 0.35); g.exponentialRampToValueAtTime(0.0001, t + 0.9); });
   };
 
+  // water: a fish surfacing, the float landing, a bite, a catch
+  const plop = (k = 1) => {
+    if (!ready()) return;
+    const v = vol() * k, t = ac.currentTime + 0.01, f0 = rand(380, 620);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 2.2, t + 0.07);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.09 * v, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.14);
+    fx(0.18, [['bandpass', 1200, 1]], (gg, tt) => { gg.setValueAtTime(0, tt); gg.linearRampToValueAtTime(0.06 * v, tt + 0.01); gg.exponentialRampToValueAtTime(0.0001, tt + 0.18); }, 0.02);
+  };
+  const splash = (big) => {
+    if (!ready()) return;
+    const v = vol() * (big ? 1.4 : 0.8);
+    fx(big ? 0.6 : 0.3, [['bandpass', rand(700, 1100), 0.7]], (g, t) => { g.setValueAtTime(0, t); g.linearRampToValueAtTime(0.2 * v, t + 0.02); g.exponentialRampToValueAtTime(0.0001, t + (big ? 0.6 : 0.3)); });
+    for (let i = 0; i < (big ? 6 : 3); i++) plop(0.5);
+  };
+  const cast = () => {
+    if (!ready()) return;
+    const v = vol();
+    fx(0.35, [['bandpass', 2400, 2]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.08 * v, t + 0.12); g.exponentialRampToValueAtTime(0.0001, t + 0.35); });
+    for (let i = 0; i < 8; i++) fx(0.01, [['bandpass', 3800, 6]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.05 * v, t + 0.001); g.exponentialRampToValueAtTime(0.0001, t + 0.01); }, 0.05 + i * 0.03);
+  };
+  const reel = () => {
+    if (!ready()) return;
+    const v = vol();
+    for (let i = 0; i < 14; i++) fx(0.01, [['bandpass', 3000, 6]], (g, t) => { g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(0.06 * v, t + 0.001); g.exponentialRampToValueAtTime(0.0001, t + 0.01); }, i * 0.045);
+  };
+
   window.MEOW_SOUND = {
-    chime, step, click, ignite, puff, fire, door, page, whoosh,
+    chime, step, click, ignite, puff, fire, door, page, whoosh, plop, splash, cast, reel,
     setEnabled(on) { enabled = !!on; update(); },
     setVolume(v) { volume = Math.max(0, Math.min(1, Number(v) || 0)); update(); }
   };

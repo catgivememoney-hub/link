@@ -33,7 +33,10 @@
     ['snow', 'bgSnow', 'linear-gradient(180deg,#a3afba,#e1e5e8 55%,#e7ebee)'],
     ['night', 'bgNight', 'radial-gradient(circle at 30% 30%,#d8d4c6 0 6%,transparent 7%),linear-gradient(180deg,#04060d,#1a2238 60%,#141a24)'],
     ['aurora', 'bgAurora', 'linear-gradient(170deg,#03060a 20%,#4f8f80 45%,#6f6595 60%,#122029 75%,#1b2429)'],
-    ['ocean', 'bgOcean', 'radial-gradient(circle at 50% 58%,#ecd0b2 0 7%,transparent 8%),linear-gradient(180deg,#4a4e68,#d4a28b 58%,#585d77 59%)']
+    ['ocean', 'bgOcean', 'radial-gradient(circle at 50% 58%,#ecd0b2 0 7%,transparent 8%),linear-gradient(180deg,#4a4e68,#d4a28b 58%,#585d77 59%)'],
+    ['spring', 'bgSpring', 'radial-gradient(circle at 70% 30%,#fff2d6 0 6%,transparent 7%),linear-gradient(180deg,#86acd2,#e4eef1 55%,#6e8f55 56%,#d99ab0)'],
+    ['summer', 'bgSummer', 'radial-gradient(circle at 60% 25%,#fff5d8 0 8%,transparent 9%),linear-gradient(180deg,#3f86cf,#cde6f4 55%,#21b2b4 56%,#5a8e42)'],
+    ['fall', 'bgFall', 'linear-gradient(180deg,#7a93ab,#ead7bd 55%,#c9682a 56%,#7d6b44)'],
   ];
 
   let s = { ...DEFAULTS };
@@ -183,9 +186,15 @@
 
     // Password: make the code for a new password, then jump to password.js on GitHub.
     $('changePw').href = passwordEditUrl();
+    // changing the password opens GitHub — ask first
+    $('changePw').addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (await window.MEOW_CONFIRM(t('cPwMsg'), t('cPwYes'))) window.open(passwordEditUrl(), '_blank', 'noopener');
+    });
     $('copyCode').addEventListener('click', async () => {
       const pw = $('newPw').value;
       if (!pw) { toast(t('sPwEmpty')); return; }
+      if (!(await window.MEOW_CONFIRM(t('cPwCodeMsg'), t('cPwYes')))) return;
       const code = await window.MEOW_HASH(pw);
       try { await navigator.clipboard.writeText(code); toast(t('sPwCodeCopied')); }
       catch { window.prompt(t('sCopyCode'), code); }

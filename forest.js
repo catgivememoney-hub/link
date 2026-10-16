@@ -16,7 +16,7 @@
   const home = $('homeBtn');
   if (!tip || !card) return;
 
-  const SCENES = ['rain', 'frost', 'mist', 'snow', 'night', 'aurora', 'ocean'];
+  const SCENES = ['rain', 'frost', 'mist', 'snow', 'night', 'aurora', 'ocean', 'spring', 'summer', 'fall'];
   const FACTS = {
     en: [
       'Cats sleep 12–16 hours a day.',
