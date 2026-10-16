@@ -463,6 +463,7 @@ import { createFish } from './fish.js';
     _look(x, z, pitch = 0) { const ps = player.state; player.face(Math.atan2(-(x - ps.x), -(z - ps.z)), pitch); },
     _pos() { const ps = player.state; return { x: ps.x, z: ps.z, feet: ps.feet, mode: player.mode, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, yaw: ps.yaw, pitch: ps.pitch, indoor: indoorK }; },
     _toggleDoor() { cabin.door.toggle(performance.now()); },
+    _aimDoor(cx, cy) { const r = rayAt(cx, cy); const h = r.intersectObject(cabin.door.mesh, false)[0]; return { hit: !!h, d: h ? h.distance : -1, walking: player.walking, busy: busy(), hover: [hover.x, hover.y], ok: aimAtDoor(cx, cy) }; },
     get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _physics() { return physics; }, get _player() { return player; }, get _cur() { return scenes.cur; },
     _nearTree(i, d = 16) { const b = trees.base[i % trees.base.length]; if (b) this._standAt(b.p.x, b.p.z + d); }
   };
