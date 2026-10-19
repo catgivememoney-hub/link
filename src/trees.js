@@ -146,7 +146,7 @@ export function createTrees({ scene, shared, isClearing }) {
     };
   }
   const fruits = new THREE.InstancedMesh(fruitGeo, fruitMat, trees.count);
-  const hasFruit = base.map((b, i) => hash2(i * 0.37, 5.1) < 0.5);
+  const hasFruit = base.map(() => false);   // no fruit on the trees (Jeffy asked to remove it)
   {
     const m = new THREE.Matrix4(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
     const pal = [0xc8402e, 0xe0782a, 0xd9b030, 0x9cba3a, 0xb8302a];
@@ -213,7 +213,7 @@ export function createTrees({ scene, shared, isClearing }) {
     // s = current scene values
     update(s, now) {
       mat.color.copy(s.treeC);
-      show.value = s.trees; trees.visible = fruits.visible = s.trees > 0.01;
+      show.value = s.trees; trees.visible = s.trees > 0.01; fruits.visible = false;
       SEASON.uFall.value = s.fall; SEASON.uBloom.value = s.bloom; SEASON.uLush.value = s.lush; SEASON.uBare.value = s.bare;
       FRUIT.uFruitCol.value = s.fruitCol;
       branchShow.value = Math.min(1, s.bare * 2.5) * s.trees; branches.visible = branchShow.value > 0.01;
