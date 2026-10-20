@@ -207,6 +207,17 @@
 
       <section class="p-sec" style="--d:2">
         <div class="set-row">
+          <h3>Graphics</h3>
+          <div id="gfxSeg" class="seg">
+            <button type="button" data-val="low" title="Lower resolution, no shadows: smoothest on older computers and phones">Fast</button>
+            <button type="button" data-val="mid" title="The usual look">Balanced</button>
+            <button type="button" data-val="high" title="Sharper, with sun shadows: needs a good graphics card">Best</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="p-sec" style="--d:2">
+        <div class="set-row">
           <h3 data-i18n="sSens">Mouse sensitivity</h3>
           <output id="sensVal" class="sens-val">1.0×</output>
         </div>
@@ -281,7 +292,7 @@
     "three-addons/": "./test/vendor/three/examples/jsm/"
   } }
   </script>
-  <script type="module" src="test/src/main.js?v=t1"></script>
+  <script type="module" src="test/src/main.js?v=t2"></script>
   <div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:rgba(200,60,40,.85);padding:6px 10px;border-radius:999px">TEST COPY · new cabin &amp; sailboat</div>
 </body>
 </html>

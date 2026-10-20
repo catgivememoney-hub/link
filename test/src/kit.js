@@ -107,13 +107,15 @@ export const M = (x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, 
   new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ')), new THREE.Vector3(sx, sy, sz));
 
 /* ---------- the shared material: grows with the scene, sways, gets moss / snow / frost ---------- */
+// wind strength for every swaying plant and tree (main.js sets it per scene and graphics level)
+export const WIND = { value: 1 };
 export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, color = 0xffffff, snowBias = 0, sink = 0, softBack = false, crisp = false, snowMask = false, grain = 0, rich = false, indoor = false, tree = false } = {}) => {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side, color });
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, shared, { uShow: show });
+    Object.assign(sh.uniforms, shared, { uShow: show, uWind: WIND });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        uniform float uShow, uTime, uSnowCover, uMoss, uFrost;
+        uniform float uShow, uTime, uSnowCover, uMoss, uFrost, uWind;
         attribute float aTip; attribute float aMat;
         varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj; varying float vMat; varying vec3 vObjN;
         ${tree ? 'attribute float aHash; uniform float uBare; varying float vHash; varying float vLeaf;' : ''}`)
@@ -134,8 +136,12 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         vMossA = uMoss * smoothstep(0.0, 0.8, cWN.y) * (0.6 + 0.4 * patchy)${snowMask ? ' * aTip' : ''};
         vTipA = aTip * uFrost;
         ${sway ? `float sd = cIP.x * 0.071 + cIP.z * 0.053;
-        float sw = (sin(uTime * 1.3 + sd) + 0.45 * sin(uTime * 3.1 + sd * 1.7)) * ${sway.toFixed(4)} * position.y * position.y;
-        transformed.x += sw; transformed.z += sw * 0.7;` : ''}
+        // gusts roll across the land in waves; between them the plants still flutter a little
+        float gust = 0.55 + 0.45 * sin(uTime * 0.45 - cIP.x * 0.011 - cIP.z * 0.007);
+        gust = gust * gust * 1.6;
+        float sw = (0.8 * sin(uTime * 1.6 + sd) + 0.45 * sin(uTime * 3.4 + sd * 1.7) + 0.22 * sin(uTime * 6.3 + sd * 2.3))
+                 * ${sway.toFixed(4)} * ${tree ? '1.15' : '2.3'} * uWind * (0.35 + gust) * position.y * position.y;
+        transformed.x += sw; transformed.z += sw * 0.6;` : ''}
         ${tree ? `vHash = aHash; vLeaf = step(12.5, aMat);
         // autumn: some trees drop all their needles (only trunk and branches stay)
         float bare = step(aHash, uBare) * vLeaf;

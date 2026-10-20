@@ -77,7 +77,7 @@ export function createHouse({ scene }) {
   scene.add(group);
   const doors = DOORS.map(([name, angle]) => ({ name, angle, node: null, k: 0, to: 0, hinge: null, meshes: [] }));
   const byName = Object.fromEntries(doors.map((d) => [d.name, d]));
-  const H = { fire: null, ready: false, boatNode: null, onBoat: null };
+  const H = { fire: null, ready: false, boatNode: null, onBoat: null, root: null, readyFns: [] };
   let boatBlock = null;
 
   // lights: the fire (flickers), the bedside lamp, the lantern on the dock
@@ -108,8 +108,9 @@ export function createHouse({ scene }) {
     H.fire = root.getObjectByName('Fire');
     H.boatNode = root.getObjectByName('Sailboat');
     H.mooring = root.getObjectByName('Mooring_lines_&_fenders') || root.getObjectByName('Mooring lines & fenders');
-    H.ready = true;
+    H.root = root; H.ready = true;
     if (H.onBoat && H.boatNode) H.onBoat(H.boatNode, H.mooring);
+    H.readyFns.forEach((fn) => fn(root));
   }, undefined, (e) => console.warn('[MEOW] house.glb not loaded', e && e.message));
 
   const doorOpen = (name) => { const d = byName[name]; return !d || d.k > 0.6; };
@@ -124,6 +125,7 @@ export function createHouse({ scene }) {
     holeBox: [1e9, 1e9, 1e9, 1e9], studyBox: [1e9, 1e9, 1e9, 1e9],
     // the boat module hooks in here (its hull is solid when you walk on the water)
     setBoatBlock(fn) { boatBlock = fn; },
+    whenReady(fn) { if (H.ready) fn(H.root); else H.readyFns.push(fn); },
     whenBoat(fn) { H.onBoat = fn; if (H.ready && H.boatNode) fn(H.boatNode, H.mooring); },
 
     // every built surface under (x, z), in world units: [{ y, under }]; under = this replaces the ground

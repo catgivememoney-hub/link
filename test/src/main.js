@@ -21,6 +21,9 @@ import { createProps, createRipples, createFootprints } from './props.js';
 import { createTrees } from './trees.js';
 import { createHouse, CABIN } from './house.js';     // test copy: the new stilt house from Blender
 import { createBoat } from './boat.js';
+import { WIND } from './kit.js';
+import { createComputer } from './computer.js';
+import { createPortal } from './portal.js';
 import { createPhysics } from './physics.js';
 import { createPlayer, EYE } from './player.js';
 import { createLens } from './lens.js';
@@ -107,7 +110,11 @@ import { createAssets } from './assets.js';
   const player = createPlayer({ physics, trees });
   const boat = createBoat({ scene, house: cabin, physics });
   cabin.setBoatBlock((x, z, feet) => boat.blocks(x, z, feet));
+  const computer = createComputer({ camera, house: cabin });
+  const portal = createPortal({ scene, trees, camera, isClearing: (x, z) => props.inClearing(x, z) });
   let frameDt = 1 / 60;
+  const fishSpot = { tick: 0, ok: false };
+  const GFX = { level: 'mid' }; try { GFX.level = localStorage.getItem('meow.gfx') || 'mid'; } catch { /* ignore */ }
 
   /* ---------- state ---------- */
   let started = false, entranceAt = 0, exposure = 1, exposureTo = 1, indoorK = 0, walkK = 0, arc = 0;
@@ -120,7 +127,7 @@ import { createAssets } from './assets.js';
   const lookM = new THREE.Matrix4(), UP = new THREE.Vector3(0, 1, 0), lookAt = new THREE.Vector3(), tmp = new THREE.Vector3();
   const t$ = (k, f) => (window.MEOW_I18N ? window.MEOW_I18N.t(k) : f);
   const sens = () => Math.max(0.2, Math.min(2.5, (window.MEOW_STATE && Number(window.MEOW_STATE.sens)) || 1));
-  const busy = () => !started || root.classList.contains('locked') || gal.focusTo > 0;
+  const busy = () => !started || root.classList.contains('locked') || gal.focusTo > 0 || (computer && computer.active) || (portal && portal.active);
   const modalOpen = () => !!document.querySelector('.modal:not([hidden])');
   const typing = (t) => t && (/INPUT|TEXTAREA|SELECT/.test(t.tagName) || t.isContentEditable);
   const overUI = (t) => t && t.closest && t.closest('.sidebar, .modal, .gallery, .top, .composer, .tools, .tree-card, .home-btn, .backdrop, .walk-hint, input, button, a, label');
@@ -161,6 +168,9 @@ import { createAssets } from './assets.js';
     water.WU.uLevel.value = s.water; terrain.TU.uWaterY.value = s.water; terrain.TU.uWaterC.value.copy(s.waterC);
     water.tex.offset.set(time * 0.004, time * 0.006);
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
+    // Best graphics: the sun casts shadows around you (its shadow box follows the camera)
+    if (sun.castShadow) { sun.target.position.set(Math.round(camera.position.x / 8) * 8, 0, Math.round(camera.position.z / 8) * 8); sun.position.add(sun.target.position); }
+    WIND.value = (0.9 + 0.7 * (s.rain || 0) + 0.3 * (s.snow || 0)) * (full() ? 1 : 0.3);
     hemi.color.copy(s.hemiSky); hemi.groundColor.copy(s.hemiGround); hemi.intensity = s.hemi * 1.6;
     trees.update(s, now);
     treeShade.set(s.trees); cabinShade.set(s.pCabin);
@@ -201,6 +211,7 @@ import { createAssets } from './assets.js';
   };
   // Esc: first close an open book / send flying books home, then leave the world
   const leaveScene = () => {
+    if (computer.active) { computer.close(); return; }
     if (!player.out || busy()) return;
     if (study.back(performance.now())) return;
     goHome();
@@ -230,12 +241,13 @@ import { createAssets } from './assets.js';
     if (e.code === 'KeyF' && !e.repeat && started && !root.classList.contains('locked')) { e.preventDefault(); hand.toggle(now); return; }
     if (busy() || !player.walking) return;
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && !boat.active) player.jump(); return; }
-    if (e.code === 'KeyR' && !e.repeat) { if (fishing.key(now)) e.preventDefault(); return; }
+    if (e.code === 'KeyR' && !e.repeat) { if (!boat.active && fishing.key(now)) e.preventDefault(); return; }
     if (e.code === 'KeyE' && !e.repeat) {
       // E: step off the boat / go aboard / open or close the door you're looking at (or the nearest one)
       const wy = water.mesh.position.y;
       if (boat.active) { boat.leave(player, wy); return; }
       if (boat.canBoard(player.state, wy)) { boat.board(player); return; }
+      { const [cx, cy] = aimPoint(); if (computer.pick(rayAt(cx, cy))) { openComputer(); return; } }
       if (scenes.cur.pCabin > 0.5) {
         const [cx, cy] = aimPoint();
         const d = cabin.pickDoor(rayAt(cx, cy)) || cabin.nearestDoor(camera.position.x, camera.position.z, 14);
@@ -268,6 +280,8 @@ import { createAssets } from './assets.js';
     if (!player.walking || boat.active || scenes.cur.pCabin < 0.5) return null;
     return cabin.pickDoor(rayAt(cx, cy), 26);
   };
+  // sit down at the computer (the pointer comes back so you can use the screen)
+  const openComputer = () => { unlockPointer(); keys.clear(); actHint.classList.remove('show'); doorShown = false; computer.open(camera.position, camera.quaternion); };
   const toggleDoor = (d) => {
     if (!d) return false;
     const opened = cabin.toggle(d);
@@ -277,6 +291,9 @@ import { createAssets } from './assets.js';
   const setTreeHover = (id) => {
     if (!trees.hover(id)) return;
     root.classList.toggle('on-tree', id >= 0);
+    // link trees show where they go (the paw card); the others keep their cat-fact / scene label
+    if (id >= 0 && portal.isLink(id)) { dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'leave' } })); portal.hover(id, hover.x, hover.y); return; }
+    portal.unhover();
     dispatchEvent(new CustomEvent('meow:tree', { detail: id >= 0 ? { type: 'hover', id, x: hover.x, y: hover.y } : { type: 'leave' } }));
   };
   let doorShown = false;
@@ -285,14 +302,18 @@ import { createAssets } from './assets.js';
     hover.pending = false;
     const [cx, cy] = aimPoint();
     const active = player.walking && !busy();
-    const doorHit = active ? aimAtDoor(cx, cy) : null, door = !!doorHit;
+    const doorHit = active ? aimAtDoor(cx, cy) : null;
+    const pc = active && !doorHit && !boat.active && computer.pick(rayAt(cx, cy));
+    const door = !!doorHit || pc;
     if (door !== doorShown) { doorShown = door; actHint.classList.toggle('show', door); }
-    if (door) actHint.querySelector('span').textContent = doorHit.to > 0.5 ? t$('doorClose', 'Click to close the door') : t$('doorOpen', 'Click to open the door');
+    if (pc) actHint.querySelector('span').textContent = 'Click to use the computer';
+    else if (door) actHint.querySelector('span').textContent = doorHit.to > 0.5 ? t$('doorClose', 'Click to close the door') : t$('doorOpen', 'Click to open the door');
     root.classList.toggle('on-book', study.hover(rayAt(cx, cy), active && scenes.cur.pCabin > 0.5 && indoorK > 0.5));
     // trees light up under the dot (or the mouse at home); not from indoors or over the page's own buttons
     const treeOK = !busy() && indoorK < 0.5 && !player.gliding && (player.walking || (look.inside && !look.ui));
     if (locked()) { hover.x = cx; hover.y = cy; }
     setTreeHover(treeOK ? trees.pick(rayAt(cx, cy)) : -1);
+    if (trees.hovered >= 0 && portal.isLink(trees.hovered)) portal.hover(trees.hovered, hover.x, hover.y);
   };
 
   /* ---------- mouse and touch ---------- */
@@ -343,8 +364,16 @@ import { createAssets } from './assets.js';
     // what was clicked: a biting fish, then a book, then the door, then a tree
     if (player.walking && fishing.click(now)) return;
     if (player.walking && scenes.cur.pCabin > 0.5 && indoorK > 0.5 && study.click(rayAt(cx, cy), now)) return;
+    if (player.walking && !boat.active && computer.pick(rayAt(cx, cy))) { openComputer(); return; }
     { const d = aimAtDoor(cx, cy); if (d) { toggleDoor(d); return; } }
     const id = trees.hovered >= 0 ? trees.hovered : (indoorK < 0.5 ? trees.pick(rayAt(cx, cy)) : -1);
+    if (id >= 0 && portal.isLink(id)) {
+      // a link tree: the cat paw grabs you and takes you to the website
+      trees.shake(id, now);
+      if (window.MEOW_SOUND && window.MEOW_SOUND.chime) window.MEOW_SOUND.chime(id);
+      unlockPointer(); keys.clear(); portal.go(id, !full());
+      return;
+    }
     if (id >= 0) {
       trees.shake(id, now);
       dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'click', id, x: cx, y: cy } }));
@@ -368,7 +397,7 @@ import { createAssets } from './assets.js';
   const watchPerf = (now) => {
     if (!perf.since) perf.since = now;
     const dt = now - (perf.last || now); perf.last = now;
-    if (now - perf.since < 5000 || dt > 250 || document.hidden) return;
+    if (now - perf.since < 5000 || dt > 250 || document.hidden || GFX.level === 'high') return;
     perf.sum += dt; perf.n++;
     if (perf.n >= 90) {
       const avg = perf.sum / perf.n; perf.sum = perf.n = 0;
@@ -395,11 +424,13 @@ import { createAssets } from './assets.js';
     frameDt = dt;
     let stepped = false;
     // on the boat it steers and places the camera; otherwise you walk as usual
-    if (boat.active) boat.update(dt, time, keys, player, camOut, water.mesh.position.y, scenes.cur, full(), false);
+    if (computer.active) { computer.update(dt, camOut); boat.update(dt, time, keys, player, { pos: new THREE.Vector3(), q: new THREE.Quaternion() }, water.mesh.position.y, scenes.cur, full(), false); }
+    else if (boat.active) boat.update(dt, time, keys, player, camOut, water.mesh.position.y, scenes.cur, full(), false);
     else {
       stepped = player.update(dt, now, keys, homePose, full(), scenes, water.mesh, camOut);
       boat.update(dt, time, keys, player, camOut, water.mesh.position.y, scenes.cur, full(), player.walking && !busy() && boat.canBoard(player.state, water.mesh.position.y));
     }
+    portal.update(now, camOut, scenes.cur);   // while the paw has you, it moves the camera
     if (player.justLanded) { player.justLanded = false; lockPointer(); }
     if (player.mode === 'home') setExploring(false);
     camera.position.copy(camOut.pos);
@@ -437,7 +468,15 @@ import { createAssets } from './assets.js';
     hand.update(camera, now, time, dt, { fog: Math.min(1.6, scene.fog.density / 0.004), rain: weather.rainAmount, bob: ps.bob, vx: ps.vx, vz: ps.vz, motionFull: full() });
     {
       const [fx, fy] = aimPoint();
-      fishing.update(now, time, { active: player.walking && !busy(), ray: player.walking ? rayAt(fx, fy) : null, waterY: water.mesh.position.y, amount: scenes.cur.fishy, indoor: indoorK > 0.5 });
+      // you can fish from the dock or from the shore, not from the boat
+      const wy = water.mesh.position.y;
+      if (++fishSpot.tick % 6 === 1) {
+        const fl = physics.floor(ps.x, ps.z, ps.feet);
+        let shore = false;
+        if (!fl.built && ps.feet < wy + 9 && heightAt(ps.x, ps.z) > wy - 0.3) for (let i = 0; i < 36 && !shore; i++) { const a = (i % 12) * Math.PI / 6, r = 12 + Math.floor(i / 12) * 11; shore = heightAt(ps.x + Math.cos(a) * r, ps.z + Math.sin(a) * r) < wy - 0.6; }
+        fishSpot.ok = player.walking && !boat.active && ((fl.built && ps.feet < wy + 5) || shore);
+      }
+      fishing.update(now, time, { active: player.walking && !busy(), ray: player.walking ? rayAt(fx, fy) : null, waterY: wy, amount: scenes.cur.fishy, indoor: indoorK > 0.5, canFish: fishSpot.ok && !boat.active, onBoat: boat.active });
     }
     updateAim();
 
@@ -511,10 +550,30 @@ import { createAssets } from './assets.js';
     _pos() { const ps = player.state; return { x: ps.x, z: ps.z, feet: ps.feet, mode: player.mode, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, yaw: ps.yaw, pitch: ps.pitch, indoor: indoorK }; },
     _toggleDoor(name) { toggleDoor(cabin.doors.find((q) => !name || q.name === name)); },
     _aimDoor(cx, cy) { const d = aimAtDoor(cx, cy); return { hit: !!d, name: d && d.name, walking: player.walking }; },
-    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _assets() { return assets; }, get _physics() { return physics; }, get _boat() { return boat; }, get _house() { return cabin; }, get _player() { return player; }, get _cur() { return scenes.cur; },
+    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _assets() { return assets; }, get _physics() { return physics; }, get _boat() { return boat; }, get _computer() { return computer; }, get _portal() { return portal; }, get _house() { return cabin; }, get _player() { return player; }, get _cur() { return scenes.cur; },
     _nearTree(i, d = 16) { const b = trees.base[i % trees.base.length]; if (b) this._standAt(b.p.x, b.p.z + d); }
   };
   void EYE;
+
+  /* ---------- graphics: Fast / Balanced / Best (Settings) ---------- */
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -150, right: 150, top: 150, bottom: -150, near: 1, far: 900 });
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.5;
+  const applyGfx = (lv) => {
+    if (!['low', 'mid', 'high'].includes(lv)) lv = 'mid';
+    GFX.level = lv; try { localStorage.setItem('meow.gfx', lv); } catch { /* ignore */ }
+    const dpr = window.devicePixelRatio || 1;
+    PR[0] = lv === 'low' ? Math.min(dpr, 0.75) : lv === 'high' ? Math.min(dpr, 2) : Math.min(dpr, 1.5);
+    perf.level = 0; perf.sum = perf.n = 0; renderer.setPixelRatio(PR[0]);
+    renderer.shadowMap.enabled = lv !== 'low';
+    renderer.shadowMap.type = lv === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    sun.castShadow = lv === 'high';
+    scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
+    resize();
+    document.querySelectorAll('#gfxSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === lv)));
+  };
+  { const seg = document.getElementById('gfxSeg'); if (seg) seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) applyGfx(b.dataset.val); }); }
+  applyGfx(GFX.level);
 
   { const hint = document.querySelector('.walk-hint'); if (hint) hint.addEventListener('click', () => enterWorld()); }
   requestAnimationFrame(frame);
