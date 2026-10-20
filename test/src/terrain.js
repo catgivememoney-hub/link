@@ -60,7 +60,10 @@ export function createTerrain(scene) {
   // uHole: no ground drawn inside the cabin (its floor is there, and the stairs go down through it)
   const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 }, uSand: { value: 0 }, uHole: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) }, uWaterY: { value: 0 }, uWaterC: { value: new THREE.Color(0x6d7378) },
     // fine grass detail up close (assets/textures/grass-detail.jpg, CC-BY 3.0, see README)
-    tDetail: { value: lateTexture('assets/textures/grass-detail.jpg', [97, 97, 97]) } };
+    tDetail: { value: lateTexture('assets/textures/grass-detail.jpg', [97, 97, 97]) },
+    // snow trails: a pressure map that follows you (see createTrail below)
+    tTrail: { value: null }, uTrailBox: { value: new THREE.Vector4(0, 0, 1, 1) } };
+  const trail = createTrail(TU);
   const geo = new THREE.PlaneGeometry(2200, 1800, 300, 245);
   geo.rotateX(-Math.PI / 2);
   geo.translate(0, 0, -400);
@@ -76,6 +79,8 @@ export function createTerrain(scene) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; uniform sampler2D tDetail; varying float vH; varying float vSlope; varying vec2 vXZ;
+        uniform sampler2D tTrail; uniform vec4 uTrailBox;
+        float trl(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
         float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float tn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(th(i), th(i + vec2(1, 0)), f.x), mix(th(i + vec2(0, 1)), th(i + vec2(1, 1)), f.x), f.y); }`)
@@ -104,7 +109,10 @@ export function createTerrain(scene) {
         snow *= 1.0 - smoothstep(uWaterY + 0.6, uWaterY - 0.4, vH);
         float drift = sin(vXZ.x * 0.55 + vXZ.y * 0.18 + d1 * 7.0) * 0.5 + 0.5;
         vec3 snowCol = uSnow * (0.93 + 0.05 * d2 + 0.04 * drift) * mix(vec3(0.94, 0.97, 1.0), vec3(1.0), d1);
-        diffuseColor.rgb = mix(land, snowCol, snow);`)
+        diffuseColor.rgb = mix(land, snowCol, snow);
+        // pressed snow where you walked: packed down, a little blue-grey in its own shadow, with a bright rim
+        float trA = trl(vXZ) * snow;
+        if (trA > 0.002) diffuseColor.rgb = mix(diffuseColor.rgb, snowCol * vec3(0.62, 0.7, 0.82), clamp(trA * 1.1, 0.0, 0.95));`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wpos = vec3(vXZ.x, vH, vXZ.y);
@@ -116,6 +124,12 @@ export function createTerrain(scene) {
             float b0 = BMP(vXZ);
             vec3 bw = vec3(-(BMP(vXZ + vec2(e, 0.0)) - b0), 0.0, -(BMP(vXZ + vec2(0.0, e)) - b0)) / e * 0.55 * near;
             normal = normalize(normal + (viewMatrix * vec4(bw, 0.0)).xyz);
+          }
+          // the trail is a groove: its sides catch the light
+          if (snow > 0.01) {
+            float e = 0.45, t0 = trl(vXZ);
+            vec3 tg = vec3(trl(vXZ + vec2(e, 0.0)) - t0, 0.0, trl(vXZ + vec2(0.0, e)) - t0) / e;
+            if (dot(tg, tg) > 0.0) normal = normalize(normal + (viewMatrix * vec4(tg * 3.0 * snow, 0.0)).xyz);
           }
         }`)
       .replace('#include <opaque_fragment>', `
@@ -135,7 +149,7 @@ export function createTerrain(scene) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   scene.add(mesh);
-  return { mesh, TU };
+  return { mesh, TU, trail };
 }
 
 /* ---------- water with a moving ripple texture ---------- */
@@ -157,7 +171,7 @@ export function createWater(scene, U) {
   const n2 = lateTexture('assets/textures/water-normal-2.jpg', [128, 128, 255]);
   const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.3, metalness: 0.35, normalMap: n1, normalScale: new THREE.Vector2(0.35, 0.35), transparent: true, envMapIntensity: 0.6 });
   // the lake must not show inside the library (which is below the water line)
-  const WU = { uStudy: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) }, tShore: { value: shore }, uShore: { value: new THREE.Vector4(SR.x0, SR.z0, SR.w, SR.d) }, uLevel: { value: 0 }, uTime: U.uTime, tN2: { value: n2 } };
+  const WU = { uIce: { value: 0 }, uStudy: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) }, tShore: { value: shore }, uShore: { value: new THREE.Vector4(SR.x0, SR.z0, SR.w, SR.d) }, uLevel: { value: 0 }, uTime: U.uTime, tN2: { value: n2 } };
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, WU);
     sh.vertexShader = sh.vertexShader
@@ -165,7 +179,7 @@ export function createWater(scene, U) {
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec2 vWXZ; uniform vec4 uStudy, uShore; uniform sampler2D tShore, tN2; uniform float uLevel, uTime;
+        varying vec2 vWXZ; uniform vec4 uStudy, uShore; uniform sampler2D tShore, tN2; uniform float uLevel, uTime, uIce;
         float wh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh(i), wh(i + vec2(1, 0)), f.x), mix(wh(i + vec2(0, 1)), wh(i + vec2(1, 1)), f.x), f.y); }`)
       .replace('vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;', `vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
@@ -174,6 +188,7 @@ export function createWater(scene, U) {
           vec3 m3 = texture2D(tN2, vWXZ * 0.0047 + uTime * vec2(0.0009, 0.0011)).xyz * 2.0 - 1.0;
           float far = smoothstep(60.0, 600.0, length(vec3(vWXZ.x, 0.0, vWXZ.y) - vec3(cameraPosition.x, 0.0, cameraPosition.z)));
           mapN = vec3((mapN.xy + m2.xy) * (1.0 - far * 0.7) + m3.xy * 0.7, mapN.z * m2.z);
+          mapN.xy *= 1.0 - 0.92 * uIce;
         }`)
       .replace('#include <clipping_planes_fragment>', 'if (vWXZ.x > uStudy.x && vWXZ.x < uStudy.y && vWXZ.y > uStudy.z && vWXZ.y < uStudy.w) discard;\n#include <clipping_planes_fragment>')
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -190,10 +205,77 @@ export function createWater(scene, U) {
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.93), clamp(foam, 0.0, 0.4));
           // and the water fades out softly where it meets the land (no hard line)
           diffuseColor.a *= smoothstep(-0.1, 3.2, depth) * (1.0 - 0.3 * shallow) + clamp(foam, 0.0, 0.4) * smoothstep(0.0, 1.2, depth) * 0.5;
+          // frozen (snow scene): pale blue-white ice with cracks and drifts of snow; solid, no shine of open water
+          if (uIce > 0.001) {
+            float c1 = smoothstep(0.035, 0.0, abs(wn(vWXZ * 0.045) - 0.5)), c2 = smoothstep(0.025, 0.0, abs(wn(vWXZ * 0.13 + 7.0) - 0.5));
+            float drift = smoothstep(0.45, 0.8, wn(vWXZ * 0.02 + 3.0) * 0.7 + wn(vWXZ * 0.09) * 0.3);
+            vec3 ice = mix(vec3(0.74, 0.84, 0.9), vec3(0.86, 0.92, 0.95), wn(vWXZ * 0.03));
+            ice *= 1.0 - c1 * 0.22 - c2 * 0.12;
+            ice = mix(ice, vec3(0.97, 0.98, 0.99), drift * 0.85);
+            diffuseColor.rgb = mix(diffuseColor.rgb, ice, uIce);
+            diffuseColor.a = mix(diffuseColor.a, smoothstep(-0.4, 0.6, depth), uIce);
+          }
         }`);
   };
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), mat);
   scene.add(mesh);
   mesh.renderOrder = 1;
   return { mesh, mat, tex: n1, WU };
+}
+
+/* ---------- snow trails ----------
+   A 512×512 pressure map, 320×320 world units, that moves with you (it shifts when you near its edge,
+   so trails far behind you fade off it). Every step on snow presses a soft round dent; while it snows
+   the dents fill in again, slowly (about a minute in a full snowfall). */
+function createTrail(TU) {
+  const N = 512, SIZE = 320, CELL = SIZE / N;
+  const data = new Uint8Array(N * N);
+  const tex = new THREE.DataTexture(data, N, N, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+  TU.tTrail.value = tex;
+  let x0 = -SIZE / 2, z0 = -SIZE / 2, dirty = false, acc = 0, any = false;
+  const box = () => TU.uTrailBox.value.set(x0, z0, SIZE, SIZE);
+  box();
+  // keep (x, z) well inside the map: shift the map (and what's on it) when you walk toward an edge
+  const follow = (x, z) => {
+    const m = SIZE * 0.22;
+    if (x > x0 + m && x < x0 + SIZE - m && z > z0 + m && z < z0 + SIZE - m) return;
+    const nx0 = Math.round((x - SIZE / 2) / CELL) * CELL, nz0 = Math.round((z - SIZE / 2) / CELL) * CELL;
+    const di = Math.round((nx0 - x0) / CELL), dj = Math.round((nz0 - z0) / CELL);
+    const copy = new Uint8Array(N * N);
+    for (let j = 0; j < N; j++) {
+      const sj = j + dj; if (sj < 0 || sj >= N) continue;
+      for (let i = 0; i < N; i++) { const si = i + di; if (si >= 0 && si < N) copy[j * N + i] = data[sj * N + si]; }
+    }
+    data.set(copy); x0 = nx0; z0 = nz0; box(); dirty = true;
+  };
+  return {
+    // press the snow at (x, z); r = radius in world units
+    stamp(x, z, r = 1.7, depth = 1) {
+      follow(x, z);
+      const ci = (x - x0) / CELL, cj = (z - z0) / CELL, rr = r / CELL;
+      for (let j = Math.floor(cj - rr); j <= Math.ceil(cj + rr); j++) {
+        if (j < 0 || j >= N) continue;
+        for (let i = Math.floor(ci - rr); i <= Math.ceil(ci + rr); i++) {
+          if (i < 0 || i >= N) continue;
+          const d = Math.hypot(i - ci, j - cj) / rr; if (d >= 1) continue;
+          const v = Math.round(255 * depth * (1 - d * d) * (1 - d * d));
+          const k = j * N + i; if (v > data[k]) data[k] = v;
+        }
+      }
+      dirty = true; any = true;
+    },
+    // snowRate 0..1: how hard it's snowing (fills the trails back in)
+    update(dt, snowRate) {
+      acc += dt;
+      if (any && snowRate > 0.02 && acc > 0.5) {
+        const fill = Math.max(1, Math.round(acc * 255 / 60 * snowRate));
+        let left = false;
+        for (let k = 0; k < data.length; k++) { const v = data[k]; if (v) { const n = v > fill ? v - fill : 0; data[k] = n; if (n) left = true; } }
+        any = left; dirty = true; acc = 0;
+      } else if (acc > 0.5) acc = 0;
+      if (dirty) { tex.needsUpdate = true; dirty = false; }
+    },
+    clear() { data.fill(0); any = false; tex.needsUpdate = true; }
+  };
 }

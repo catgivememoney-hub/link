@@ -36,7 +36,7 @@ const BASE = {
     low: '#e7ebee', high: '#f2f4f6', snowC: '#fbfcfd', snowLine: -20, water: 0.5, waterC: '#c3ccd2', waterRough: 0.75,
     sunC: '#e9e6e0', sunDir: V(-0.4, 0.3, -1), sunSize: 0.0014, lightC: '#f4f1ec', light: 0.7, lightDir: V(-0.4, 0.5, 0.3),
     hemiSky: '#eef2f5', hemiGround: '#8a96a0', hemi: 0.95, treeC: '#36443f', trees: 1,
-    rain: 0, snow: 1, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.45,
+    rain: 0, snow: 1, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.45, ice: 1,   // the lake is frozen solid
     cam: V(24, 11, 78), look: V(0, 12, -10)
   },
   night: {
@@ -89,7 +89,7 @@ const BASE = {
   }
 };
 // values every scene has (0 unless the scene sets them)
-const EXTRA = { fall: 0, bare: 0, bloom: 0, lush: 0, leaves: 0, flowers: 0, hives: 0, creek: 0, fishy: 0, sand: 0, fruitCol: 0, dof: 1 };
+const EXTRA = { ice: 0, fall: 0, bare: 0, bloom: 0, lush: 0, leaves: 0, flowers: 0, hives: 0, creek: 0, fishy: 0, sand: 0, fruitCol: 0, dof: 1 };
 export const PRESETS = {};
 for (const name in BASE) {
   PRESETS[name] = { ...EXTRA, ...BASE[name] };

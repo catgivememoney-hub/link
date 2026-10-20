@@ -208,12 +208,10 @@
       <section class="p-sec" style="--d:2">
         <div class="set-row">
           <h3>Graphics</h3>
-          <div id="gfxSeg" class="seg">
-            <button type="button" data-val="low" title="Lower resolution, no shadows: smoothest on older computers and phones">Fast</button>
-            <button type="button" data-val="mid" title="The usual look">Balanced</button>
-            <button type="button" data-val="high" title="Sharper, with sun shadows: needs a good graphics card">Best</button>
-          </div>
+          <output id="gfxVal" class="sens-val">Balanced</output>
         </div>
+        <input id="gfxRange" type="range" min="0" max="6" step="1" value="3" aria-label="Graphics" list="gfxTicks">
+        <div style="display:flex;justify-content:space-between;font-size:10px;letter-spacing:.04em;opacity:.55;margin-top:4px"><span>None</span><span>Fast</span><span>Default</span><span>Balanced</span><span>Fancy</span><span>Best</span><span>Extreme</span></div>
       </section>
 
       <section class="p-sec" style="--d:2">
@@ -286,13 +284,21 @@
   <script src="fx.js?v=42"></script>
   <script src="forest.js?v=42"></script>
   <style>html.boating .explore-hint { opacity: 0 !important; } html.pc-on .home-btn, html.pc-on .act-hint, html.pc-on .fish-hint { display: none !important; }</style>
+  <style>
+    /* gallery category bar (test copy): bigger chips on a gentle, even tilt; the chosen one lifts straight up */
+    .rail-wrap { margin-top: 104px; perspective: 900px; }
+    .rail { gap: 12px; align-items: center; transform: rotateX(16deg); transform-origin: 50% 100%; }
+    .rail-chip { height: 42px; padding: 0 22px; font-size: 0.98rem; letter-spacing: 0.07em; transform: translateY(0); }
+    .rail-chip:hover { transform: translateY(-3px); }
+    .rail-chip[aria-pressed="true"] { transform: translateY(-4px) scale(1.06); }
+  </style>
   <script type="importmap">
   { "imports": {
     "three": "./test/vendor/three/build/three.module.js",
     "three-addons/": "./test/vendor/three/examples/jsm/"
   } }
   </script>
-  <script type="module" src="test/src/main.js?v=t3"></script>
+  <script type="module" src="test/src/main.js?v=t4"></script>
   <div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:rgba(200,60,40,.85);padding:6px 10px;border-radius:999px">TEST COPY · new cabin &amp; sailboat</div>
 </body>
 </html>

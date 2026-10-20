@@ -114,7 +114,8 @@ import { createAssets } from './assets.js';
   const portal = createPortal({ scene, trees, camera, isClearing: (x, z) => props.inClearing(x, z) });
   let frameDt = 1 / 60;
   const fishSpot = { tick: 0, ok: false };
-  const GFX = { level: 'mid' }; try { GFX.level = localStorage.getItem('meow.gfx') || 'mid'; } catch { /* ignore */ }
+  const trailAt = { x: 0, z: 0 };
+  const GFX = { level: 'balanced', plants: true }; try { GFX.level = localStorage.getItem('meow.gfx') || 'balanced'; } catch { /* ignore */ }
 
   /* ---------- state ---------- */
   let started = false, entranceAt = 0, exposure = 1, exposureTo = 1, indoorK = 0, walkK = 0, arc = 0;
@@ -164,7 +165,8 @@ import { createAssets } from './assets.js';
     terrain.TU.uHole.value.copy(FAR); water.WU.uStudy.value.copy(FAR);   // no hole in the ground: the new house stands on stilts
     terrain.TU.uLow.value.copy(s.low); terrain.TU.uHigh.value.copy(s.high); terrain.TU.uSnow.value.copy(s.snowC);
     terrain.TU.uSnowLine.value = s.snowLine; terrain.TU.uSand.value = s.sand;
-    water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = s.waterRough;
+    water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = s.waterRough + (0.38 - s.waterRough) * (s.ice || 0);
+    water.WU.uIce.value = s.ice || 0; water.mat.metalness = 0.35 * (1 - (s.ice || 0));
     water.WU.uLevel.value = s.water; terrain.TU.uWaterY.value = s.water; terrain.TU.uWaterC.value.copy(s.waterC);
     water.tex.offset.set(time * 0.004, time * 0.006);
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
@@ -175,6 +177,7 @@ import { createAssets } from './assets.js';
     trees.update(s, now);
     treeShade.set(s.trees); cabinShade.set(s.pCabin);
     props.update(s, time);
+    if (!GFX.plants) for (const [o, key] of props.groups) if (key === 'pGrass' || key === 'pFerns' || key === 'flowers') o.visible = false;   // graphics: None
     cabin.update(s, time, now, s.water, player.walking ? player.state.feet : undefined, frameDt);
     assets.update(s, time);
     refreshEnv(now);
@@ -246,7 +249,7 @@ import { createAssets } from './assets.js';
       // E: step off the boat / go aboard / open or close the door you're looking at (or the nearest one)
       const wy = water.mesh.position.y;
       if (boat.active) { boat.leave(player, wy); return; }
-      if (boat.canBoard(player.state, wy)) { boat.board(player); return; }
+      if ((scenes.cur.ice || 0) < 0.5 && boat.canBoard(player.state, wy)) { boat.board(player); return; }
       { const [cx, cy] = aimPoint(); if (cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; } if (computer.pick(rayAt(cx, cy))) { openComputer(); return; } }
       if (scenes.cur.pCabin > 0.5) {
         const [cx, cy] = aimPoint();
@@ -403,7 +406,7 @@ import { createAssets } from './assets.js';
   const watchPerf = (now) => {
     if (!perf.since) perf.since = now;
     const dt = now - (perf.last || now); perf.last = now;
-    if (now - perf.since < 5000 || dt > 250 || document.hidden || GFX.level === 'high') return;
+    if (now - perf.since < 5000 || dt > 250 || document.hidden || ['fancy', 'best', 'extreme', 'none'].includes(GFX.level)) return;   // the higher levels keep what you chose
     perf.sum += dt; perf.n++;
     if (perf.n >= 90) {
       const avg = perf.sum / perf.n; perf.sum = perf.n = 0;
@@ -430,11 +433,13 @@ import { createAssets } from './assets.js';
     frameDt = dt;
     let stepped = false;
     // on the boat it steers and places the camera; otherwise you walk as usual
+    // the lake freezes over (snow scene): if you're out sailing you're put ashore
+    if ((scenes.cur.ice || 0) > 0.5 && boat.active) boat.leave(player, water.mesh.position.y, true);
     if (computer.active) { computer.update(dt, camOut); boat.update(dt, time, keys, player, { pos: new THREE.Vector3(), q: new THREE.Quaternion() }, water.mesh.position.y, scenes.cur, full(), false); }
     else if (boat.active) boat.update(dt, time, keys, player, camOut, water.mesh.position.y, scenes.cur, full(), false);
     else {
       stepped = player.update(dt, now, keys, homePose, full(), scenes, water.mesh, camOut);
-      boat.update(dt, time, keys, player, camOut, water.mesh.position.y, scenes.cur, full(), player.walking && !busy() && boat.canBoard(player.state, water.mesh.position.y));
+      boat.update(dt, time, keys, player, camOut, water.mesh.position.y, scenes.cur, full(), player.walking && !busy() && (scenes.cur.ice || 0) < 0.5 && boat.canBoard(player.state, water.mesh.position.y));
     }
     portal.update(now, camOut, scenes.cur);   // while the paw has you, it moves the camera
     if (player.justLanded) { player.justLanded = false; lockPointer(); }
@@ -464,6 +469,17 @@ import { createAssets } from './assets.js';
     weather.update(scenes.cur, camera.position, scenes.cur.look, scenes.cur.cam, water.mesh.position.y, out, dt);
     ripples.update(scenes.cur.pRipples * out, camera.position, water.mesh.position.y);
     prints.update(Math.min(1, Math.max(0, (100 - scenes.cur.snowLine) / 80)) * out);
+    // snow trails: every bit of ground you cross on snow gets pressed down (refills while it snows)
+    terrain.trail.update(dt, scenes.cur.snow || 0);
+    if (player.walking && !inside && !ps.air) {
+      const dx = ps.x - trailAt.x, dz = ps.z - trailAt.z, d = Math.hypot(dx, dz);
+      if (d > 0.8) {
+        const gh = heightAt(ps.x, ps.z), sl = scenes.cur.snowLine;
+        const snowy = Math.min(1, Math.max(0, (gh - (sl - 12)) / 24)) > 0.35 && gh > water.mesh.position.y + 0.6 && ps.feet < gh + 1.5;
+        if (snowy) { const n = Math.min(12, Math.ceil(d / 0.8)); for (let i = 1; i <= n; i++) terrain.trail.stamp(trailAt.x + dx * i / n, trailAt.z + dz * i / n, 1.7); }
+        trailAt.x = ps.x; trailAt.z = ps.z;
+      }
+    }
     if (stepped && !inside) {
       const gh = heightAt(ps.x, ps.z);
       if (gh > water.mesh.position.y + 0.6 && (scenes.name === 'snow' || gh > scenes.cur.snowLine + 4) && !physics.floor(ps.x, ps.z, ps.feet).built) {
@@ -482,7 +498,7 @@ import { createAssets } from './assets.js';
         if (!fl.built && ps.feet < wy + 9 && heightAt(ps.x, ps.z) > wy - 0.3) for (let i = 0; i < 36 && !shore; i++) { const a = (i % 12) * Math.PI / 6, r = 12 + Math.floor(i / 12) * 11; shore = heightAt(ps.x + Math.cos(a) * r, ps.z + Math.sin(a) * r) < wy - 0.6; }
         fishSpot.ok = player.walking && !boat.active && ((fl.built && ps.feet < wy + 5) || shore);
       }
-      fishing.update(now, time, { active: player.walking && !busy(), ray: player.walking ? rayAt(fx, fy) : null, waterY: wy, amount: scenes.cur.fishy, indoor: indoorK > 0.5, canFish: fishSpot.ok && !boat.active, onBoat: boat.active });
+      fishing.update(now, time, { active: player.walking && !busy(), ray: player.walking ? rayAt(fx, fy) : null, waterY: wy, amount: scenes.cur.fishy, indoor: indoorK > 0.5, canFish: fishSpot.ok && !boat.active && (scenes.cur.ice || 0) < 0.5, onBoat: boat.active });
     }
     updateAim();
 
@@ -559,29 +575,48 @@ import { createAssets } from './assets.js';
     _pos() { const ps = player.state; return { x: ps.x, z: ps.z, feet: ps.feet, mode: player.mode, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, yaw: ps.yaw, pitch: ps.pitch, indoor: indoorK }; },
     _toggleDoor(name) { toggleDoor(cabin.doors.find((q) => !name || q.name === name)); },
     _aimDoor(cx, cy) { const d = aimAtDoor(cx, cy); return { hit: !!d, name: d && d.name, walking: player.walking }; },
-    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _assets() { return assets; }, get _physics() { return physics; }, get _boat() { return boat; }, get _computer() { return computer; }, get _portal() { return portal; }, get _house() { return cabin; }, get _player() { return player; }, get _cur() { return scenes.cur; },
+    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _assets() { return assets; }, get _physics() { return physics; }, get _boat() { return boat; }, get _computer() { return computer; }, get _portal() { return portal; }, get _house() { return cabin; }, get _terrain() { return terrain; }, get _player() { return player; }, get _cur() { return scenes.cur; },
     _nearTree(i, d = 16) { const b = trees.base[i % trees.base.length]; if (b) this._standAt(b.p.x, b.p.z + d); }
   };
   void EYE;
 
-  /* ---------- graphics: Fast / Balanced / Best (Settings) ---------- */
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -150, right: 150, top: 150, bottom: -150, near: 1, far: 900 });
+  /* ---------- graphics (Settings): None · Fast · Default · Balanced · Fancy · Best · Extreme ---------- */
+  //   pr: pixel ratio cap (× your screen's), shadows: house/torch shadows, sun: sun-shadow map size (0 = none),
+  //   box: how far around you sun shadows reach, plants: grass/ferns/flowers drawn, soft: soft shadow edges
+  const GFX_LEVELS = {
+    none:     { name: 'None',     pr: 0.5,  shadows: false, sun: 0,    box: 0,   plants: false, soft: false },
+    fast:     { name: 'Fast',     pr: 0.75, shadows: false, sun: 0,    box: 0,   plants: true,  soft: false },
+    default:  { name: 'Default',  pr: 1.0,  shadows: true,  sun: 0,    box: 0,   plants: true,  soft: false },
+    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  sun: 0,    box: 0,   plants: true,  soft: false },
+    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  sun: 1024, box: 120, plants: true,  soft: false },
+    best:     { name: 'Best',     pr: 2.0,  shadows: true,  sun: 2048, box: 150, plants: true,  soft: true },
+    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  sun: 4096, box: 220, plants: true,  soft: true }
+  };
+  const GFX_ORDER = Object.keys(GFX_LEVELS);
+  const OLD = { low: 'fast', mid: 'balanced', high: 'best' };
   sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.5;
   const applyGfx = (lv) => {
-    if (!['low', 'mid', 'high'].includes(lv)) lv = 'mid';
-    GFX.level = lv; try { localStorage.setItem('meow.gfx', lv); } catch { /* ignore */ }
+    lv = OLD[lv] || lv; if (!GFX_LEVELS[lv]) lv = 'balanced';
+    const G = GFX_LEVELS[lv];
+    GFX.level = lv; GFX.plants = G.plants; try { localStorage.setItem('meow.gfx', lv); } catch { /* ignore */ }
     const dpr = window.devicePixelRatio || 1;
-    PR[0] = lv === 'low' ? Math.min(dpr, 0.75) : lv === 'high' ? Math.min(dpr, 2) : Math.min(dpr, 1.5);
+    PR[0] = lv === 'extreme' ? Math.min(dpr * 1.25, G.pr) : Math.min(dpr, G.pr);
     perf.level = 0; perf.sum = perf.n = 0; renderer.setPixelRatio(PR[0]);
-    renderer.shadowMap.enabled = lv !== 'low';
-    renderer.shadowMap.type = lv === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
-    sun.castShadow = lv === 'high';
+    renderer.shadowMap.enabled = G.shadows;
+    renderer.shadowMap.type = G.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    sun.castShadow = G.sun > 0;
+    if (G.sun > 0) {
+      if (sun.shadow.map && sun.shadow.mapSize.x !== G.sun) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+      sun.shadow.mapSize.set(G.sun, G.sun);
+      Object.assign(sun.shadow.camera, { left: -G.box, right: G.box, top: G.box, bottom: -G.box, near: 1, far: 900 });
+      sun.shadow.camera.updateProjectionMatrix();
+    }
     scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
     resize();
-    document.querySelectorAll('#gfxSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === lv)));
+    const r = document.getElementById('gfxRange'), out = document.getElementById('gfxVal');
+    if (r) r.value = String(GFX_ORDER.indexOf(lv)); if (out) out.textContent = G.name;
   };
-  { const seg = document.getElementById('gfxSeg'); if (seg) seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) applyGfx(b.dataset.val); }); }
+  { const r = document.getElementById('gfxRange'); if (r) r.addEventListener('input', () => applyGfx(GFX_ORDER[+r.value])); }
   applyGfx(GFX.level);
 
   /* ---------- coming back from a link with the browser's Back button ---------- */

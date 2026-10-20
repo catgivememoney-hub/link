@@ -583,7 +583,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
         const k = rr(1.1, 1.9);
         reeds.push({ p: new THREE.Vector3(x, h - 0.2, z), q: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), R() * 6.28), s: new THREE.Vector3(k, k * rr(0.8, 1.2), k) });
       }
-      instanced(reedGeo, plantMat('pReeds', 0.012), reeds, 'pReeds');
+      instanced(reedGeo, plantMat('pReeds', 0.0035), reeds, 'pReeds');   // tall reeds by the water: only a gentle nod
       plantSeasons(treeBase, inZone, near);
       buildGrid();
     },

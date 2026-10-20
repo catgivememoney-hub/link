@@ -57,24 +57,27 @@ export function createBooks() {
       if (r < 0.06 && x > SH.x0 + 0.15) { x += rr(0.04, 0.12); prev = null; continue; }   // a gap
       if (r < 0.15 && x < SH.x1 - 0.32) {
         // a little stack lying flat (biggest at the bottom)
+        // (each one fully inside the stack's footprint, so nothing pokes into its neighbours)
         const n = 2 + Math.floor(R() * 3), base = rr(0.24, 0.32); let zz = z;
+        x += 0.012;
         for (let k = 0; k < n; k++) {
-          const b = make(k === 0 ? 'thick' : 'normal'); b.h = base - k * rr(0.005, 0.03); b.flat = true; b.yaw = rr(-0.08, 0.08);
-          b.x = x + b.h / 2 + rr(-0.01, 0.01); b.z = zz; zz += b.w; books.push(b);
-          if (zz > z + SH.clear - 0.05) break;
+          const b = make(k === 0 ? 'thick' : 'normal'); b.h = base - k * rr(0.005, 0.03); b.flat = true; b.yaw = rr(-0.03, 0.03);
+          if (zz + b.w > z + SH.clear - 0.02) break;
+          b.x = x + base / 2; b.z = zz; zz += b.w + 0.001; books.push(b);
         }
-        x += base + 0.02; prev = null; continue;
+        x += base + 0.025; prev = null; continue;
       }
       const b = make(r < 0.3 ? 'thick' : r < 0.5 ? 'thin' : 'normal');
       if (r > 0.9 && prev && !prev.lean) {
         // leaning on the book to its left
-        const a = rr(0.18, 0.42), p = x + b.h * Math.sin(a);
+        // it rests on the neighbour's top corner if that one is shorter, otherwise against its side
+        const a = rr(0.18, 0.42), p = x + Math.min(b.h * Math.sin(a), prev.h * Math.tan(a)) + 0.002;
         if (p + b.w * Math.cos(a) > SH.x1) break;
         b.lean = a; b.x = p; b.z = z; books.push(b);
         x = p + b.w * Math.cos(a) + rr(0.02, 0.06); prev = b; continue;
       }
       if (x + b.w > SH.x1) break;
-      b.x = x + b.w / 2; b.z = z; books.push(b); x += b.w + rr(0.0, 0.004); prev = b;
+      b.x = x + b.w / 2; b.z = z; books.push(b); x += b.w + rr(0.0015, 0.005); prev = b;   // never exactly touching (no flicker)
     }
   }
 
@@ -125,7 +128,7 @@ export function createBooks() {
     I.push(k, k + 1, k + 2, k, k + 2, k + 3);
   };
   books.forEach((b) => {
-    const { w, d, h } = b, a = w / 2, y0 = SH.yFront - d - Math.random() * 0.012, y1 = y0 + d;
+    const { w, d, h } = b, a = w / 2, y0 = SH.yFront - d - R() * 0.012, y1 = y0 + d;
     // place: upright, leaning (pivot on its bottom-left edge) or lying flat
     if (b.flat) m.makeTranslation(b.x, 0, b.z + a).multiply(new THREE.Matrix4().makeRotationZ(b.yaw)).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)).multiply(new THREE.Matrix4().makeTranslation(0, 0, -h / 2));
     else if (b.lean) m.makeTranslation(b.x, 0, b.z).multiply(new THREE.Matrix4().makeRotationY(-b.lean)).multiply(new THREE.Matrix4().makeTranslation(a, 0, 0));

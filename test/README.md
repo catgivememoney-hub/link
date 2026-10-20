@@ -31,3 +31,10 @@ Update 3:
 | --- | --- | --- |
 | Monitor (inside `test/assets/house.glb`) | [Monitor](https://poly.pizza/m/3CNCR-m-KGH) by TheFlyingPotato Youtube, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Dock lamp (inside `test/assets/house.glb`) | [Garden Lamp](https://poly.pizza/m/cCiFRJLsuI) by Zsky, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+
+Update 4:
+- Settings → Graphics is a slider with seven levels: None, Fast, Default, Balanced, Fancy, Best, Extreme.
+- Snow: walking on snow leaves a pressed trail; while it snows, the trail slowly fills back in (about a minute).
+- Snow scene: the lake is frozen solid. The boat can't be boarded (if you're sailing when it freezes, you're put ashore) and there's no fishing on the ice.
+- Gallery: the category chips (All, #learn, …) are bigger and sit on an even, gentle slant.
+- Chimney stones laid in proper staggered courses (nothing overlapping); bookshelf books never overlap; reeds by the water only nod gently.

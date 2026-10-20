@@ -150,9 +150,10 @@ export function createBoat({ scene, house, physics }) {
       } else B.v *= Math.exp(-dt * 2);
       // float, rock with the waves, heel into turns, lift the bow a little at speed
       const sp = Math.abs(B.v) / MAX;
-      const bob = Math.sin(time * 1.25) * 0.22 + Math.sin(time * 2.1 + 1.3) * 0.1;
-      const roll = Math.sin(time * 0.9) * 0.035 + Math.sin(time * 1.7 + 0.4) * 0.015 + (B.active ? B.steer * sp * 0.12 + sp * 0.06 : 0);
-      const pitch = Math.sin(time * 1.1 + 0.8) * 0.02 + sp * 0.035;
+      const still = 1 - (s.ice || 0);   // frozen in: no rocking
+      const bob = (Math.sin(time * 1.25) * 0.22 + Math.sin(time * 2.1 + 1.3) * 0.1) * still;
+      const roll = still * Math.sin(time * 0.9) * 0.035 + Math.sin(time * 1.7 + 0.4) * 0.015 + (B.active ? B.steer * sp * 0.12 + sp * 0.06 : 0);
+      const pitch = still * Math.sin(time * 1.1 + 0.8) * 0.02 + sp * 0.035;
       node.position.set(B.x, waterY + bob, B.z);
       node.rotation.set(roll, B.h - H0 + Math.PI, pitch, 'YXZ');
       const P = B.parts;
