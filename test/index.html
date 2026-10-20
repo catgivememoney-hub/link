@@ -212,6 +212,23 @@
         </div>
         <input id="gfxRange" type="range" min="0" max="6" step="1" value="3" aria-label="Graphics" list="gfxTicks">
         <div style="display:flex;justify-content:space-between;font-size:10px;letter-spacing:.04em;opacity:.55;margin-top:4px"><span>None</span><span>Fast</span><span>Default</span><span>Balanced</span><span>Fancy</span><span>Best</span><span>Extreme</span></div>
+        <p id="gfxMem" style="margin:8px 0 0;font-size:11px;opacity:.6"></p>
+        <p style="margin:4px 0 0;font-size:11px;opacity:.6">Fancy+: sun shadows near and far, soft creases (ambient occlusion). Best+: contact shadows, shadows from the fire and lamps. Extreme: reflections on the lake, bounce light, sun shafts.</p>
+      </section>
+
+      <section class="p-sec" style="--d:2">
+        <div class="set-row">
+          <h3>Frame rate</h3>
+          <select id="fpsCap" style="font:inherit;padding:6px 10px;border-radius:10px;border:1px solid var(--glass-line,rgba(0,0,0,.15));background:var(--glass-strong,#fff);color:inherit">
+            <option value="0">Match screen</option><option value="240">240</option><option value="165">165</option><option value="144">144</option>
+            <option value="120">120</option><option value="90">90</option><option value="60">60</option><option value="30">30</option>
+          </select>
+        </div>
+        <div class="set-row" style="margin-top:10px">
+          <h3>Show FPS</h3>
+          <button id="fpsShow" class="switch" type="button" role="switch" aria-checked="false" aria-label="Show FPS"><b></b></button>
+        </div>
+        <p style="margin:6px 0 0;font-size:11px;opacity:.6">V-Sync is always on in web browsers, so the most you'll see is your screen's refresh rate.</p>
       </section>
 
       <section class="p-sec" style="--d:2">
@@ -298,7 +315,7 @@
     "three-addons/": "./test/vendor/three/examples/jsm/"
   } }
   </script>
-  <script type="module" src="test/src/main.js?v=t4"></script>
+  <script type="module" src="test/src/main.js?v=t5"></script>
   <div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:rgba(200,60,40,.85);padding:6px 10px;border-radius:999px">TEST COPY · new cabin &amp; sailboat</div>
 </body>
 </html>

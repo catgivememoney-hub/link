@@ -89,6 +89,10 @@ export function createHouse({ scene }) {
   const ceilLight = new THREE.PointLight(0xffd29a, 0, 48, 1.3); ceilLight.position.copy(toWorld(0, 0.7, 3.45)); group.add(ceilLight);
   const glowMats = { dock: [], bulb: [] };
   const L = { ceiling: false, k: 0, lever: null, switchMeshes: [] };
+  // shadows from the fire, the hanging light and the dock lamp (graphics Best and up). They're only
+  // re-drawn when something moves (a door, the light switch) or every couple of seconds, so they're cheap.
+  const SH = { size: 0, t: 0, lights: [fireLight, ceilLight, dockLight] };
+  SH.lights.forEach((l) => { l.shadow.autoUpdate = false; l.shadow.camera.near = 0.5; l.shadow.camera.far = 70; l.shadow.bias = -0.003; l.shadow.normalBias = 0.08; l.shadow.radius = 4; l.shadow.intensity = 0.85; });   // soft, never pitch black
 
   new GLTFLoader().load('test/assets/house.glb', (g) => {
     const root = g.scene;
@@ -203,6 +207,14 @@ export function createHouse({ scene }) {
     pickSwitch(ray, reach = 22) { if (!L.switchMeshes.length) return false; const h = ray.intersectObjects(L.switchMeshes, false)[0]; return !!h && h.distance < reach; },
     toggleLight() { L.ceiling = !L.ceiling; return L.ceiling; },
     get lightOn() { return L.ceiling; },
+    setLightShadows(size) {
+      SH.size = size;
+      SH.lights.forEach((l) => {
+        l.castShadow = size > 0;
+        if (size > 0) { if (l.shadow.map && l.shadow.mapSize.x !== size) { l.shadow.map.dispose(); l.shadow.map = null; } l.shadow.mapSize.set(size, size); l.shadow.needsUpdate = true; }
+      });
+    },
+    get lightShadowBytes() { return SH.size ? SH.lights.length * 6 * SH.size * SH.size * 4 : 0; },
 
     update(s, time, now, waterY, feet, dt = 1 / 60) {
       group.visible = s.pCabin > 0.01;
@@ -221,9 +233,14 @@ export function createHouse({ scene }) {
       glowMats.dock.forEach((m) => { m.emissiveIntensity = 0.05 + night * 3.2; });
       // the hanging light (eases on and off; the switch lever flips)
       L.k += ((L.ceiling ? 1 : 0) - L.k) * (1 - Math.pow(0.0001, dt));
-      ceilLight.intensity = L.k * 520 * on;
+      ceilLight.intensity = L.k * 300 * on;
       glowMats.bulb.forEach((m) => { m.emissiveIntensity = 0.02 + L.k * 4; });
       if (L.lever) L.lever.rotation.z = L.ceiling ? -0.5 : 0.5;
+      if (SH.size) {
+        SH.t += dt;
+        const moving = doors.some((d) => Math.abs(d.to - d.k) > 0.0005) || Math.abs((L.ceiling ? 1 : 0) - L.k) > 0.01;
+        if (moving || SH.t > 2) { SH.t = 0; SH.lights.forEach((l) => { if (l.intensity > 0.01) l.shadow.needsUpdate = true; }); }
+      }
       if (H.fire) { const k = 0.9 + 0.12 * flick; H.fire.scale.y = k; H.fire.position.y = (FL + 0.2) * (1 - k); }   // flames lick up from their base
     }
   };

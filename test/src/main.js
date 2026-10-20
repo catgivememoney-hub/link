@@ -24,6 +24,8 @@ import { createBoat } from './boat.js';
 import { WIND } from './kit.js';
 import { createComputer } from './computer.js';
 import { createPortal } from './portal.js';
+import { createSSFX } from './ssfx.js';
+import { SunLight } from 'three-addons/lights/SunLight.js';
 import { createPhysics } from './physics.js';
 import { createPlayer, EYE } from './player.js';
 import { createLens } from './lens.js';
@@ -101,6 +103,10 @@ import { createAssets } from './assets.js';
   };
   const hand = createHandLight(scene, U);
   const lens = createLens(U);
+  lens.fx = createSSFX();
+  // the sun for Fancy and up: cascaded shadows (sharp near you, wider further away), replaces the plain sun
+  const sunCSM = new SunLight(0xffffff, 1); sunCSM.visible = false; scene.add(sunCSM);
+  const fxFrame = { sunDir: new THREE.Vector3(), sunDisc: new THREE.Vector3(), sunAmt: 0, sunColor: new THREE.Color(), sunVisible: 0, waterY: 0, ice: 0 };
 
   const st0 = window.MEOW_STATE;
   let motion = st0 && st0.motion === 'reduced' ? 'reduced' : 'full';
@@ -170,8 +176,10 @@ import { createAssets } from './assets.js';
     water.WU.uLevel.value = s.water; terrain.TU.uWaterY.value = s.water; terrain.TU.uWaterC.value.copy(s.waterC);
     water.tex.offset.set(time * 0.004, time * 0.006);
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
-    // Best graphics: the sun casts shadows around you (its shadow box follows the camera)
-    if (sun.castShadow) { sun.target.position.set(Math.round(camera.position.x / 8) * 8, 0, Math.round(camera.position.z / 8) * 8); sun.position.add(sun.target.position); }
+    if (sunCSM.visible) { sunCSM.color.copy(sun.color); sunCSM.intensity = sun.intensity; sunCSM.position.copy(s.lightDir).normalize().multiplyScalar(100); }
+    fxFrame.sunDir.copy(s.lightDir).normalize(); fxFrame.sunDisc.copy(U.uSunDir.value);
+    fxFrame.sunAmt = Math.min(1, s.light) * (1 - indoorK); fxFrame.sunColor.copy(s.sunC); fxFrame.sunVisible = s.sunSize > 0 ? 1 : 0;
+    fxFrame.waterY = s.water; fxFrame.ice = s.ice || 0;
     WIND.value = (0.9 + 0.7 * (s.rain || 0) + 0.3 * (s.snow || 0)) * (full() ? 1 : 0.3);
     hemi.color.copy(s.hemiSky); hemi.groundColor.copy(s.hemiGround); hemi.intensity = s.hemi * 1.6;
     trees.update(s, now);
@@ -514,14 +522,47 @@ import { createAssets } from './assets.js';
     LU.uVig.value = 0.32 + indoorK * 0.16;
     LU.uSat.value = scenes.cur.sat + (Math.max(scenes.cur.sat, 0.8) - scenes.cur.sat) * indoorK;   // warm colour comes back inside
     renderer.toneMappingExposure = exposure;
-    lens.render(renderer, scene, camera);
+    lens.render(renderer, scene, camera, time, fxFrame);
   };
+  /* ---------- frame rate: an optional limit, and a counter (Settings) ----------
+     The browser always draws in step with the screen (V-Sync is always on for web pages), so the most
+     you can get is your screen's refresh rate; the limit lets you choose less. */
+  const FPS = { cap: 0, last: 0, show: false, n: 0, t0: 0, raw: [], prev: 0, ms: 0 };
+  try { FPS.cap = +(localStorage.getItem('meow.fpscap') || 0); FPS.show = localStorage.getItem('meow.showfps') === '1'; } catch { /* ignore */ }
+  const fpsEl = document.createElement('div');
+  fpsEl.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:70;pointer-events:none;font:600 12px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#d9ffd6;background:rgba(0,0,0,.55);padding:6px 9px;border-radius:8px;white-space:pre;display:none';
+  document.body.appendChild(fpsEl);
   const frame = (now) => {
     requestAnimationFrame(frame);
+    if (FPS.prev) { FPS.raw.push(now - FPS.prev); if (FPS.raw.length > 120) FPS.raw.shift(); }
+    FPS.prev = now;
     if (!started || document.hidden) return;
+    if (FPS.cap > 0) {
+      const iv = 1000 / FPS.cap, el = now - FPS.last;
+      if (el < iv - 1.2) return;
+      FPS.last = el > iv * 3 ? now : now - (el % iv);
+    }
+    const t = performance.now();
     step(now);
     watchPerf(now);
+    FPS.ms += performance.now() - t; FPS.n++;
+    if (now - FPS.t0 > 500) {
+      if (FPS.show) {
+        const sorted = [...FPS.raw].sort((a, b) => a - b), med = sorted[sorted.length >> 1] || 16.7;
+        fpsEl.textContent = `${Math.round(FPS.n * 1000 / (now - FPS.t0))} fps   ${(FPS.ms / Math.max(1, FPS.n)).toFixed(1)} ms\nscreen ~${Math.round(1000 / med)} Hz · ${GFX_LEVELS[GFX.level].name}${FPS.cap ? ' · cap ' + FPS.cap : ''}`;
+      }
+      fpsEl.style.display = FPS.show ? 'block' : 'none';
+      FPS.n = 0; FPS.ms = 0; FPS.t0 = now;
+    }
   };
+  {
+    const sel = document.getElementById('fpsCap'), sw = document.getElementById('fpsShow');
+    if (sel) { sel.value = String(FPS.cap); sel.addEventListener('change', () => { FPS.cap = +sel.value; try { localStorage.setItem('meow.fpscap', String(FPS.cap)); } catch { /* ignore */ } }); }
+    if (sw) {
+      sw.setAttribute('aria-checked', String(FPS.show));
+      sw.addEventListener('click', () => { FPS.show = !FPS.show; sw.setAttribute('aria-checked', String(FPS.show)); try { localStorage.setItem('meow.showfps', FPS.show ? '1' : '0'); } catch { /* ignore */ } });
+    }
+  }
 
   /* ---------- scenes ---------- */
   const themeExposure = () => (root.getAttribute('data-theme') === 'dark' ? 0.62 : 1.0);
@@ -575,7 +616,7 @@ import { createAssets } from './assets.js';
     _pos() { const ps = player.state; return { x: ps.x, z: ps.z, feet: ps.feet, mode: player.mode, cx: camera.position.x, cy: camera.position.y, cz: camera.position.z, yaw: ps.yaw, pitch: ps.pitch, indoor: indoorK }; },
     _toggleDoor(name) { toggleDoor(cabin.doors.find((q) => !name || q.name === name)); },
     _aimDoor(cx, cy) { const d = aimAtDoor(cx, cy); return { hit: !!d, name: d && d.name, walking: player.walking }; },
-    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _assets() { return assets; }, get _physics() { return physics; }, get _boat() { return boat; }, get _computer() { return computer; }, get _portal() { return portal; }, get _house() { return cabin; }, get _terrain() { return terrain; }, get _player() { return player; }, get _cur() { return scenes.cur; },
+    get _trees() { return trees; }, get _keys() { return [...keys]; }, get _study() { return study; }, get _cabin() { return cabin; }, get _assets() { return assets; }, get _physics() { return physics; }, get _boat() { return boat; }, get _computer() { return computer; }, get _portal() { return portal; }, get _house() { return cabin; }, get _terrain() { return terrain; }, get _dbg() { return { renderer, sunCSM, sun, lens, scene }; }, get _player() { return player; }, get _cur() { return scenes.cur; },
     _nearTree(i, d = 16) { const b = trees.base[i % trees.base.length]; if (b) this._standAt(b.p.x, b.p.z + d); }
   };
   void EYE;
@@ -584,13 +625,14 @@ import { createAssets } from './assets.js';
   //   pr: pixel ratio cap (× your screen's), shadows: house/torch shadows, sun: sun-shadow map size (0 = none),
   //   box: how far around you sun shadows reach, plants: grass/ferns/flowers drawn, soft: soft shadow edges
   const GFX_LEVELS = {
-    none:     { name: 'None',     pr: 0.5,  shadows: false, sun: 0,    box: 0,   plants: false, soft: false },
-    fast:     { name: 'Fast',     pr: 0.75, shadows: false, sun: 0,    box: 0,   plants: true,  soft: false },
-    default:  { name: 'Default',  pr: 1.0,  shadows: true,  sun: 0,    box: 0,   plants: true,  soft: false },
-    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  sun: 0,    box: 0,   plants: true,  soft: false },
-    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  sun: 1024, box: 120, plants: true,  soft: false },
-    best:     { name: 'Best',     pr: 2.0,  shadows: true,  sun: 2048, box: 150, plants: true,  soft: true },
-    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  sun: 4096, box: 220, plants: true,  soft: true }
+    //          pixels         sun shadows: cascade map size, distance, softness   lamp/fire shadows   screen-space effects
+    none:     { name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, fx: {} },
+    fast:     { name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
+    default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
+    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
+    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
+    best:     { name: 'Best',     pr: 2.0,  shadows: true,  csm: 2048, far: 260, soft: 1.6, lamps: 512,  plants: true,  fx: { ao: 1, aoSamples: 12, contact: 0.6, scale: 0.75 } },
+    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  csm: 3072, far: 400, soft: 1.8, lamps: 1024, plants: true,  fx: { ao: 1, aoSamples: 16, contact: 0.7, gi: 0.45, ssr: 1, rays: 1, scale: 1 } }
   };
   const GFX_ORDER = Object.keys(GFX_LEVELS);
   const OLD = { low: 'fast', mid: 'balanced', high: 'best' };
@@ -604,17 +646,27 @@ import { createAssets } from './assets.js';
     perf.level = 0; perf.sum = perf.n = 0; renderer.setPixelRatio(PR[0]);
     renderer.shadowMap.enabled = G.shadows;
     renderer.shadowMap.type = G.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
-    sun.castShadow = G.sun > 0;
-    if (G.sun > 0) {
-      if (sun.shadow.map && sun.shadow.mapSize.x !== G.sun) { sun.shadow.map.dispose(); sun.shadow.map = null; }
-      sun.shadow.mapSize.set(G.sun, G.sun);
-      Object.assign(sun.shadow.camera, { left: -G.box, right: G.box, top: G.box, bottom: -G.box, near: 1, far: 900 });
-      sun.shadow.camera.updateProjectionMatrix();
+    sun.castShadow = false;
+    // cascaded sun shadows
+    sunCSM.visible = G.csm > 0; sun.visible = !sunCSM.visible; sunCSM.castShadow = G.csm > 0;
+    if (G.csm > 0) {
+      if (sunCSM.shadow.map && sunCSM.shadow.mapSize.y !== G.csm) { sunCSM.shadow.map.dispose(); sunCSM.shadow.map = null; }
+      sunCSM.shadow.mapSize.set(G.csm, G.csm); sunCSM.shadow.camera.far = G.far; sunCSM.shadow.radius = G.soft;
+      sunCSM.shadow.bias = -0.0003; sunCSM.shadow.normalBias = 0.12;
     }
+    cabin.setLightShadows(G.lamps);
+    lens.fx.configure(Object.assign({ ao: 0, aoSamples: 8, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.5 }, G.fx));
     scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
     resize();
     const r = document.getElementById('gfxRange'), out = document.getElementById('gfxVal');
     if (r) r.value = String(GFX_ORDER.indexOf(lv)); if (out) out.textContent = G.name;
+    // about how much graphics memory this level uses (picture buffers + shadow maps + the world itself)
+    const mem = document.getElementById('gfxMem');
+    if (mem) {
+      const db = renderer.getDrawingBufferSize(new THREE.Vector2());
+      const bytes = db.x * db.y * 8 + lens.bytes + lens.fx.bytes() + (G.csm ? 2 * G.csm * G.csm * 4 : 0) + cabin.lightShadowBytes + 350e6;
+      mem.textContent = 'About ' + (bytes / 1e9).toFixed(bytes < 1e9 ? 2 : 1) + ' GB of graphics memory at this window size';
+    }
   };
   { const r = document.getElementById('gfxRange'); if (r) r.addEventListener('input', () => applyGfx(GFX_ORDER[+r.value])); }
   applyGfx(GFX.level);

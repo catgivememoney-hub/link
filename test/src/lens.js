@@ -62,12 +62,15 @@ export function createLens(U) {
   })));
   return {
     LU,
-    resize(w, h) { rt.setSize(w, h); LU.uRes.value.set(w, h); },
-    render(renderer, world, camera) {
+    resize(w, h) { rt.setSize(w, h); LU.uRes.value.set(w, h); if (this.fx) this.fx.resize(w, h); },
+    fx: null,   // screen-space lighting (ssfx.js), run between the world and the lens when switched on
+    get bytes() { return rt.width * rt.height * 12; },
+    render(renderer, world, camera, time = 0, frame = null) {
       LU.uNear.value = camera.near; LU.uFar.value = camera.far;
       renderer.setRenderTarget(rt);
       renderer.render(world, camera);
       renderer.setRenderTarget(null);
+      LU.tScene.value = this.fx && frame && this.fx.enabled ? this.fx.render(renderer, rt, camera, time, frame) : rt.texture;
       renderer.render(scene, cam);
     }
   };

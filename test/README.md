@@ -38,3 +38,10 @@ Update 4:
 - Snow scene: the lake is frozen solid. The boat can't be boarded (if you're sailing when it freezes, you're put ashore) and there's no fishing on the ice.
 - Gallery: the category chips (All, #learn, …) are bigger and sit on an even, gentle slant.
 - Chimney stones laid in proper staggered courses (nothing overlapping); bookshelf books never overlap; reeds by the water only nod gently.
+
+Update 5 (graphics):
+- Settings → Frame rate: Match screen / 240 / 165 / 144 / 120 / 90 / 60 / 30, and Show FPS (fps, frame time, your screen's refresh rate). V-Sync is always on in browsers.
+- Fancy: cascaded sun shadows (three.js SunLight: sharp near you, wider further out) + ambient occlusion.
+- Best: + softer shadow edges, contact shadows, shadows from the fire, the hanging light and the dock lamp (only redrawn when something moves).
+- Extreme: + screen-space reflections on the lake/ice, bounce light, sun shafts. All screen-space effects are in `test/src/ssfx.js`.
+- Settings shows roughly how much graphics memory the chosen level uses (about 0.5–1 GB at 1440p on Extreme).
