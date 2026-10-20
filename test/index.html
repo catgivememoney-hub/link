@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- TEST COPY: everything loads from the main site folder, except the 3D world (test/src) -->
+  <base href="../">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MEOW (test)</title>
+  <meta name="description" content="MEOW:all your meows, one place.">
+  <link rel="icon" type="image/png" href="favicon.png?v=5">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=5">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@200;300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=42">
+  <!-- password check runs first, before anything else shows -->
+  <script src="password.js?v=42"></script>
+  <script src="gate.js?v=42"></script>
+</head>
+<body>
+  <!-- Password screen: one input, nothing else -->
+  <div id="gate" class="gate"><input id="gateInput" type="password" autocomplete="current-password" aria-label="Password"></div>
+
+  <!-- 3D nature world (world.js) -->
+  <canvas id="bg" class="bg-canvas" aria-hidden="true"></canvas>
+  <div class="veil" aria-hidden="true"></div>
+
+  <!-- film layer (cinema.js): letterbox bars with a title, grain, opening curtain -->
+  <div class="bars" aria-hidden="true"><i class="bar bar-top"></i><i class="bar bar-bottom"><span id="caption" class="caption"></span></i></div>
+
+  <!-- ================= Sidebar: saved links ================= -->
+  <aside id="sidebar" class="sidebar glass" aria-label="Links">
+    <div class="side-head">
+      <span id="count" class="count">0</span>
+      <input id="search" type="search" placeholder="Search" data-i18n-ph="search" aria-label="Search" data-i18n-aria="search">
+      <button id="closeSide" class="icon" type="button" aria-label="Close sidebar" data-i18n-aria="closeSidebar">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="tags-wrap">
+      <div id="tags" class="tags" role="group" aria-label="Tags"></div>
+      <button id="tagsMore" class="tags-more" type="button" hidden></button>
+    </div>
+    <!-- how the list is shown: one list or grouped by tag, and the order -->
+    <div class="side-tools">
+      <div id="viewSeg" class="seg mini">
+        <button type="button" data-val="list" data-i18n="viewList">List</button>
+        <button type="button" data-val="groups" data-i18n="viewGroups">Groups</button>
+      </div>
+      <select id="sortSel" class="sort" aria-label="Sort" data-i18n-aria="sortBy">
+        <option value="added" data-i18n="sortAdded">Added</option>
+        <option value="az" data-i18n="sortAZ">A–Z</option>
+        <option value="site" data-i18n="sortSite">Site</option>
+      </select>
+    </div>
+    <div id="moveNotice" class="move" hidden>
+      <span id="moveText"></span>
+      <div class="move-actions">
+        <button id="moveBtn" type="button" data-i18n="moveBtn">Move</button>
+        <button id="moveDismiss" type="button" data-i18n="dismiss">Delete</button>
+      </div>
+    </div>
+    <ul id="list" class="list"></ul>
+    <p id="empty" class="empty" hidden data-i18n="empty">Empty</p>
+  </aside>
+  <div id="backdrop" class="backdrop" hidden></div>
+
+  <!-- ================= Top bar ================= -->
+  <header class="top">
+    <div class="cluster enter" style="--d:0">
+      <button id="menuBtn" data-i18n-label="lbLinks" class="icon glass" type="button" aria-label="Open sidebar" aria-controls="sidebar" aria-expanded="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h10M5 17h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <img class="logo" src="logo.png?v=6" alt="MEOW" width="44" height="44">
+    </div>
+    <div class="cluster enter" style="--d:1">
+      <button id="themeBtn" data-i18n-label="lbTheme" class="icon glass" type="button" aria-label="Contrast" data-i18n-aria="toggleTheme" title="Contrast" data-i18n-title="toggleTheme">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+      </button>
+      <button id="settingsBtn" data-i18n-label="settings" class="icon glass" type="button" aria-label="Settings" data-i18n-aria="settings" aria-controls="settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= Center ================= -->
+  <main class="stage">
+    <h1 class="wordmark enter" style="--d:2" aria-label="MEOW"><span>M</span><span>E</span><span>O</span><span>W</span></h1>
+
+    <form id="addForm" class="composer glass enter" style="--d:3" autocomplete="off">
+      <input id="title" placeholder="Title" data-i18n-ph="phTitle" maxlength="80" required aria-label="Title" data-i18n-aria="phTitle">
+      <span class="sep" aria-hidden="true"></span>
+      <input id="url" type="url" placeholder="https://" required aria-label="URL">
+      <span class="sep" aria-hidden="true"></span>
+      <input id="tag" placeholder="#tag" data-i18n-ph="phTag" maxlength="20" aria-label="Tag" data-i18n-aria="phTag">
+      <button class="icon add-btn" type="submit" aria-label="Add" data-i18n-aria="meowIt" title="Add" data-i18n-title="meowIt">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      </button>
+    </form>
+
+    <p class="hint enter" style="--d:4" data-i18n="heroHint">+ copies a line → paste into links.js</p>
+
+    <div class="tools enter" style="--d:5">
+      <button id="galleryBtn" data-i18n-label="gallery" class="icon glass" type="button" aria-label="Gallery" data-i18n-aria="gallery" title="Gallery" data-i18n-title="gallery">
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </button>
+      <a id="editBtn" data-i18n-label="lbEdit" class="icon glass" href="#" target="_blank" rel="noopener noreferrer" aria-label="Edit links.js" data-i18n-aria="editLinks" title="links.js" data-i18n-title="editLinks">
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </a>
+      <button id="exportBtn" data-i18n-label="lbExport" class="icon glass" type="button" aria-label="Export JSON" data-i18n-aria="exportJson" title="JSON" data-i18n-title="exportJson">
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <p class="hint walk-hint enter" style="--d:6" data-i18n-html="walkHint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk into the forest</p>
+  </main>
+
+
+  <!-- ================= 3D floating gallery (gallery.js) ================= -->
+  <section id="gallery" class="gallery" hidden aria-label="Gallery">
+    <div class="rail-wrap">
+      <div id="rail" class="rail" role="group" aria-label="Tags"></div>
+    </div>
+    <div id="galleryStage" class="g-stage">
+      <div id="ring" class="ring"></div>
+      <p id="galleryEmpty" class="g-empty" hidden data-i18n="empty">Empty</p>
+    </div>
+    <div class="g-controls">
+      <button id="galleryClose" data-i18n-label="close" class="icon glass" type="button" aria-label="Close" data-i18n-aria="close">
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- ================= forest (forest.js): tree label, link card, back button ================= -->
+  <div id="treeTip" class="tree-tip" aria-hidden="true"><i></i><span></span></div>
+  <div id="treeCard" class="tree-card glass" hidden role="dialog" aria-label="Link">
+    <div class="tree-card-body">
+      <span class="fav"></span>
+      <div class="meta"><strong></strong><small></small></div>
+    </div>
+    <div class="tree-card-actions">
+      <a id="treeOpen" class="icon tiny" href="#" target="_blank" rel="noopener noreferrer" aria-label="Open" data-i18n-aria="lbOpen"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <button id="treeCopy" class="icon tiny" type="button" aria-label="Copy" data-i18n-aria="copy"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
+    </div>
+  </div>
+  <div class="explore-ui">
+    <p class="hint explore-hint" data-i18n="exploreHint">Drag to look around · swipe back to return</p>
+    <button id="homeBtn" class="icon glass home-btn" type="button" aria-label="Home" data-i18n-aria="lbHome" data-i18n-label="lbHome">
+      <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h10a6 6 0 0 1 0 12h-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+
+  <!-- Hover preview card (filled in by app.js) -->
+  <div id="preview" class="preview glass" aria-hidden="true">
+    <div class="shot"><img id="previewImg" alt=""><span id="previewMsg" data-i18n="loadingPreview">…</span></div>
+    <div class="cap"><strong id="previewTitle"></strong><small id="previewHost"></small></div>
+  </div>
+
+  <!-- ================= Settings ================= -->
+  <div id="settings" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="panel glass">
+      <div class="panel-head">
+        <h2 id="setTitle" data-i18n="settings">Settings</h2>
+        <button id="setClose" class="icon" type="button" aria-label="Close" data-i18n-aria="close">
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <section class="p-sec" style="--d:0">
+        <h3 data-i18n="sBackground">Scene</h3>
+        <div id="sceneGrid" class="scenes"></div>
+      </section>
+
+      <section class="p-sec" style="--d:1">
+        <h3 data-i18n="sCursor">Cursor</h3>
+        <div id="cursorGrid" class="cursors">
+          <button type="button" data-val="paw"><img src="paw.png" alt="" width="26" height="26" style="margin:4px"><span data-i18n="curPaw">Paw</span></button>
+          <button type="button" data-val="classic"><svg viewBox="0 0 32 32"><path class="f" d="M3 2 L3 22.5 L8.6 17.4 L12.6 26.2 L16.4 24.6 L12.5 16 L19.6 15.6 Z"/><path class="l" d="M3 2 L3 22.5 L8.6 17.4 L12.6 26.2 L16.4 24.6 L12.5 16 L19.6 15.6 Z"/></svg><span data-i18n="curClassic">Classic</span></button>
+          <button type="button" data-val="soft"><svg viewBox="0 0 32 32"><path class="s" d="M5.2 3.3 C4.2 2.5 3.2 3 3.2 4.3 L3.6 20.6 C3.6 22.2 5.1 22.8 6.2 21.7 L10.3 17.6 C10.8 17.1 11.4 16.9 12.1 16.9 L18 16.9 C19.6 16.9 20.2 15.1 19 14.1 Z"/></svg><span data-i18n="curSoft">Soft</span></button>
+          <button type="button" data-val="buddy"><svg viewBox="0 0 32 32"><path class="l" d="M4.4 2.5 C3.4 1.8 2.6 2.3 2.7 3.4 L3.2 14.8 C3.3 16.1 4.7 16.5 5.5 15.5 L7.5 13 C8 12.4 8.6 12.2 9.4 12.2 L12.9 12.3 C14.3 12.3 14.7 10.7 13.7 9.8 Z"/><g transform="translate(9 8) scale(0.85)"><path class="f" d="M6 15 C3 14 3 10.5 6.2 10 C7.4 7.6 10 6.4 12.4 7.4 C11.6 5 13 2.6 15.2 3 C17.4 3.4 18.4 6 17.6 8.8 C18.6 9.6 19.6 9.4 21 9.6 C22.4 9.8 22.6 11.6 22.2 13 C24 15.6 25.4 18 25 21 C24.6 24.4 22 25.6 19 25.6 L11 25.6 C8.4 25.6 7.2 24 6.8 21.6 C6.4 19.2 6.6 17 6 15 Z"/><path class="l" d="M6 15 C3 14 3 10.5 6.2 10 C7.4 7.6 10 6.4 12.4 7.4 C11.6 5 13 2.6 15.2 3 C17.4 3.4 18.4 6 17.6 8.8 C18.6 9.6 19.6 9.4 21 9.6 C22.4 9.8 22.6 11.6 22.2 13 C24 15.6 25.4 18 25 21 C24.6 24.4 22 25.6 19 25.6 L11 25.6 C8.4 25.6 7.2 24 6.8 21.6 C6.4 19.2 6.6 17 6 15 Z"/><circle cx="11.4" cy="15.2" r="1.2" fill="currentColor"/><circle cx="17.4" cy="15.8" r="1.2" fill="currentColor"/></g></svg><span data-i18n="curBuddy">Buddy</span></button>
+        </div>
+      </section>
+
+      <section class="p-sec" style="--d:1">
+        <div class="set-row">
+          <h3 data-i18n="sSoundOn">Sound</h3>
+          <button id="soundSwitch" class="switch" type="button" role="switch" aria-checked="true" aria-label="Sound" data-i18n-aria="sSoundOn"><b></b></button>
+        </div>
+        <input id="volume" type="range" min="0" max="100" step="1" aria-label="Volume" data-i18n-aria="sVolume">
+        <p class="hint small" data-i18n="sSoundHint">Starts on first click</p>
+      </section>
+
+      <section class="p-sec two" style="--d:2">
+        <div class="set-row">
+          <h3 data-i18n="sHintsOn">Hints</h3>
+          <button id="hintSwitch" class="switch" type="button" role="switch" aria-checked="true" aria-label="Hints" data-i18n-aria="sHintsOn"><b></b></button>
+        </div>
+        <div class="set-row">
+          <h3 data-i18n="sMotion">Motion</h3>
+          <div id="motionSeg" class="seg">
+            <button type="button" data-val="full" data-i18n="sMotionFull">Full</button>
+            <button type="button" data-val="reduced" data-i18n="sMotionReduced">Less</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="p-sec" style="--d:2">
+        <div class="set-row">
+          <h3 data-i18n="sSens">Mouse sensitivity</h3>
+          <output id="sensVal" class="sens-val">1.0×</output>
+        </div>
+        <input id="sens" type="range" min="20" max="250" step="5" aria-label="Mouse sensitivity" data-i18n-aria="sSens">
+      </section>
+
+      <section class="p-sec" style="--d:2">
+        <h3 data-i18n="sLanguage">Language</h3>
+        <div id="langSeg" class="langs">
+          <button type="button" data-val="en" lang="en">English</button>
+          <button type="button" data-val="zh" lang="zh-CN">中文</button>
+          <button type="button" data-val="yue" lang="yue-HK">粵語</button>
+          <button type="button" data-val="es" lang="es">Español</button>
+          <button type="button" data-val="hi" lang="hi">हिन्दी</button>
+          <button type="button" data-val="ja" lang="ja">日本語</button>
+        </div>
+      </section>
+
+      <section class="p-sec row-actions" style="--d:3">
+        <button id="lockNow" type="button" class="btn" aria-label="Lock" data-i18n-aria="sLock">
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+          <span data-i18n="sLock">Lock</span>
+        </button>
+      </section>
+
+      <!-- tucked away so they aren't clicked by accident; both ask before doing anything -->
+      <details class="p-sec advanced" style="--d:4">
+        <summary><span data-i18n="sAdvanced">Advanced</span><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+        <h3 data-i18n="sPassword">Password</h3>
+        <div class="pw-row">
+          <input id="newPw" type="password" autocomplete="new-password" placeholder="New" data-i18n-ph="sNewPw" aria-label="New password" data-i18n-aria="sNewPw">
+          <button id="copyCode" type="button" data-i18n="sCopyCode">Code</button>
+        </div>
+        <!-- opens password.js on GitHub, at the line marked "CHANGE PASSWORD HERE" -->
+        <a id="changePw" class="btn solid" href="#" target="_blank" rel="noopener noreferrer" data-i18n="sChangePw">Change</a>
+        <p class="hint small" data-i18n="sPwHint">Code → Change → paste</p>
+        <h3 class="danger-h" data-i18n="sDanger">Reset everything</h3>
+        <button id="resetSettings" type="button" class="btn danger" data-i18n="sReset">Reset</button>
+      </details>
+    </div>
+  </div>
+
+  <!-- Confirmation before anything is deleted -->
+  <div id="confirm" class="modal center" hidden role="alertdialog" aria-modal="true" aria-describedby="confirmMsg">
+    <div class="panel small glass">
+      <p id="confirmMsg"></p>
+      <div class="confirm-actions">
+        <button id="confirmNo" type="button" class="btn">Cancel</button>
+        <button id="confirmYes" type="button" class="btn solid">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div class="lamp-glow" aria-hidden="true"></div>
+  <div id="grain" class="grain" aria-hidden="true"></div>
+  <div class="curtain" aria-hidden="true"></div>
+
+  <script src="i18n.js?v=42"></script>
+  <script src="sound.js?v=42"></script>
+  <script src="app.js?v=42"></script>
+  <script src="gallery.js?v=42"></script>
+  <script src="settings.js?v=42"></script>
+  <script src="cursor.js?v=42"></script>
+  <script src="cinema.js?v=42"></script>
+  <script src="fx.js?v=42"></script>
+  <script src="forest.js?v=42"></script>
+  <style>html.boating .explore-hint { opacity: 0 !important; }</style>
+  <script type="importmap">
+  { "imports": {
+    "three": "./test/vendor/three/build/three.module.js",
+    "three-addons/": "./test/vendor/three/examples/jsm/"
+  } }
+  </script>
+  <script type="module" src="test/src/main.js?v=t1"></script>
+  <div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:rgba(200,60,40,.85);padding:6px 10px;border-radius:999px">TEST COPY · new cabin &amp; sailboat</div>
+</body>
+</html>
