@@ -8,6 +8,7 @@
    walking physics and main.js work unchanged. */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three-addons/loaders/GLTFLoader.js';
+import { createBooks } from './books.js';
 
 // where the house stands (terrain.js levels the ground here; props.js keeps a clearing)
 export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
@@ -83,7 +84,11 @@ export function createHouse({ scene }) {
   // lights: the fire (flickers), the bedside lamp, the lantern on the dock
   const fireLight = new THREE.PointLight(0xff8a3c, 0, 46, 1.5); fireLight.position.copy(toWorld(0.7, 2.85, FL + 0.45)); group.add(fireLight);
   const lampLight = new THREE.PointLight(0xffc98a, 0, 26, 1.5); lampLight.position.copy(toWorld(3.02, -3.15, FL + 0.88)); group.add(lampLight);
-  const dockLight = new THREE.PointLight(0xffc070, 0, 36, 1.4); dockLight.position.copy(toWorld(20.05, 3.55, DOCK_Z + 2.3)); group.add(dockLight);
+  const dockLight = new THREE.PointLight(0xffc070, 0, 60, 1.2); dockLight.position.copy(toWorld(20.05, 3.55, DOCK_Z + 2.55)); group.add(dockLight);
+  // the hanging light over the living room (off until you flip the switch by the front door)
+  const ceilLight = new THREE.PointLight(0xffd29a, 0, 48, 1.3); ceilLight.position.copy(toWorld(0, 0.7, 3.45)); group.add(ceilLight);
+  const glowMats = { dock: [], bulb: [] };
+  const L = { ceiling: false, k: 0, lever: null, switchMeshes: [] };
 
   new GLTFLoader().load('test/assets/house.glb', (g) => {
     const root = g.scene;
@@ -91,7 +96,14 @@ export function createHouse({ scene }) {
       if (!o.isMesh) return;
       o.castShadow = true; o.receiveShadow = true;
       const m = o.material, n = m.name || '';
-      if (n === 'Fire' || n === 'Screen' || n === 'Lamp glow') {
+      if (n.startsWith('Dock lamp glass') || n.startsWith('Lamp bulb')) {
+        // lamps that light up: their glass glows (strength set every frame)
+        o.material = new THREE.MeshStandardMaterial({ color: n.startsWith('Dock') ? 0xf2e3a0 : 0xfff3d6, emissive: 0xffc070, emissiveIntensity: 0, roughness: 0.4, transparent: n.startsWith('Dock'), opacity: 0.92, name: n });
+        (n.startsWith('Dock') ? glowMats.dock : glowMats.bulb).push(o.material); o.castShadow = false;
+      } else if (n === 'Screen off') {
+        // the monitor when the computer is off: plain black glass
+        o.material = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.55, metalness: 0, envMapIntensity: 0.12, name: n });
+      } else if (n === 'Fire' || n === 'Screen' || n === 'Lamp glow') {
         o.material = new THREE.MeshBasicMaterial({ vertexColors: true, name: n });
         o.castShadow = false;
       } else if (n === 'Glass') {
@@ -106,6 +118,11 @@ export function createHouse({ scene }) {
       if (d.node) { d.node.traverse((o) => { if (o.isMesh) d.meshes.push(o); }); d.hinge = d.node.getWorldPosition(new THREE.Vector3()); }
     }
     H.fire = root.getObjectByName('Fire');
+    L.lever = root.getObjectByName('Light_switch_lever') || root.getObjectByName('Light switch lever');
+    ['Light_switch', 'Light switch', 'Light_switch_lever', 'Light switch lever'].forEach((n) => { const o = root.getObjectByName(n); if (o) o.traverse((m) => { if (m.isMesh && !L.switchMeshes.includes(m)) L.switchMeshes.push(m); }); });
+    // the bookshelf gets real books (titles on their spines)
+    const cabinNode = root.getObjectByName('New_Cabin') || root.getObjectByName('New Cabin');
+    if (cabinNode) cabinNode.add(createBooks());
     H.boatNode = root.getObjectByName('Sailboat');
     H.mooring = root.getObjectByName('Mooring_lines_&_fenders') || root.getObjectByName('Mooring lines & fenders');
     H.root = root; H.ready = true;
@@ -182,6 +199,10 @@ export function createHouse({ scene }) {
       return best;
     },
     toggle(d) { if (!d) return false; d.to = d.to > 0.5 ? 0 : 1; return d.to > 0.5; },
+    // the light switch by the front door
+    pickSwitch(ray, reach = 22) { if (!L.switchMeshes.length) return false; const h = ray.intersectObjects(L.switchMeshes, false)[0]; return !!h && h.distance < reach; },
+    toggleLight() { L.ceiling = !L.ceiling; return L.ceiling; },
+    get lightOn() { return L.ceiling; },
 
     update(s, time, now, waterY, feet, dt = 1 / 60) {
       group.visible = s.pCabin > 0.01;
@@ -194,7 +215,15 @@ export function createHouse({ scene }) {
       const flick = 0.82 + 0.1 * Math.sin(time * 9.1 + Math.sin(time * 3.3) * 2) + 0.08 * Math.sin(time * 23.7);
       fireLight.intensity = 70 * flick * on;
       lampLight.intensity = 22 * on;
-      dockLight.intensity = Math.min(1, (s.pGlow || 0) * 1.4) * 50 * on;
+      // the dock lamp comes on as it gets dark (night, aurora, rain…), off on bright days
+      const night = Math.min(1, Math.max(0, ((s.pGlow || 0) - 0.3) / 0.45));
+      dockLight.intensity = night * 900 * on * (0.97 + 0.03 * flick);
+      glowMats.dock.forEach((m) => { m.emissiveIntensity = 0.05 + night * 3.2; });
+      // the hanging light (eases on and off; the switch lever flips)
+      L.k += ((L.ceiling ? 1 : 0) - L.k) * (1 - Math.pow(0.0001, dt));
+      ceilLight.intensity = L.k * 520 * on;
+      glowMats.bulb.forEach((m) => { m.emissiveIntensity = 0.02 + L.k * 4; });
+      if (L.lever) L.lever.rotation.z = L.ceiling ? -0.5 : 0.5;
       if (H.fire) { const k = 0.9 + 0.12 * flick; H.fire.scale.y = k; H.fire.position.y = (FL + 0.2) * (1 - k); }   // flames lick up from their base
     }
   };

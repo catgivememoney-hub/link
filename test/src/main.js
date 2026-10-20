@@ -247,7 +247,7 @@ import { createAssets } from './assets.js';
       const wy = water.mesh.position.y;
       if (boat.active) { boat.leave(player, wy); return; }
       if (boat.canBoard(player.state, wy)) { boat.board(player); return; }
-      { const [cx, cy] = aimPoint(); if (computer.pick(rayAt(cx, cy))) { openComputer(); return; } }
+      { const [cx, cy] = aimPoint(); if (cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; } if (computer.pick(rayAt(cx, cy))) { openComputer(); return; } }
       if (scenes.cur.pCabin > 0.5) {
         const [cx, cy] = aimPoint();
         const d = cabin.pickDoor(rayAt(cx, cy)) || cabin.nearestDoor(camera.position.x, camera.position.z, 14);
@@ -281,6 +281,7 @@ import { createAssets } from './assets.js';
     return cabin.pickDoor(rayAt(cx, cy), 26);
   };
   // sit down at the computer (the pointer comes back so you can use the screen)
+  const flipLight = () => { cabin.toggleLight(); if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(false); hover.pending = true; };
   const openComputer = () => { unlockPointer(); keys.clear(); actHint.classList.remove('show'); doorShown = false; computer.open(camera.position, camera.quaternion); };
   const toggleDoor = (d) => {
     if (!d) return false;
@@ -304,9 +305,11 @@ import { createAssets } from './assets.js';
     const active = player.walking && !busy();
     const doorHit = active ? aimAtDoor(cx, cy) : null;
     const pc = active && !doorHit && !boat.active && computer.pick(rayAt(cx, cy));
-    const door = !!doorHit || pc;
+    const sw = active && !doorHit && !pc && !boat.active && cabin.pickSwitch(rayAt(cx, cy));
+    const door = !!doorHit || pc || sw;
     if (door !== doorShown) { doorShown = door; actHint.classList.toggle('show', door); }
-    if (pc) actHint.querySelector('span').textContent = 'Click to use the computer';
+    if (sw) actHint.querySelector('span').textContent = cabin.lightOn ? 'Click to turn the light off' : 'Click to turn the light on';
+    else if (pc) actHint.querySelector('span').textContent = 'Click to use the computer';
     else if (door) actHint.querySelector('span').textContent = doorHit.to > 0.5 ? t$('doorClose', 'Click to close the door') : t$('doorOpen', 'Click to open the door');
     root.classList.toggle('on-book', study.hover(rayAt(cx, cy), active && scenes.cur.pCabin > 0.5 && indoorK > 0.5));
     // trees light up under the dot (or the mouse at home); not from indoors or over the page's own buttons
@@ -326,9 +329,10 @@ import { createAssets } from './assets.js';
       drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, touch: e.pointerType === 'touch' };
       e.preventDefault();
     } else if (e.button === 0) {
+      if (resumeWait) resumeOff();
       // first click in the world hides the pointer; from then on you aim with the dot
       if (player.walking && !locked() && e.pointerType === 'mouse' && !lockFails && canvas.requestPointerLock) {
-        lockPointer(); press = null; e.preventDefault();
+        lockPointer(); press = null; e.preventDefault(); resumeOff();
         dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'miss' } }));
         return;
       }
@@ -349,7 +353,7 @@ import { createAssets } from './assets.js';
     if (locked()) { if (player.walking && !busy()) player.look(e.movementX, e.movementY, 0.0024 * sens()); return; }
     look.x = e.clientX; look.y = e.clientY; look.inside = true; look.ui = !!overUI(e.target);
     // without a hidden pointer, just moving the mouse turns the view in the world
-    if (player.walking && !busy() && !look.ui && e.pointerType !== 'touch' && (e.movementX || e.movementY)) player.look(e.movementX, e.movementY, 0.0028 * sens());
+    if (player.walking && !busy() && !resumeWait && !look.ui && e.pointerType !== 'touch' && (e.movementX || e.movementY)) player.look(e.movementX, e.movementY, 0.0028 * sens());
     hover.x = e.clientX; hover.y = e.clientY; hover.pending = true;
   }, { passive: true });
   document.addEventListener('mouseleave', () => { look.inside = false; hover.pending = true; });
@@ -364,6 +368,7 @@ import { createAssets } from './assets.js';
     // what was clicked: a biting fish, then a book, then the door, then a tree
     if (player.walking && fishing.click(now)) return;
     if (player.walking && scenes.cur.pCabin > 0.5 && indoorK > 0.5 && study.click(rayAt(cx, cy), now)) return;
+    if (player.walking && !boat.active && cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; }
     if (player.walking && !boat.active && computer.pick(rayAt(cx, cy))) { openComputer(); return; }
     { const d = aimAtDoor(cx, cy); if (d) { toggleDoor(d); return; } }
     const id = trees.hovered >= 0 ? trees.hovered : (indoorK < 0.5 ? trees.pick(rayAt(cx, cy)) : -1);
@@ -371,7 +376,8 @@ import { createAssets } from './assets.js';
       // a link tree: the cat paw grabs you and takes you to the website
       trees.shake(id, now);
       if (window.MEOW_SOUND && window.MEOW_SOUND.chime) window.MEOW_SOUND.chime(id);
-      unlockPointer(); keys.clear(); portal.go(id, !full());
+      const ps0 = player.state;
+      unlockPointer(); keys.clear(); portal.go(id, !full(), { x: ps0.x, z: ps0.z, feet: ps0.feet, yaw: ps0.yaw, pitch: ps0.pitch, scene: scenes.name });
       return;
     }
     if (id >= 0) {
@@ -538,6 +544,9 @@ import { createAssets } from './assets.js';
       entranceAt = performance.now();
       goTo(name, 4200);
       canvas.classList.add('on');
+      // back from a link (the page was loaded fresh): stand where you were before the paw took you
+      let back = null; try { back = JSON.parse(sessionStorage.getItem('meow.back') || 'null'); sessionStorage.removeItem('meow.back'); } catch { /* ignore */ }
+      if (back && typeof back.x === 'number') setTimeout(() => resumeAt(back), 600);
     },
     /* ---- for testing ---- */
     // stand at world (x, z); level: 'study' / 'mezz' for the library floors, else the highest floor there
@@ -574,6 +583,32 @@ import { createAssets } from './assets.js';
   };
   { const seg = document.getElementById('gfxSeg'); if (seg) seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) applyGfx(b.dataset.val); }); }
   applyGfx(GFX.level);
+
+  /* ---------- coming back from a link with the browser's Back button ---------- */
+  const resumeEl = document.createElement('div');
+  resumeEl.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:45;pointer-events:none;padding:12px 20px;border-radius:999px;background:rgba(20,26,32,.66);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font:500 14px/1.3 "Josefin Sans",system-ui,sans-serif;letter-spacing:.06em;border:1px solid rgba(255,255,255,.18);opacity:0;transition:opacity .3s';
+  resumeEl.textContent = '🐾 Welcome back · click to look around';
+  document.body.appendChild(resumeEl);
+  let resumeWait = false;
+  function resumeOff() { resumeWait = false; resumeEl.style.opacity = '0'; }
+  function resumeAt(back) {
+    portal.reset(); keys.clear(); drag = null; press = null;
+    if (back && typeof back.x === 'number') {
+      if (back.scene && PRESETS[back.scene] && back.scene !== scenes.name) goTo(back.scene, 1);
+      player.place(back.x, back.z, back.feet);
+      player.face((back.yaw || 0) + Math.PI, Math.max(-0.3, Math.min(0.3, back.pitch || 0)));   // facing away from the tree
+    }
+    setExploring(true);
+    resumeWait = true; resumeEl.style.opacity = '1';
+    hover.pending = true;
+  }
+  document.addEventListener('pointerlockchange', () => { if (locked()) resumeOff(); });
+  addEventListener('pageshow', (e) => {
+    // restored from the browser's back/forward cache: everything is still here, just reset it
+    if (!e.persisted) return;
+    let back = null; try { back = JSON.parse(sessionStorage.getItem('meow.back') || 'null'); sessionStorage.removeItem('meow.back'); } catch { /* ignore */ }
+    resumeAt(back);
+  });
 
   { const hint = document.querySelector('.walk-hint'); if (hint) hint.addEventListener('click', () => enterWorld()); }
   requestAnimationFrame(frame);

@@ -16,3 +16,18 @@ Update 2:
 - Settings → Graphics: Fast / Balanced / Best (Best adds sun shadows and full sharpness).
 - The desktop computer in the cabin works: click the monitor. Google search and YouTube videos play on its screen; ↗ opens a page in a real tab.
 - Every link in links.js has a link tree with a signpost near the cabin. Click it: a cat paw grabs you into the tree and the page becomes that website (Back returns).
+
+Update 3:
+- New monitor (black screen when the computer is off) and a new garden lamp on the dock, which lights up at night.
+- Hanging light in the living room, off by default; the switch is on the wall by the front door (click it or press E).
+- Bookshelf: real titles on the spines, thick and thin books, some leaning, some stacked flat.
+- Roof: the bedroom roof and the living-room roof now meet in a proper valley (nothing pokes through inside).
+- Computer: ✕ is the only way out (the bottom button is hidden while you use it). Clicking a Google result that refuses to be shown offers "Back to Google" or a real tab.
+- Link trees: no signposts. A 3D grey-tabby paw (modelled on Jeffy's kitten, test/assets/kitten.png) grabs you and drags you into the tree, the screen goes dark, then the link opens. The first link takes the tree nearest the cabin; each next link takes the free tree nearest the previous one.
+- Back from a link: you stand where you were, the pointer comes back with one click.
+
+## Credits (test copy)
+| File | Source | License |
+| --- | --- | --- |
+| Monitor (inside `test/assets/house.glb`) | [Monitor](https://poly.pizza/m/3CNCR-m-KGH) by TheFlyingPotato Youtube, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Dock lamp (inside `test/assets/house.glb`) | [Garden Lamp](https://poly.pizza/m/cCiFRJLsuI) by Zsky, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
