@@ -95,7 +95,7 @@ for (const name in BASE) {
   PRESETS[name] = { ...EXTRA, ...BASE[name] };
   SHOW_KEYS.forEach((k, i) => { PRESETS[name][k] = SHOW[name][i]; });
 }
-export const SCENE_NAMES = Object.keys(PRESETS);
+export const SCENE_NAMES = Object.keys(PRESETS).filter((n) => n !== 'frost' && n !== 'spring');
 
 const COLORS = ['skyTop', 'skyHorizon', 'skyBottom', 'fog', 'low', 'high', 'snowC', 'waterC', 'sunC', 'lightC', 'hemiSky', 'hemiGround', 'treeC', 'aur1', 'aur2'];
 const VECS = ['sunDir', 'lightDir', 'cam', 'look'];
@@ -106,7 +106,9 @@ const toState = (p) => {
 };
 const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 
+const RETIRED = { frost: 'snow', spring: 'summer' };   // removed scenes go to their nearest one
 export function createScenes(initial) {
+  initial = RETIRED[initial] || initial;
   let name = PRESETS[initial] ? initial : 'rain';
   const cur = toState(PRESETS[name]);
   let from = toState(PRESETS[name]), to = toState(PRESETS[name]);
@@ -116,6 +118,7 @@ export function createScenes(initial) {
     get name() { return name; },
     // start a cross-fade to another scene (dur in ms; 1 = instant)
     go(next, ms, now) {
+      next = RETIRED[next] || next;
       if (!PRESETS[next]) next = 'rain';
       name = next;
       from = toState(cur);

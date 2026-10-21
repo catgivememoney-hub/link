@@ -109,15 +109,57 @@ export const M = (x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, 
 /* ---------- the shared material: grows with the scene, sways, gets moss / snow / frost ---------- */
 // wind strength for every swaying plant and tree (main.js sets it per scene and graphics level)
 export const WIND = { value: 1 };
-export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, color = 0xffffff, snowBias = 0, sink = 0, softBack = false, crisp = false, snowMask = false, grain = 0, rich = false, indoor = false, tree = false } = {}) => {
+// real surface textures (CC0, Poly Haven — see test/README.md), sampled from three sides (triplanar) so they need no UVs.
+// TEXON: graphics setting (0 = off). Each set: colour map, normal map, the colour's average (to keep the tint), metres per tile.
+export const TEXON = { value: 1 };
+const texCache = {};
+const loadTex = (url, srgb, avgOut) => {
+  if (texCache[url]) return texCache[url];
+  const c = document.createElement('canvas'); c.width = c.height = 2;
+  const g = c.getContext('2d'); g.fillStyle = srgb ? '#808080' : '#8080ff'; g.fillRect(0, 0, 2, 2);
+  const t = new THREE.Texture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  const img = new Image();
+  img.onload = () => {
+    t.image = img; t.anisotropy = 8; t.needsUpdate = true;
+    if (avgOut) {   // average colour (linear), so the texture adds detail without shifting the scene's colours
+      const k = document.createElement('canvas'); k.width = k.height = 8; const x = k.getContext('2d'); x.drawImage(img, 0, 0, 8, 8);
+      const d = x.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, b = 0;
+      for (let i = 0; i < d.length; i += 4) { r += Math.pow(d[i] / 255, 2.2); gg += Math.pow(d[i + 1] / 255, 2.2); b += Math.pow(d[i + 2] / 255, 2.2); }
+      avgOut.set(r / 64, gg / 64, b / 64);
+    }
+  };
+  img.src = url;
+  return (texCache[url] = t);
+};
+export const TEXSET = {};
+export const texSet = (name, tile) => {
+  if (!TEXSET[name]) {
+    const avg = new THREE.Vector3(0.5, 0.5, 0.5);
+    TEXSET[name] = { tTexD: { value: loadTex(`test/assets/tex/${name}_diff.jpg`, true, avg) }, tTexN: { value: loadTex(`test/assets/tex/${name}_nor_gl.jpg`, false) }, uTexAvg: { value: avg } };
+  }
+  return { ...TEXSET[name], uTexTile: { value: 1 / tile } };
+};
+const TEX_GLSL = `
+  uniform sampler2D tTexD, tTexN; uniform vec3 uTexAvg; uniform float uTexTile, uTexOn; varying vec3 vWP; varying vec3 vWN;
+  vec3 triW() { vec3 w = pow(abs(normalize(vWN)), vec3(4.0)); return w / (w.x + w.y + w.z); }
+  vec3 triD() { vec3 w = triW(), p = vWP * uTexTile;
+    return texture2D(tTexD, p.zy).rgb * w.x + texture2D(tTexD, p.xz).rgb * w.y + texture2D(tTexD, p.xy).rgb * w.z; }
+  vec3 triN() { vec3 w = triW(), p = vWP * uTexTile, n = normalize(vWN);
+    vec3 a = texture2D(tTexN, p.zy).xyz * 2.0 - 1.0, b = texture2D(tTexN, p.xz).xyz * 2.0 - 1.0, c = texture2D(tTexN, p.xy).xyz * 2.0 - 1.0;
+    vec3 nx = vec3(0.0, a.y, a.x) * sign(n.x), ny = vec3(b.x, 0.0, b.y) * sign(n.y), nz = vec3(c.x, c.y, 0.0) * sign(n.z);
+    return nx * w.x + ny * w.y + nz * w.z; }`;
+export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, color = 0xffffff, snowBias = 0, sink = 0, softBack = false, crisp = false, snowMask = false, grain = 0, rich = false, indoor = false, tree = false, tex = null, texTile = 1, texK = 1 } = {}) => {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side, color });
+  const TX = tex ? texSet(tex, texTile) : null;
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, shared, { uShow: show, uWind: WIND });
+    Object.assign(sh.uniforms, shared, { uShow: show, uWind: WIND }, TX ? { ...TX, uTexOn: TEXON } : {});
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         uniform float uShow, uTime, uSnowCover, uMoss, uFrost, uWind;
         attribute float aTip; attribute float aMat;
         varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj; varying float vMat; varying vec3 vObjN;
+        ${TX ? 'varying vec3 vWP; varying vec3 vWN;' : ''}
         ${tree ? 'attribute float aHash; uniform float uBare; varying float vHash; varying float vLeaf;' : ''}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vObj = position; vMat = aMat; vObjN = objectNormal;
@@ -130,6 +172,7 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         mat3 cM3 = mat3(cIM);
         vec3 cWN = objectNormal / vec3(dot(cM3[0], cM3[0]), dot(cM3[1], cM3[1]), dot(cM3[2], cM3[2]));   // undo stretching
         cWN = normalize(mat3(modelMatrix) * (cM3 * cWN));
+        ${TX ? 'vWP = cWP.xyz; vWN = cWN;' : ''}
         float patchy = 0.75 + 0.25 * sin(cWP.x * 0.37 + sin(cWP.z * 0.23) * 2.0) * sin(cWP.z * 0.41);
         vSnowA = uSnowCover * smoothstep(${(0.2 - snowBias).toFixed(3)}, ${(0.7 - snowBias).toFixed(3)}, cWN.y) * patchy;
         ${snowMask ? 'vSnowA *= aTip;' : ''}
@@ -157,6 +200,7 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
                      mix(mix(gH(i + vec3(0, 0, 1)), gH(i + vec3(1, 0, 1)), f.x), mix(gH(i + vec3(0, 1, 1)), gH(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
         float grainH(vec3 p) { return gN(vec3(p.x * 1.3 + p.z * 0.4, p.y * 24.0, p.z * 1.3)) * 0.65 + gN(p * 11.0) * 0.35; }
         ${rich ? RICH_GLSL : ''}
+        ${TX ? TEX_GLSL : ''}
         varying float vMat; varying vec3 vObjN;
         float gRichH = 0.0; float gAO = 1.0; float gBounce = 0.0;
         ${tree ? `uniform float uFall, uBloom, uLush; varying float vHash; varying float vLeaf;
@@ -164,6 +208,10 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
           return h < 0.25 ? vec3(0.86, 0.42, 0.1) : h < 0.5 ? vec3(0.72, 0.16, 0.08) : h < 0.75 ? vec3(0.92, 0.7, 0.16) : vec3(0.55, 0.3, 0.12);
         }` : ''}`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+        ${TX ? `if (uTexOn > 0.5) {
+          float tk = ${tree ? '(1.0 - vLeaf)' : '1.0'} * ${texK.toFixed(2)};
+          if (tk > 0.0) { vec3 dn = triN(); normal = normalize(normal + (viewMatrix * vec4(dn * 0.9 * tk, 0.0)).xyz); }
+        }` : ''}
         ${softBack ? '#ifdef DOUBLE_SIDED\n normal *= faceDirection;\n #endif' : ''}
         ${rich ? `{
           vec2 dHdxy = vec2(dFdx(gRichH), dFdy(gRichH)) * ${(grain || 0.02).toFixed(3)};
@@ -182,6 +230,11 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
           { vec3 nb = abs(fDet) * normal - vGrad; if (dot(nb, nb) > 1e-12) normal = normalize(nb); }   // (never NaN on a degenerate pixel)
         }` : ''}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        ${TX ? `if (uTexOn > 0.5) {
+          float tk = ${tree ? '(1.0 - vLeaf)' : '1.0'} * ${texK.toFixed(2)};
+          vec3 td = triD() / max(uTexAvg, vec3(0.02));
+          diffuseColor.rgb *= mix(vec3(1.0), clamp(td, 0.0, 2.6), tk);
+        }` : ''}
         ${tree ? `{
           // seasons on the needles: summer lush green, spring blossom, autumn colours
           float shade = clamp(dot(vColor.rgb, vec3(0.33)), 0.2, 1.6);

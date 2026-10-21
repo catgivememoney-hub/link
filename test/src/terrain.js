@@ -2,6 +2,7 @@
    heightAt(x, z) is the one source of truth for the ground: the terrain mesh,
    tree placement, walking and the cabin site all use it. */
 import * as THREE from 'three';
+import { TEXON } from './kit.js';
 import { CABIN } from './house.js';
 
 /* ---------- small deterministic noise ---------- */
@@ -61,6 +62,8 @@ export function createTerrain(scene) {
   const TU = { uLow: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() }, uSnow: { value: new THREE.Color() }, uSnowLine: { value: 100 }, uSand: { value: 0 }, uHole: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) }, uWaterY: { value: 0 }, uWaterC: { value: new THREE.Color(0x6d7378) },
     // fine grass detail up close (assets/textures/grass-detail.jpg, CC-BY 3.0, see README)
     tDetail: { value: lateTexture('assets/textures/grass-detail.jpg', [97, 97, 97]) },
+    // CC0 Poly Haven ground (grass) and rock, used up close when Textures are on (Settings → Graphics)
+    tGrassD: { value: lateTexture('test/assets/tex/grass_diff.jpg', [110, 110, 90]) }, tRockD: { value: lateTexture('test/assets/tex/rock_diff.jpg', [128, 128, 128]) }, tRockN: { value: lateTexture('test/assets/tex/rock_nor_gl.jpg', [128, 128, 255]) }, uTexOn: TEXON,
     // snow trails: a pressure map that follows you (see createTrail below)
     tTrail: { value: null }, uTrailBox: { value: new THREE.Vector4(0, 0, 1, 1) } };
   const trail = createTrail(TU);
@@ -78,7 +81,7 @@ export function createTerrain(scene) {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y; vXZ = position.xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; uniform sampler2D tDetail; varying float vH; varying float vSlope; varying vec2 vXZ;
+        uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; uniform sampler2D tDetail, tGrassD, tRockD, tRockN; uniform float uTexOn; varying float vH; varying float vSlope; varying vec2 vXZ;
         uniform sampler2D tTrail; uniform vec4 uTrailBox;
         float trl(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
         float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -95,7 +98,18 @@ export function createTerrain(scene) {
           float dnear = smoothstep(170.0, 18.0, length(vec3(vXZ.x, vH, vXZ.y) - cameraPosition));
           if (dnear > 0.0) {
             float dl = dot(texture2D(tDetail, vXZ * 0.09).rgb, vec3(0.3, 0.59, 0.11)) * 0.6 + dot(texture2D(tDetail, vXZ * 0.023 + 0.37).rgb, vec3(0.3, 0.59, 0.11)) * 0.4;
-            land *= 1.0 + (dl - 0.38) * 3.2 * dnear * (1.0 - smoothstep(0.4, 0.8, vSlope) * 0.5);
+            land *= 1.0 + (dl - 0.38) * 3.2 * dnear * (1.0 - smoothstep(0.4, 0.8, vSlope) * 0.5) * (1.0 - 0.6 * uTexOn);
+          }
+          if (uTexOn > 0.5) {
+            // real ground and rock photos: ground on the flats, rock on the steep parts, faded with distance
+            float tnear = smoothstep(240.0, 20.0, length(vec3(vXZ.x, vH, vXZ.y) - cameraPosition));
+            vec3 gA = texture2D(tGrassD, vXZ * 0.11).rgb, gB = texture2D(tGrassD, vXZ * 0.031 + 0.4).rgb;
+            float gl = dot(mix(gA, gB, 0.4), vec3(0.3, 0.59, 0.11));
+            vec3 rk = texture2D(tRockD, vec2(vXZ.x + vH * 0.7, vH) * 0.07).rgb;
+            float rl = dot(rk, vec3(0.3, 0.59, 0.11));
+            float steep = smoothstep(0.32, 0.62, vSlope);
+            land *= mix(1.0, mix(0.55 + gl * 1.6, 0.45 + rl * 1.5, steep), tnear);
+            land = mix(land, land * vec3(0.95, 0.93, 0.9), steep * tnear);
           }
         }
         land = mix(land, land * vec3(0.92, 0.88, 0.84), smoothstep(0.35, 0.75, vSlope));
@@ -169,7 +183,7 @@ export function createWater(scene, U) {
   // real water normal maps from the three.js examples (two layers drifting across each other)
   const n1 = lateTexture('assets/textures/water-normal-1.jpg', [128, 128, 255]); n1.repeat.set(70, 70);
   const n2 = lateTexture('assets/textures/water-normal-2.jpg', [128, 128, 255]);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.3, metalness: 0.35, normalMap: n1, normalScale: new THREE.Vector2(0.35, 0.35), transparent: true, envMapIntensity: 0.6 });
+  const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.3, metalness: 0.35, normalMap: n1, normalScale: new THREE.Vector2(0.35, 0.35), transparent: true, envMapIntensity: 0.35 });
   // the lake must not show inside the library (which is below the water line)
   const WU = { uIce: { value: 0 }, uStudy: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) }, tShore: { value: shore }, uShore: { value: new THREE.Vector4(SR.x0, SR.z0, SR.w, SR.d) }, uLevel: { value: 0 }, uTime: U.uTime, tN2: { value: n2 } };
   mat.onBeforeCompile = (sh) => {

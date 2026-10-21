@@ -112,7 +112,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       color: (p) => { const c = 0.5 + n3(p.x * 3 + seed, p.y * 3, p.z * 3) * 0.28 + p.y * 0.12; return [c, c * 0.99, c * 0.95]; }
     }).geometry();
   };
-  const rockMat = coverMaterial(shared, show.pRocks, { color: 0x8d8f90, snowBias: 0.05 });
+  const rockMat = coverMaterial(shared, show.pRocks, { color: 0x8d8f90, snowBias: 0.05, tex: 'rock', texTile: 5 });
   const rockSets = [[], [], []], pebbles = [];
   const putRock = (x, z, s, list, solid) => {
     const h = heightAt(x, z);
@@ -178,7 +178,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
     parts.add(new THREE.CircleGeometry(0.85, 12), { m: M(0, 0.98, 0, -Math.PI / 2, 0, 0), color: (p) => { const r = Math.hypot(p.x, p.z); const c = 0.6 + Math.sin(r * 22) * 0.05; return [c * 1.05, c * 0.9, c * 0.7]; } });
     return parts.geometry();
   })();
-  const woodMat = coverMaterial(shared, show.pLogs, { color: 0xb7a99a });
+  const woodMat = coverMaterial(shared, show.pLogs, { color: 0xb7a99a, tex: 'log', texTile: 1.4 });
 
   /* ===== stone circle ===== */
   const stonesMesh = (() => {
@@ -209,7 +209,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
     parts.add(stone(40), { m: M(3, 0.4, -2, 0.1, 0.7, Math.PI / 2 - 0.05, 2.6, 7, 1.4), flat: true, color: grey(40) });
     parts.add(stone(50), { m: M(-2, 0.5, 2.5, 0, 0.3, 0, 4.5, 1.5, 2.6), flat: true, color: grey(50) });
     solids.push({ x: circleAt.x + 3, z: circleAt.z - 2, r: 4.5, key: 'pStones' }, { x: circleAt.x - 2, z: circleAt.z + 2.5, r: 4, key: 'pStones' });
-    const m = new THREE.Mesh(parts.geometry(), coverMaterial(shared, show.pStones, { color: 0x9a9c9c }));
+    const m = new THREE.Mesh(parts.geometry(), coverMaterial(shared, show.pStones, { color: 0x9a9c9c, tex: 'rock', texTile: 2.5 }));
     m.position.set(circleAt.x, heightAt(circleAt.x, circleAt.z), circleAt.z);
     return add(m, 'pStones', { cast: true });
   })();
@@ -254,7 +254,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
     stackParts.add(new THREE.BoxGeometry(7, 4, 5), { m: M(L.x + 7, L.y + 2, L.z + 3), color: () => [0.85, 0.84, 0.8] });
     stackParts.add(new THREE.ConeGeometry(5, 2.6, 4), { m: M(L.x + 7, L.y + 5.3, L.z + 3, 0, Math.PI / 4, 0, 1, 1, 0.75), color: () => [0.45, 0.25, 0.22] });
   }
-  add(new THREE.Mesh(stackParts.geometry(), coverMaterial(shared, show.pStacks, { color: 0xa8a3a6, sink: 140 })), 'pStacks');
+  add(new THREE.Mesh(stackParts.geometry(), coverMaterial(shared, show.pStacks, { color: 0xa8a3a6, sink: 140, tex: 'rock', texTile: 12 })), 'pStacks');
   // lamp room glow + slowly turning beams
   const lightTop = new THREE.Vector3(ISLE.x, 11 + 22 * 0.5 - 0.1 + 28.5, ISLE.z);
   const lampGlass = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 3.2, 12), new THREE.MeshBasicMaterial({ color: 0xffe2b0, fog: false }));

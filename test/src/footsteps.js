@@ -9,13 +9,13 @@
 const MARKS = [[0.0, 0.43], [0.49, 0.43], [0.98, 0.43], [1.47, 0.43], [1.96, 0.43], [2.45, 0.43], [2.94, 0.43], [3.43, 0.43]];
 // per surface: playback rate range, filters [type, freq, Q], gain, how much of the clip, extras
 const LOOK = {
-  sand:  { rate: [0.95, 1.06], f: [['highpass', 70]], gain: 0.9, len: 1 },
-  grass: { rate: [0.9, 1.0], f: [['lowpass', 2600], ['highpass', 90]], gain: 0.75, len: 0.85 },
-  snow:  { rate: [0.78, 0.88], f: [['lowpass', 5200], ['peaking', 2400, 1.2, 7]], gain: 0.85, len: 1, crunch: true },
-  wood:  { rate: [1.18, 1.3], f: [['highpass', 260], ['peaking', 1500, 1.5, 4]], gain: 0.45, len: 0.45, knock: true },
-  water: { rate: [1.0, 1.12], f: [['lowpass', 3800]], gain: 0.7, len: 1, splash: true },
-  stone: { rate: [1.25, 1.4], f: [['highpass', 600], ['peaking', 3200, 1, 5]], gain: 0.55, len: 0.35 },
-  ice:   { rate: [1.4, 1.6], f: [['highpass', 1100], ['peaking', 5200, 2, 8]], gain: 0.45, len: 0.3, click: true }
+  sand:  { rate: [0.92, 1.02], f: [['highpass', 70], ['lowpass', 3000]], gain: 0.75, len: 1 },
+  grass: { rate: [0.86, 0.96], f: [['lowpass', 1900], ['highpass', 90]], gain: 0.65, len: 0.85 },
+  snow:  { rate: [0.76, 0.86], f: [['lowpass', 2600], ['peaking', 1400, 1.0, 4]], gain: 0.7, len: 1, crunch: true },
+  wood:  { rate: [1.05, 1.15], f: [['highpass', 180], ['lowpass', 2400]], gain: 0.35, len: 0.45, knock: true },
+  water: { rate: [0.8, 0.9], f: [['lowpass', 900]], gain: 0.18, len: 0.5, splash: true },
+  stone: { rate: [1.1, 1.22], f: [['highpass', 300], ['lowpass', 2800]], gain: 0.45, len: 0.35 },
+  ice:   { rate: [1.2, 1.35], f: [['highpass', 600], ['lowpass', 3600]], gain: 0.35, len: 0.3, click: true }
 };
 
 export function installFootsteps() {
@@ -40,6 +40,12 @@ export function installFootsteps() {
     const g = ac.createGain(), t = ac.currentTime + delay; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     node.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + dur + 0.02);
   };
+  const bubble = (f0, peak, delay) => {
+    const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + delay;
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 1.9, t + 0.06);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.1);
+  };
   const old = window.MEOW_SOUND && window.MEOW_SOUND.step;
   const step = (surface = 'grass', pace = 1) => {
     if (!enabled()) return;
@@ -55,10 +61,15 @@ export function installFootsteps() {
     node.connect(g); g.connect(ac.destination);
     src.start(t, off, len * L.len + 0.02);
     // the character of each surface on top
-    if (L.crunch) for (let k = 0; k < 5; k++) burst(0.03, [['bandpass', rand(1800, 3800), 2.5]], 0.05 * v, 0.02 + k * rand(0.012, 0.024));
+    if (L.crunch) for (let k = 0; k < 5; k++) burst(0.03, [['bandpass', rand(1200, 2400), 2.5]], 0.035 * v, 0.02 + k * rand(0.012, 0.024));
     if (L.knock) { burst(0.14, [['bandpass', rand(170, 240), 2.4]], 0.4 * v); burst(0.05, [['bandpass', rand(900, 1300), 4]], 0.07 * v, 0.004); }
-    if (L.splash) { burst(0.25, [['bandpass', rand(500, 900), 0.9]], 0.14 * v, 0.02); burst(0.12, [['highpass', 2500]], 0.05 * v, 0.05); }
-    if (L.click) burst(0.02, [['highpass', 4000]], 0.06 * v, 0.005);
+    if (L.splash) {
+      // a foot going into the water and coming out: a low slosh, a gurgle of bubbles and dripping
+      burst(0.45, [['bandpass', rand(350, 600), 0.8], ['lowpass', 1400]], 0.32 * v, 0.0);
+      burst(0.3, [['bandpass', rand(900, 1400), 1.2]], 0.12 * v, 0.06);
+      for (let k = 0; k < 4; k++) bubble(rand(500, 1100), 0.05 * v, 0.08 + k * rand(0.04, 0.09));
+    }
+    if (L.click) burst(0.02, [['bandpass', 3000, 2]], 0.035 * v, 0.005);
   };
   const hook = () => { if (window.MEOW_SOUND) window.MEOW_SOUND.step = step; };
   hook(); setTimeout(hook, 500);

@@ -69,7 +69,7 @@ export function createTrees({ scene, shared, isClearing }) {
 
   const show = { value: 1 };
   const SEASON = { uFall: { value: 0 }, uBloom: { value: 0 }, uLush: { value: 0 }, uBare: { value: 0 } };
-  const mat = coverMaterial({ ...shared, ...SEASON, uMoss: { value: 0 }, uFrost: shared.uSnowCover }, show, { sway: 0.022, color: 0x334033, snowBias: -0.3, crisp: true, tree: true });
+  const mat = coverMaterial({ ...shared, ...SEASON, uMoss: { value: 0 }, uFrost: shared.uSnowCover }, show, { sway: 0.022, color: 0x334033, snowBias: -0.3, crisp: true, tree: true, tex: 'bark', texTile: 1.6 });
 
   /* ---------- place them ---------- */
   const N_MAX = 1400;
@@ -169,7 +169,7 @@ export function createTrees({ scene, shared, isClearing }) {
     return P.geometry();
   })();
   const branchShow = { value: 0 };
-  const branches = new THREE.InstancedMesh(branchGeo, coverMaterial({ ...shared, uMoss: { value: 0 }, uFrost: { value: 0 } }, branchShow, { sway: 0.018, color: 0xb8a898 }), trees.count);
+  const branches = new THREE.InstancedMesh(branchGeo, coverMaterial({ ...shared, uMoss: { value: 0 }, uFrost: { value: 0 } }, branchShow, { sway: 0.018, color: 0xb8a898, tex: 'bark', texTile: 1.2 }), trees.count);
   {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0), m = new THREE.Matrix4();
     base.forEach((b, i) => branches.setMatrixAt(i, hash2(i * 1.37, 9.1) < 0.45 ? m.compose(b.p, b.q, b.s) : zero));

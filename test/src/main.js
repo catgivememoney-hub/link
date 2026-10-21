@@ -19,14 +19,17 @@ import { createWeather } from './weather.js';
 import { createScenes, PRESETS, SCENE_NAMES } from './scenes.js';
 import { createProps, createRipples, createFootprints } from './props.js';
 import { createTrees } from './trees.js';
-import { createHouse, CABIN } from './house.js';     // test copy: the new stilt house from Blender
+import { createHouse, CABIN, toWorld } from './house.js';     // test copy: the new stilt house from Blender
 import { createBoat } from './boat.js';
-import { WIND } from './kit.js';
+import { WIND, TEXON } from './kit.js';
 import { createComputer } from './computer.js';
 import { createPortal } from './portal.js';
 import { createSSFX } from './ssfx.js';
 import { installFootsteps } from './footsteps.js';
 installFootsteps();
+import { installSfx } from './sfx.js';
+installSfx();
+const FIRE_POS = toWorld(0.7, 2.85, 1.45);   // the fireplace (house metres, as in house.js)
 import { SunLight } from 'three-addons/lights/SunLight.js';
 import { createPhysics } from './physics.js';
 import { createPlayer, EYE } from './player.js';
@@ -181,8 +184,8 @@ import { createAssets } from './assets.js';
     terrain.TU.uHole.value.copy(FAR); water.WU.uStudy.value.copy(FAR);   // no hole in the ground: the new house stands on stilts
     terrain.TU.uLow.value.copy(s.low); terrain.TU.uHigh.value.copy(s.high); terrain.TU.uSnow.value.copy(s.snowC);
     terrain.TU.uSnowLine.value = s.snowLine; terrain.TU.uSand.value = s.sand;
-    water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = s.waterRough + (0.38 - s.waterRough) * (s.ice || 0);
-    water.WU.uIce.value = s.ice || 0; water.mat.metalness = 0.35 * (1 - (s.ice || 0));
+    water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = Math.max(0.3, s.waterRough) + (0.38 - s.waterRough) * (s.ice || 0);
+    water.WU.uIce.value = s.ice || 0; water.mat.metalness = 0.1 * (1 - (s.ice || 0));
     water.WU.uLevel.value = s.water; terrain.TU.uWaterY.value = s.water; terrain.TU.uWaterC.value.copy(s.waterC);
     water.tex.offset.set(time * 0.004, time * 0.006);
     sun.color.copy(s.lightC); sun.intensity = s.light * 2.2; sun.position.copy(s.lightDir).multiplyScalar(300);
@@ -197,6 +200,7 @@ import { createAssets } from './assets.js';
     props.update(s, time);
     if (!GFX.plants) for (const [o, key] of props.groups) if (key === 'pGrass' || key === 'pFerns' || key === 'flowers') o.visible = false;   // graphics: None
     cabin.update(s, time, now, s.water, player.walking ? player.state.feet : undefined, frameDt);
+    if (window.MEOW_SFX) { const fd = camera.position.distanceTo(FIRE_POS); window.MEOW_SFX.fireAt(Math.min(1, s.pCabin || 0) * Math.pow(1 - Math.min(1, Math.max(0, (fd - 3) / 45)), 2)); }
     assets.update(s, time);
     refreshEnv(now);
   };
@@ -639,8 +643,8 @@ import { createAssets } from './assets.js';
   //   box: how far around you sun shadows reach, plants: grass/ferns/flowers drawn, soft: soft shadow edges
   const GFX_LEVELS = {
     //          pixels         sun shadows: cascade map size, distance, softness   lamp/fire shadows   screen-space effects
-    none:     { name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, fx: {} },
-    fast:     { name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
+    none:     { tex: false, name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, fx: {} },
+    fast:     { tex: false, name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
     default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
     balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
     fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
@@ -654,13 +658,13 @@ import { createAssets } from './assets.js';
   const ADV = { res: 0, sharp: 0, custom: null };
   try { Object.assign(ADV, JSON.parse(localStorage.getItem('meow.gfxadv') || '{}')); } catch { /* ignore */ }
   const saveAdv = () => { try { localStorage.setItem('meow.gfxadv', JSON.stringify(ADV)); } catch { /* ignore */ } };
-  const customFrom = (base) => ({ name: 'Custom', pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants,
+  const customFrom = (base) => ({ name: 'Custom', pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants, tex: base.tex !== false,
     fx: Object.assign({ ao: 0, aoSamples: 12, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.75 }, base.fx) });
   const applyGfx = (lv) => {
     lv = OLD[lv] || lv; if (lv !== 'custom' && !GFX_LEVELS[lv]) lv = 'balanced';
     if (lv === 'custom' && !ADV.custom) ADV.custom = customFrom(GFX_LEVELS.balanced);
     const G = lv === 'custom' ? ADV.custom : GFX_LEVELS[lv];
-    GFX.level = lv; GFX.plants = G.plants; try { localStorage.setItem('meow.gfx', lv); } catch { /* ignore */ }
+    GFX.level = lv; GFX.plants = G.plants; TEXON.value = G.tex === false ? 0 : 1; try { localStorage.setItem('meow.gfx', lv); } catch { /* ignore */ }
     const dpr = window.devicePixelRatio || 1;
     PR[0] = ADV.res > 0 ? dpr * ADV.res : lv === 'extreme' ? Math.min(dpr * 1.25, G.pr) : Math.min(dpr, G.pr);
     lens.LU.uSharp.value = ADV.sharp / 100;
@@ -697,7 +701,7 @@ import { createAssets } from './assets.js';
     $('advSun').value = String(G.csm || 0); $('advLamps').value = String(G.lamps || 0);
     const sw = (id, on) => $(id).setAttribute('aria-checked', String(!!on));
     sw('advShadows', G.shadows); sw('advPlants', G.plants); sw('advAO', G.fx.ao > 0); sw('advContact', G.fx.contact > 0);
-    sw('advSSR', G.fx.ssr > 0); sw('advGI', G.fx.gi > 0); sw('advRays', G.fx.rays > 0);
+    sw('advTex', G.tex !== false); sw('advSSR', G.fx.ssr > 0); sw('advGI', G.fx.gi > 0); sw('advRays', G.fx.rays > 0);
   }
   {
     const $ = (id) => document.getElementById(id);
@@ -710,6 +714,7 @@ import { createAssets } from './assets.js';
       const flip = (id, fn) => $(id).addEventListener('click', () => toCustom((c) => fn(c, $(id).getAttribute('aria-checked') !== 'true')));
       flip('advShadows', (c, on) => { c.shadows = on; if (!on) { c.csm = 0; c.lamps = 0; } });
       flip('advPlants', (c, on) => { c.plants = on; });
+      flip('advTex', (c, on) => { c.tex = on; });
       flip('advAO', (c, on) => { c.fx.ao = on ? 1 : 0; });
       flip('advContact', (c, on) => { c.fx.contact = on ? 0.65 : 0; });
       flip('advSSR', (c, on) => { c.fx.ssr = on ? 1 : 0; });

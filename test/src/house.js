@@ -94,6 +94,43 @@ export function createHouse({ scene }) {
   const SH = { size: 0, t: 0, lights: [fireLight, ceilLight, dockLight] };
   SH.lights.forEach((l) => { l.shadow.autoUpdate = false; l.shadow.camera.near = 0.5; l.shadow.camera.far = 70; l.shadow.bias = -0.003; l.shadow.normalBias = 0.08; l.shadow.radius = 4; l.shadow.intensity = 0.85; });   // soft, never pitch black
 
+  // light smoke drifting up out of the chimney (soft sprites that rise, spread and fade)
+  const smoke = (() => {
+    const N = 36, cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const cx = cv.getContext('2d'), gr = cx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.18)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    cx.fillStyle = gr; cx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(cv);
+    const geo = new THREE.BufferGeometry(), pos = new Float32Array(N * 3), age = new Float32Array(N);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aAge', new THREE.BufferAttribute(age, 1));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: true,
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tMap: { value: tex }, uColor: { value: new THREE.Color(0xc9c9c6) }, uOp: { value: 0.5 }, uScale: { value: 400 } }]),
+      vertexShader: 'attribute float aAge; varying float vAge; uniform float uScale;\n#include <fog_pars_vertex>\nvoid main(){ vAge = aAge; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition; gl_PointSize = uScale * (1.5 + aAge * 7.0) / -mvPosition.z;\n#include <fog_vertex>\n}',
+      fragmentShader: 'uniform sampler2D tMap; uniform vec3 uColor; uniform float uOp; varying float vAge;\n#include <fog_pars_fragment>\nvoid main(){ float a = texture2D(tMap, gl_PointCoord).a * uOp * smoothstep(0.0, 0.12, vAge) * (1.0 - smoothstep(0.45, 1.0, vAge)); gl_FragColor = vec4(uColor, a);\n#include <fog_fragment>\n}'
+    });
+    const points = new THREE.Points(geo, mat); points.frustumCulled = false; points.visible = false; points.renderOrder = 2;
+    group.add(points);
+    const seed = Array.from({ length: N }, (_, i) => ({ t: i / N, dx: Math.random() - 0.5, dz: Math.random() - 0.5 }));
+    const origin = new THREE.Vector3();
+    const LIFE = 9;
+    return {
+      points, origin,
+      update(dt, time, on, wind) {
+        mat.uniforms.uOp.value = 0.45 * on;
+        if (on < 0.01) return;
+        for (let i = 0; i < N; i++) {
+          const p = seed[i]; p.t += dt / LIFE; if (p.t > 1) { p.t -= 1; p.dx = Math.random() - 0.5; p.dz = Math.random() - 0.5; }
+          const k = p.t, rise = k * 26, drift = k * k * 14 * wind;
+          pos[i * 3] = origin.x + p.dx * (0.6 + k * 6) + drift + Math.sin(time * 0.7 + i) * k * 1.5;
+          pos[i * 3 + 1] = origin.y + rise;
+          pos[i * 3 + 2] = origin.z + p.dz * (0.6 + k * 6) + drift * 0.4;
+          age[i] = k;
+        }
+        geo.attributes.position.needsUpdate = true; geo.attributes.aAge.needsUpdate = true;
+      }
+    };
+  })();
   new GLTFLoader().load('test/assets/house.glb', (g) => {
     const root = g.scene;
     root.traverse((o) => {
@@ -138,6 +175,20 @@ export function createHouse({ scene }) {
     if (cabinNode) cabinNode.add(createBooks());
     H.boatNode = root.getObjectByName('Sailboat');
     H.mooring = root.getObjectByName('Mooring_lines_&_fenders') || root.getObjectByName('Mooring lines & fenders');
+    // chimney smoke: find the top of the chimney (the highest vertices of its mesh)
+    {
+      const ch = root.getObjectByName('Fireplace_&_chimney') || root.getObjectByName('Fireplace & chimney');
+      if (ch) {
+        root.updateMatrixWorld(true);
+        const pts = [], v = new THREE.Vector3();
+        ch.traverse((m) => { if (!m.isMesh) return; const P = m.geometry.attributes.position; for (let i = 0; i < P.count; i++) pts.push(v.fromBufferAttribute(P, i).applyMatrix4(m.matrixWorld).clone()); });
+        if (pts.length) {
+          const top = Math.max(...pts.map((q) => q.y)), hi = pts.filter((q) => q.y > top - 0.6), c = new THREE.Vector3();
+          hi.forEach((q) => c.add(q)); c.multiplyScalar(1 / hi.length); c.y = top;
+          group.worldToLocal(c); smoke.origin.copy(c); smoke.points.visible = true;
+        }
+      }
+    }
     H.root = root; H.ready = true;
     if (H.onBoat && H.boatNode) H.onBoat(H.boatNode, H.mooring);
     H.readyFns.forEach((fn) => fn(root));
@@ -250,6 +301,7 @@ export function createHouse({ scene }) {
         const moving = doors.some((d) => Math.abs(d.to - d.k) > 0.0005) || Math.abs((L.ceiling ? 1 : 0) - L.k) > 0.01;
         if (moving || SH.t > 2) { SH.t = 0; SH.lights.forEach((l) => { if (l.intensity > 0.01) l.shadow.needsUpdate = true; }); }
       }
+      smoke.update(dt, time, on, 1);
       if (H.fire) { const k = 0.9 + 0.12 * flick; H.fire.scale.y = k; H.fire.position.y = (FL + 0.2) * (1 - k); }   // flames lick up from their base
     }
   };

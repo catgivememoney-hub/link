@@ -36,7 +36,7 @@ export function createPlayer({ physics, trees }) {
     const f = physics.floor(p.x, p.z, p.feet);
     if (f.built) return 'wood';
     const wy = water.position.y, c = scenes.cur;
-    if (gh < wy + 0.6) return (c.ice || 0) > 0.5 ? 'ice' : 'water';
+    if (gh < wy + 0.9 || p.feet < wy + 0.3) return (c.ice || 0) > 0.5 ? 'ice' : 'water';
     if (p.feet > gh + 0.8) return 'stone';                                     // standing up on a rock or log
     if (scenes.name === 'snow' || gh > c.snowLine - 6) return 'snow';
     if ((c.sand || 0) > 0.3 && gh < wy + 3.5) return 'sand';                   // the beach

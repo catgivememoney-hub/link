@@ -47,3 +47,4 @@ Update 5 (graphics):
 - Settings shows roughly how much graphics memory the chosen level uses (about 0.5–1 GB at 1440p on Extreme).
 
 - Footsteps: cut from the user-supplied freesound recording "footsteps in wet coarse sand" (test/assets/audio/steps.mp3).
+- Textures in test/assets/tex (bark = "Pine Bark", log = "Bark Willow", rock = "Rock Face", grass = "Aerial Grass Rock", wood = "Wood Planks"): Poly Haven, CC0 (https://polyhaven.com), resized to 512 px.

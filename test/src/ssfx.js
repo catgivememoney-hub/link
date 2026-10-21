@@ -129,8 +129,9 @@ const passB = /* glsl */`${COMMON}
         if (hit.x >= 0.0) {
           float cosv = clamp(dot(-V, up), 0.0, 1.0), F = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
           vec2 e = smoothstep(0.0, 0.2, hit) * smoothstep(1.0, 0.8, hit);   // fade softly toward the edges (no popping)
-          float k = clamp(F * 2.6 + 0.18, 0.0, 1.0) * e.x * e.y * mix(0.8, 0.35, uIce) * uSSR * smoothstep(1.0, 0.85, hit.y);
-          col = mix(col, texture2D(tColor, hit).rgb, k);
+          float k = clamp(F * 1.3 + 0.05, 0.0, 0.55) * e.x * e.y * mix(0.8, 0.35, uIce) * uSSR * smoothstep(1.0, 0.85, hit.y);
+          vec2 jt = vec2(sin(W.x * 1.7 + W.z * 0.9), cos(W.z * 1.9 - W.x * 0.7)) * 0.004 * (1.0 - uIce);
+          col = mix(col, (texture2D(tColor, hit + jt).rgb + texture2D(tColor, hit - jt * 1.7).rgb) * 0.5, k);
         }
       }
     }

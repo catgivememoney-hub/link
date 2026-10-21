@@ -147,7 +147,8 @@ export function createBoat({ scene, house, physics }) {
           if (time - B.bumpT > 0.5 && Math.abs(B.v) > 3 && window.MEOW_SOUND && window.MEOW_SOUND.step) window.MEOW_SOUND.step('wood', 1.2);
           B.bumpT = time; B.v *= -0.3;
         }
-      } else B.v *= Math.exp(-dt * 2);
+        if (window.MEOW_SFX) window.MEOW_SFX.engine(true, f > 0 ? (boost ? 1 : 0.65) : f < 0 ? 0.45 : 0.05, Math.min(1, Math.abs(B.v) / MAX));
+      } else { B.v *= Math.exp(-dt * 2); if (window.MEOW_SFX) window.MEOW_SFX.engine(false); }
       // float, rock with the waves, heel into turns, lift the bow a little at speed
       const sp = Math.abs(B.v) / MAX;
       const still = 1 - (s.ice || 0);   // frozen in: no rocking
