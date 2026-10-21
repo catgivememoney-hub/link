@@ -117,6 +117,15 @@ export function createHouse({ scene }) {
     });
     group.add(root);
     root.updateMatrixWorld(true);
+    // doors hinge on the face of the wall they swing toward, just inside the opening, so an open door
+    // clears the frame posts (Blender local x, y → node x, −z); the back deck stops at the wall's face
+    const FIX = { 'Front door': [-0.17, -0.03, 0.937], 'Bedroom door': [0.17, -0.03, 0.924], 'Back door': [0.17, 0.03, 0.937] };
+    for (const [n, [dx, dy, k]] of Object.entries(FIX)) {
+      const o = root.getObjectByName(n.replace(/ /g, '_')) || root.getObjectByName(n);
+      if (o) { o.position.x += dx; o.position.z -= dy; o.scale.z *= k; }
+    }
+    { const o = root.getObjectByName('Back_deck_&_stairs') || root.getObjectByName('Back deck & stairs'); if (o) o.position.x -= 0.07; }
+    root.updateMatrixWorld(true);
     for (const d of doors) {
       d.node = root.getObjectByName(d.name.replace(/ /g, '_')) || root.getObjectByName(d.name);
       if (d.node) { d.node.traverse((o) => { if (o.isMesh) d.meshes.push(o); }); d.hinge = d.node.getWorldPosition(new THREE.Vector3()); }

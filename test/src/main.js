@@ -25,6 +25,8 @@ import { WIND } from './kit.js';
 import { createComputer } from './computer.js';
 import { createPortal } from './portal.js';
 import { createSSFX } from './ssfx.js';
+import { installFootsteps } from './footsteps.js';
+installFootsteps();
 import { SunLight } from 'three-addons/lights/SunLight.js';
 import { createPhysics } from './physics.js';
 import { createPlayer, EYE } from './player.js';
@@ -121,6 +123,14 @@ import { createAssets } from './assets.js';
   let frameDt = 1 / 60;
   const fishSpot = { tick: 0, ok: false };
   const trailAt = { x: 0, z: 0 };
+  const REACH = { mode: 'near', near: 40 }; try { REACH.mode = localStorage.getItem('meow.reach') || 'near'; } catch { /* ignore */ }
+  const toastMsg = (m) => { const el = document.getElementById('toast'); if (!el) return; el.textContent = m; el.classList.add('show'); clearTimeout(toastMsg.t); toastMsg.t = setTimeout(() => el.classList.remove('show'), 1800); };
+  {
+    const seg = document.getElementById('reachSeg');
+    const mark = () => seg && seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === REACH.mode)));
+    if (seg) seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; REACH.mode = b.dataset.val; try { localStorage.setItem('meow.reach', REACH.mode); } catch { /* ignore */ } mark(); });
+    mark();
+  }
   const GFX = { level: 'balanced', plants: true }; try { GFX.level = localStorage.getItem('meow.gfx') || 'balanced'; } catch { /* ignore */ }
 
   /* ---------- state ---------- */
@@ -384,11 +394,14 @@ import { createAssets } from './assets.js';
     { const d = aimAtDoor(cx, cy); if (d) { toggleDoor(d); return; } }
     const id = trees.hovered >= 0 ? trees.hovered : (indoorK < 0.5 ? trees.pick(rayAt(cx, cy)) : -1);
     if (id >= 0 && portal.isLink(id)) {
-      // a link tree: the cat paw grabs you and takes you to the website
+      // a link tree: the cat paw grabs you and takes you to the website.
+      // Tree reach (Settings): 'near' = walk up to the tree first; 'far' = any distance (the leg stretches out)
+      const tb = trees.base[id], dist = Math.hypot(tb.p.x - camera.position.x, tb.p.z - camera.position.z);
+      if (REACH.mode === 'near' && dist > REACH.near) { toastMsg('🐾 Walk closer to this tree'); return; }
       trees.shake(id, now);
       if (window.MEOW_SOUND && window.MEOW_SOUND.chime) window.MEOW_SOUND.chime(id);
       const ps0 = player.state;
-      unlockPointer(); keys.clear(); portal.go(id, !full(), { x: ps0.x, z: ps0.z, feet: ps0.feet, yaw: ps0.yaw, pitch: ps0.pitch, scene: scenes.name });
+      unlockPointer(); keys.clear(); portal.go(id, !full(), { x: ps0.x, z: ps0.z, feet: ps0.feet, yaw: ps0.yaw, pitch: ps0.pitch, scene: scenes.name }, dist > REACH.near ? 'far' : 'near');
       return;
     }
     if (id >= 0) {
@@ -549,7 +562,7 @@ import { createAssets } from './assets.js';
     if (now - FPS.t0 > 500) {
       if (FPS.show) {
         const sorted = [...FPS.raw].sort((a, b) => a - b), med = sorted[sorted.length >> 1] || 16.7;
-        fpsEl.textContent = `${Math.round(FPS.n * 1000 / (now - FPS.t0))} fps   ${(FPS.ms / Math.max(1, FPS.n)).toFixed(1)} ms\nscreen ~${Math.round(1000 / med)} Hz · ${GFX_LEVELS[GFX.level].name}${FPS.cap ? ' · cap ' + FPS.cap : ''}`;
+        fpsEl.textContent = `${Math.round(FPS.n * 1000 / (now - FPS.t0))} fps   ${(FPS.ms / Math.max(1, FPS.n)).toFixed(1)} ms\nscreen ~${Math.round(1000 / med)} Hz · ${(GFX_LEVELS[GFX.level] || { name: "Custom" }).name}${FPS.cap ? ' · cap ' + FPS.cap : ''}`;
       }
       fpsEl.style.display = FPS.show ? 'block' : 'none';
       FPS.n = 0; FPS.ms = 0; FPS.t0 = now;
@@ -637,12 +650,20 @@ import { createAssets } from './assets.js';
   const GFX_ORDER = Object.keys(GFX_LEVELS);
   const OLD = { low: 'fast', mid: 'balanced', high: 'best' };
   sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.5;
+  // Advanced (Settings): resolution, sharpness, and a Custom level built from individual choices
+  const ADV = { res: 0, sharp: 0, custom: null };
+  try { Object.assign(ADV, JSON.parse(localStorage.getItem('meow.gfxadv') || '{}')); } catch { /* ignore */ }
+  const saveAdv = () => { try { localStorage.setItem('meow.gfxadv', JSON.stringify(ADV)); } catch { /* ignore */ } };
+  const customFrom = (base) => ({ name: 'Custom', pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants,
+    fx: Object.assign({ ao: 0, aoSamples: 12, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.75 }, base.fx) });
   const applyGfx = (lv) => {
-    lv = OLD[lv] || lv; if (!GFX_LEVELS[lv]) lv = 'balanced';
-    const G = GFX_LEVELS[lv];
+    lv = OLD[lv] || lv; if (lv !== 'custom' && !GFX_LEVELS[lv]) lv = 'balanced';
+    if (lv === 'custom' && !ADV.custom) ADV.custom = customFrom(GFX_LEVELS.balanced);
+    const G = lv === 'custom' ? ADV.custom : GFX_LEVELS[lv];
     GFX.level = lv; GFX.plants = G.plants; try { localStorage.setItem('meow.gfx', lv); } catch { /* ignore */ }
     const dpr = window.devicePixelRatio || 1;
-    PR[0] = lv === 'extreme' ? Math.min(dpr * 1.25, G.pr) : Math.min(dpr, G.pr);
+    PR[0] = ADV.res > 0 ? dpr * ADV.res : lv === 'extreme' ? Math.min(dpr * 1.25, G.pr) : Math.min(dpr, G.pr);
+    lens.LU.uSharp.value = ADV.sharp / 100;
     perf.level = 0; perf.sum = perf.n = 0; renderer.setPixelRatio(PR[0]);
     renderer.shadowMap.enabled = G.shadows;
     renderer.shadowMap.type = G.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
@@ -659,7 +680,8 @@ import { createAssets } from './assets.js';
     scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
     resize();
     const r = document.getElementById('gfxRange'), out = document.getElementById('gfxVal');
-    if (r) r.value = String(GFX_ORDER.indexOf(lv)); if (out) out.textContent = G.name;
+    if (r && lv !== 'custom') r.value = String(GFX_ORDER.indexOf(lv)); if (out) out.textContent = G.name;
+    syncAdv(G);
     // about how much graphics memory this level uses (picture buffers + shadow maps + the world itself)
     const mem = document.getElementById('gfxMem');
     if (mem) {
@@ -668,6 +690,33 @@ import { createAssets } from './assets.js';
       mem.textContent = 'About ' + (bytes / 1e9).toFixed(bytes < 1e9 ? 2 : 1) + ' GB of graphics memory at this window size';
     }
   };
+  // the Advanced panel: every control maps to one field of the Custom level
+  function syncAdv(G) {
+    const $ = (id) => document.getElementById(id); if (!$('advRes')) return;
+    $('advRes').value = String(ADV.res); $('advSharp').value = String(ADV.sharp); $('advSharpVal').textContent = ADV.sharp + '%';
+    $('advSun').value = String(G.csm || 0); $('advLamps').value = String(G.lamps || 0);
+    const sw = (id, on) => $(id).setAttribute('aria-checked', String(!!on));
+    sw('advShadows', G.shadows); sw('advPlants', G.plants); sw('advAO', G.fx.ao > 0); sw('advContact', G.fx.contact > 0);
+    sw('advSSR', G.fx.ssr > 0); sw('advGI', G.fx.gi > 0); sw('advRays', G.fx.rays > 0);
+  }
+  {
+    const $ = (id) => document.getElementById(id);
+    const toCustom = (fn) => { if (GFX.level !== 'custom') ADV.custom = customFrom(GFX_LEVELS[GFX.level] || GFX_LEVELS.balanced); fn(ADV.custom); saveAdv(); applyGfx('custom'); };
+    if ($('advRes')) {
+      $('advRes').addEventListener('change', (e) => { ADV.res = +e.target.value; saveAdv(); applyGfx(GFX.level); });
+      $('advSharp').addEventListener('input', (e) => { ADV.sharp = +e.target.value; saveAdv(); $('advSharpVal').textContent = ADV.sharp + '%'; lens.LU.uSharp.value = ADV.sharp / 100; });
+      $('advSun').addEventListener('change', (e) => toCustom((c) => { c.csm = +e.target.value; if (c.csm) c.shadows = true; }));
+      $('advLamps').addEventListener('change', (e) => toCustom((c) => { c.lamps = +e.target.value; if (c.lamps) c.shadows = true; }));
+      const flip = (id, fn) => $(id).addEventListener('click', () => toCustom((c) => fn(c, $(id).getAttribute('aria-checked') !== 'true')));
+      flip('advShadows', (c, on) => { c.shadows = on; if (!on) { c.csm = 0; c.lamps = 0; } });
+      flip('advPlants', (c, on) => { c.plants = on; });
+      flip('advAO', (c, on) => { c.fx.ao = on ? 1 : 0; });
+      flip('advContact', (c, on) => { c.fx.contact = on ? 0.65 : 0; });
+      flip('advSSR', (c, on) => { c.fx.ssr = on ? 1 : 0; });
+      flip('advGI', (c, on) => { c.fx.gi = on ? 0.45 : 0; });
+      flip('advRays', (c, on) => { c.fx.rays = on ? 1 : 0; });
+    }
+  }
   { const r = document.getElementById('gfxRange'); if (r) r.addEventListener('input', () => applyGfx(GFX_ORDER[+r.value])); }
   applyGfx(GFX.level);
 

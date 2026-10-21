@@ -35,8 +35,12 @@ export function createPlayer({ physics, trees }) {
     const gh = heightAt(p.x, p.z);
     const f = physics.floor(p.x, p.z, p.feet);
     if (f.built) return 'wood';
-    if (gh < water.position.y + 0.6) return 'water';
-    return scenes.name === 'snow' || gh > scenes.cur.snowLine - 6 ? 'snow' : 'grass';
+    const wy = water.position.y, c = scenes.cur;
+    if (gh < wy + 0.6) return (c.ice || 0) > 0.5 ? 'ice' : 'water';
+    if (p.feet > gh + 0.8) return 'stone';                                     // standing up on a rock or log
+    if (scenes.name === 'snow' || gh > c.snowLine - 6) return 'snow';
+    if ((c.sand || 0) > 0.3 && gh < wy + 3.5) return 'sand';                   // the beach
+    return gh < wy + 2.2 ? 'sand' : 'grass';                                   // wet ground at the water's edge
   };
 
   /* ---------- the glide into the forest ---------- */
@@ -109,6 +113,17 @@ export function createPlayer({ physics, trees }) {
     for (let i = 0; i < n; i++) {
       const sx = p.vx * dt / n, sz = p.vz * dt / n;
       if (tryMove(p.x + sx, p.z + sz)) continue;
+      // a round obstacle (rock, trunk, log): slide around it, with a little bump the first time you touch it
+      const t = physics.touching(p.x + sx, p.z + sz, p.feet);
+      if (t) {
+        const vn = p.vx * t.nx + p.vz * t.nz;
+        if (vn < 0) { p.vx -= vn * t.nx; p.vz -= vn * t.nz; }
+        const now = performance.now();
+        if (now - (p.touchAt || 0) > 450 && -vn > SPEED * 0.35) { p.touchAt = now; p.bob.amp = Math.min(1.4, p.bob.amp + 0.35); p.pitchTo += 0.015; snd('step', t.key === 'tree' ? 'wood' : 'stone', 0.6); }
+        const tx = p.vx * dt / n, tz = p.vz * dt / n;
+        if ((tx || tz) && tryMove(p.x + tx, p.z + tz)) continue;
+        if (tryMove(p.x + t.nx * 0.05 + tx, p.z + t.nz * 0.05 + tz)) continue;
+      }
       if (tryMove(p.x + sx, p.z)) { p.vz *= 0.5; continue; }
       if (tryMove(p.x, p.z + sz)) { p.vx *= 0.5; continue; }
       p.vx *= 0.3; p.vz *= 0.3; break;

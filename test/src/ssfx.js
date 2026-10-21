@@ -108,8 +108,8 @@ const passB = /* glsl */`${COMMON}
     // reflections on the lake / ice: the flat surface at water height, facing up
     if (uSSR > 0.0 && d < 0.99999) {
       vec3 W = (uInvView * vec4(P, 1.0)).xyz;
-      vec3 N = normalAt(vUv, P), Nw = (uInvView * vec4(N, 0.0)).xyz;
-      if (abs(W.y - uWaterY) < 0.25 && Nw.y > 0.97) {
+      // the lake / ice surface: found by its height alone (rebuilt normals flicker at grazing angles)
+      if (abs(W.y - uWaterY) < 0.12 + 0.003 * -P.z && W.y > uWaterY - 2.0) {
         vec3 up = normalize((uView * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
         vec3 V = normalize(P), R = reflect(V, up);
         float t = 0.0, stepL = 1.5 + -P.z * 0.02; vec2 hit = vec2(-1.0);
@@ -128,8 +128,8 @@ const passB = /* glsl */`${COMMON}
         }
         if (hit.x >= 0.0) {
           float cosv = clamp(dot(-V, up), 0.0, 1.0), F = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
-          vec2 e = smoothstep(0.0, 0.08, hit) * smoothstep(1.0, 0.92, hit);
-          float k = clamp(F * 2.6 + 0.18, 0.0, 1.0) * e.x * e.y * mix(0.8, 0.35, uIce) * uSSR;
+          vec2 e = smoothstep(0.0, 0.2, hit) * smoothstep(1.0, 0.8, hit);   // fade softly toward the edges (no popping)
+          float k = clamp(F * 2.6 + 0.18, 0.0, 1.0) * e.x * e.y * mix(0.8, 0.35, uIce) * uSSR * smoothstep(1.0, 0.85, hit.y);
           col = mix(col, texture2D(tColor, hit).rgb, k);
         }
       }

@@ -54,6 +54,11 @@ export function createPhysics({ trees, props, cabin, scenes, water }) {
       if (trees.blocks(x, z, pad)) return true;
       return props.blocks(x, z, pad, scenes.cur, feet);
     },
+    // round obstacles (trees, rocks, logs) you're pushing into: which way to slide
+    touching(x, z, feet) {
+      if (cabinOn() && cabin.inside(x, z, feet)) return null;
+      return trees.touching(x, z, 0) || props.touching(x, z, 0, scenes.cur, feet);
+    },
     // indoors? (no rain, no mist, warmer colour)
     inside(x, z, feet) { return cabinOn() && feet !== undefined && cabin.inside(x, z, feet); }
   };

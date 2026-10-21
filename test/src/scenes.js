@@ -8,10 +8,10 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // sat = how much colour the picture keeps (0 = black & white)
 const BASE = {
   rain: {
-    sat: 0, skyTop: '#8f959a', skyHorizon: '#c6c9cb', skyBottom: '#8a8f93', fog: '#b7bbbe', fogDensity: 0.0042,
-    low: '#6c7175', high: '#878c90', snowC: '#c9cccf', snowLine: 170, water: 0, waterC: '#6d7378', waterRough: 0.18,
-    sunC: '#000000', sunDir: V(0, 0.3, -1), sunSize: 0, lightC: '#e8e8e8', light: 0.55, lightDir: V(0.3, 0.6, 0.2),
-    hemiSky: '#cfd2d4', hemiGround: '#55595c', hemi: 0.95, treeC: '#3f4447', trees: 0.75,
+    sat: 0.78, skyTop: '#4a5654', skyHorizon: '#7d8a84', skyBottom: '#3f4a45', fog: '#5f6d66', fogDensity: 0.0048,
+    low: '#2f4a32', high: '#4a5e45', snowC: '#c9cccf', snowLine: 170, water: 0, waterC: '#33433f', waterRough: 0.12,
+    sunC: '#000000', sunDir: V(0, 0.3, -1), sunSize: 0, lightC: '#d6e2d6', light: 0.5, lightDir: V(0.3, 0.6, 0.2),
+    hemiSky: '#9fb2a6', hemiGround: '#24331f', hemi: 0.9, treeC: '#1f3324', trees: 0.75,
     rain: 1, snow: 0, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.55, fishy: 1,
     cam: V(0, 13, 105), look: V(0, 9, 0)
   },

@@ -83,9 +83,9 @@ export function createTrees({ scene, shared, isClearing }) {
       if (h < 3 || h > 85) continue;
       if (fbm(x * 0.02, z * 0.02, 3) < 0.42) continue;   // natural clumps
       if (isClearing(x, z)) continue;
-      const k = rnd(2.0, 4.6);
+      const big = Math.random() < 0.3, k = big ? rnd(5.0, 7.8) : rnd(2.6, 5.2);
       pos.set(x, h - 0.4, z);
-      s.set(k * rnd(0.8, 0.95), k * rnd(1.5, 2.1), k * rnd(0.8, 0.95));
+      { const w = rnd(0.72, 1.05); s.set(k * w, k * rnd(1.6, 2.4), k * w * rnd(0.92, 1.08)); }
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd(0, Math.PI * 2));
       const shade = rnd(0.82, 1.12);
       tint.setRGB(shade, shade * rnd(0.97, 1.03), shade * rnd(0.94, 1.0));
@@ -192,6 +192,13 @@ export function createTrees({ scene, shared, isClearing }) {
     blocks(x, z, pad = 0) {
       if (!solid()) return false;
       return nearby(x, z, (i) => { const b = base[i], dx = b.p.x - x, dz = b.p.z - z, r = b.s.x * 0.75 + 1.2 + pad; return dx * dx + dz * dz < r * r; });
+    },
+    // the trunk you're pushing into: its outward direction, or null
+    touching(x, z, pad = 0) {
+      if (!solid()) return null;
+      let hit = null;
+      nearby(x, z, (i) => { const b = base[i], dx = x - b.p.x, dz = z - b.p.z, r = b.s.x * 0.75 + 1.2 + pad; if (dx * dx + dz * dz < r * r) { const d = Math.hypot(dx, dz) || 1; hit = { nx: dx / d, nz: dz / d, key: 'tree' }; return true; } return false; });
+      return hit;
     },
     // how many trees around a spot (for picking a nice landing place)
     countNear(x, z, r) { let c = 0; if (!solid()) return 0; nearby(x, z, (i) => { const dx = base[i].p.x - x, dz = base[i].p.z - z; if (dx * dx + dz * dz < r * r) c++; return false; }); return c; },

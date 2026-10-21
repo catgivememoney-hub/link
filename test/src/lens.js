@@ -13,7 +13,7 @@ export function createLens(U) {
     tScene: { value: rt.texture }, tDepth: { value: rt.depthTexture }, uRes: { value: new THREE.Vector2(4, 4) }, uTime: U.uTime,
     uBlur: { value: 3 }, uBand: { value: 0.22 }, uFocusY: { value: 0.47 }, uPull: { value: 0 },
     uAberr: { value: 0.006 }, uSat: { value: 0 }, uGrain: { value: 0.022 }, uVig: { value: 0.32 }, uFlicker: { value: 0.01 },
-    uNear: { value: 0.5 }, uFar: { value: 3000 }, uIndoor: { value: 0 }, uBlurIn: { value: 4.5 }
+    uNear: { value: 0.5 }, uFar: { value: 3000 }, uIndoor: { value: 0 }, uBlurIn: { value: 4.5 }, uSharp: { value: 0 }
   };
   const scene = new THREE.Scene();
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -22,7 +22,7 @@ export function createLens(U) {
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
     fragmentShader: /* glsl */`
       uniform sampler2D tScene, tDepth; uniform vec2 uRes;
-      uniform float uTime, uBlur, uBand, uFocusY, uPull, uAberr, uSat, uGrain, uVig, uFlicker, uNear, uFar, uIndoor, uBlurIn;
+      uniform float uTime, uBlur, uBand, uFocusY, uPull, uAberr, uSat, uGrain, uVig, uFlicker, uNear, uFar, uIndoor, uBlurIn, uSharp;
       varying vec2 vUv;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
@@ -48,6 +48,13 @@ export function createLens(U) {
           if (smp.r >= 0.0 && smp.g >= 0.0 && smp.b >= 0.0) { col += min(smp, vec3(64.0)); wsum += 1.0; }
         }
         col /= max(wsum, 1.0);
+        // sharpness (Settings): an unsharp mask on what's in focus
+        if (uSharp > 0.0) {
+          vec3 c0 = texture2D(tScene, uv).rgb;
+          vec3 nb = texture2D(tScene, uv + vec2(px.x, 0.0)).rgb + texture2D(tScene, uv - vec2(px.x, 0.0)).rgb + texture2D(tScene, uv + vec2(0.0, px.y)).rgb + texture2D(tScene, uv - vec2(0.0, px.y)).rgb;
+          vec3 sh = clamp(c0 + (c0 * 4.0 - nb) * uSharp * 0.35, 0.0, 64.0);
+          col = mix(col, sh, 1.0 - smoothstep(0.6, 2.5, amt));
+        }
         vec2 ca = c * uAberr * (0.4 + r);
         col.r = mix(col.r, texture2D(tScene, uv + ca).r, 0.55);
         col.b = mix(col.b, texture2D(tScene, uv - ca).b, 0.55);

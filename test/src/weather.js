@@ -131,7 +131,9 @@ export function createWeather(scene, U, pixelRatio) {
         m.lookAt(cam.x, m.position.y, cam.z);
         // banks thin out when you walk right into them, and stay outside
         const d = Math.hypot(m.position.x - cam.x, m.position.z - cam.z);
-        m.material.opacity = s.mist * 0.5 * smooth(12, 80, d) * out;
+        // …and never near the cabin: a bank would slice through the house and show at the doors
+        const dh = Math.hypot(cam.x - 106, cam.z + 119), bankNearHouse = Math.abs(m.position.z + 119) < 60;
+        m.material.opacity = s.mist * 0.5 * smooth(12, 80, d) * out * (bankNearHouse ? smooth(60, 150, dh) : 1);
         m.material.color.copy(s.fog);
         m.visible = m.material.opacity > 0.003;
       });

@@ -119,7 +119,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
     const sc = new THREE.Vector3(s * rr(0.8, 1.25), s * rr(0.6, 1.1), s * rr(0.8, 1.2));
     list.push({ p: new THREE.Vector3(x, h - s * 0.12, z), q: groundQ(x, z, R() * 6.28, 0.6), s: sc });
     // top: how high it is (you can jump over it or stand on it); rt: the flat-ish area on top
-    if (solid) solids.push({ x, z, r: s * 1.05 + 1.2, key: 'pRocks', top: h - s * 0.12 + sc.y * 0.82, rt: s * 0.75 });
+    if (solid) solids.push({ x, z, r: s * 0.92 + 0.45, key: 'pRocks', top: h - s * 0.12 + sc.y * 0.82, rt: s * 0.75 });
   };
   for (let i = 0, tries = 0; i < 260 && tries < 20000; tries++) {
     const x = rr(-560, 560), z = rr(-560, 230), h = heightAt(x, z);
@@ -511,6 +511,16 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       }
       return false;
     },
+    // the round thing you're pushing into at (x, z): its outward direction (to slide around it), or null
+    touching(x, z, pad, cur, feet) {
+      for (const c of near(x, z)) {
+        if (cur[c.key] < 0.5) continue;
+        if (c.top !== undefined && feet >= c.top - 0.7) continue;
+        const dx = x - c.x, dz = z - c.z, r = c.r + pad, d2 = dx * dx + dz * dz;
+        if (d2 < r * r) { const d = Math.sqrt(d2) || 1; return { nx: dx / d, nz: dz / d, key: c.key }; }
+      }
+      return null;
+    },
     // tops of logs, stumps and rocks under (x, z) that you could stand on
     tops(x, z, cur, out) {
       for (const c of near(x, z)) {
@@ -583,7 +593,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
         const k = rr(1.1, 1.9);
         reeds.push({ p: new THREE.Vector3(x, h - 0.2, z), q: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), R() * 6.28), s: new THREE.Vector3(k, k * rr(0.8, 1.2), k) });
       }
-      instanced(reedGeo, plantMat('pReeds', 0.0035), reeds, 'pReeds');   // tall reeds by the water: only a gentle nod
+      instanced(reedGeo, plantMat('pReeds', 0.0011), reeds, 'pReeds');   // tall reeds by the water: only a gentle nod
       plantSeasons(treeBase, inZone, near);
       buildGrid();
     },

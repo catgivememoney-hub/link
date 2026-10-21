@@ -14,45 +14,60 @@ const easeIn = (x) => x * x * x, easeOut = (x) => 1 - Math.pow(1 - x, 3);
 
 /* ---------- the paw (3D) ---------- */
 // colours from the kitten photo (brightened a little for the forest light)
-const FUR = new THREE.Color('#6f665d'), STRIPE = new THREE.Color('#221e1b'), SOCK = new THREE.Color('#d6cfc6'), BEAN = new THREE.Color('#f29bb0'), CLAW = new THREE.Color('#fbf7f0');
+const FUR = new THREE.Color('#77706a'), STRIPE = new THREE.Color('#2a2521'), SOCK = new THREE.Color('#cbc4bb'), BEAN = new THREE.Color('#e3a1ae'), CLAW = new THREE.Color('#f4efe6');
+// a little noise to rough up surfaces (fur isn't smooth plastic)
+const nz = (x, y, z) => Math.sin(x * 12.9 + y * 7.1) * Math.sin(y * 11.3 + z * 5.7) * Math.sin(z * 9.7 + x * 3.3);
+function fuzz(geo, amt) {
+  const p = geo.attributes.position, n = geo.attributes.normal;
+  for (let i = 0; i < p.count; i++) {
+    const k = nz(p.getX(i) * 3, p.getY(i) * 3, p.getZ(i) * 3) * amt;
+    p.setXYZ(i, p.getX(i) + n.getX(i) * k, p.getY(i) + n.getY(i) * k, p.getZ(i) + n.getZ(i) * k);
+  }
+  geo.computeVertexNormals(); return geo;
+}
 function buildPaw() {
   const paw = new THREE.Group();
-  const furMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, fog: false });
+  // fur: very rough, with a soft sheen at grazing angles (velvet / fuzz), not a glossy rubber look
+  const furMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, metalness: 0, sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color('#ffffff'), fog: false });
+  const padMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.75, sheen: 0.3, sheenRoughness: 0.4, fog: false });
   // the leg: a tapered tube along +z (0 at the tree, 1 at the wrist); stretched to length each frame
-  const arm = new THREE.CylinderGeometry(1.0, 1.35, 1, 18, 40, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+  const arm = fuzz(new THREE.CylinderGeometry(0.9, 1.15, 1, 22, 48, true).rotateX(Math.PI / 2).translate(0, 0, 0.5), 0.035);
   {
     const p = arm.attributes.position, c = [];
     for (let i = 0; i < p.count; i++) {
-      const z = p.getZ(i), a = Math.atan2(p.getY(i), p.getX(i));
-      // tabby stripes: wavy rings, darker on top; pale sock toward the wrist
-      const ring = Math.sin(z * 38 + Math.sin(a * 3) * 1.1) > 0.05 && p.getY(i) > -0.75 ? 1 : 0;
-      const col = FUR.clone().lerp(STRIPE, ring * 0.85 * (0.6 + 0.4 * Math.max(0, p.getY(i))));
-      col.lerp(SOCK, ease(clamp((z - 0.9) / 0.08)));
-      col.multiplyScalar(0.92 + 0.08 * Math.sin(a * 17 + z * 90));
+      const z = p.getZ(i), a = Math.atan2(p.getY(i), p.getX(i)), top = Math.max(0, p.getY(i));
+      // tabby stripes across the top, fading on the underside; a pale sock toward the wrist
+      const ring = Math.sin(z * 30 + Math.sin(a * 3) * 1.2 + nz(a, z, 1) * 0.8) > 0.15 ? 1 : 0;
+      const col = FUR.clone().lerp(STRIPE, ring * 0.8 * (0.25 + 0.75 * top));
+      col.lerp(SOCK, ease(clamp((z - 0.78) / 0.16)));
+      col.multiplyScalar(0.9 + 0.1 * nz(a * 5, z * 40, 2));
       c.push(col.r, col.g, col.b);
     }
     arm.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
   }
   const armMesh = new THREE.Mesh(arm, furMat);
   paw.add(armMesh);
-  // the hand at the end of the leg (moves with the leg's length)
   const hand = new THREE.Group(); paw.add(hand);
-  const solid = (geo, col) => { const g = geo.toNonIndexed(); const n = g.attributes.position.count, c = []; for (let i = 0; i < n; i++) c.push(col.r, col.g, col.b); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); return new THREE.Mesh(g, furMat); };
-  const palm = solid(new THREE.SphereGeometry(1, 22, 16), SOCK); palm.scale.set(1.55, 1.15, 1.05); palm.position.z = 0.55; hand.add(palm);
-  // the big heart-shaped pad, facing out (+z)
-  const pads = new THREE.Group(); hand.add(pads); pads.position.set(0, -0.25, 1.48);
-  [[-0.32, 0.05, 0.42], [0.32, 0.05, 0.42], [0, -0.22, 0.5]].forEach(([x, y, r]) => { const m = solid(new THREE.SphereGeometry(r, 14, 10), BEAN); m.position.set(x, y, 0); m.scale.z = 0.45; pads.add(m); });
-  // four toes, each with its own bean and a claw that comes out on the grab
+  const solid = (geo, col, mat = furMat, f = 0.03) => {
+    const g = fuzz(geo.toNonIndexed(), f), n = g.attributes.position.count, c = [];
+    for (let i = 0; i < n; i++) { const k = 0.93 + 0.07 * nz(g.attributes.position.getX(i) * 6, g.attributes.position.getY(i) * 6, i * 0.01); c.push(col.r * k, col.g * k, col.b * k); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); return new THREE.Mesh(g, mat);
+  };
+  // a ruff of fur at the wrist
+  for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; const t = solid(new THREE.ConeGeometry(0.16, 0.55, 5), SOCK, furMat, 0.01); t.position.set(Math.cos(a) * 0.95, Math.sin(a) * 0.95, -0.05); t.rotation.set(Math.PI / 2 + 0.5, 0, a - Math.PI / 2); hand.add(t); }
+  // the palm: a soft rounded mitten, a bit flatter front to back
+  const palm = solid(new THREE.SphereGeometry(1, 28, 20), SOCK); palm.scale.set(1.3, 1.0, 0.95); palm.position.z = 0.5; hand.add(palm);
+  // the main pad (three soft lobes) and four toes tucked in an arc, each with a small bean
+  const pads = new THREE.Group(); hand.add(pads); pads.position.set(0, -0.28, 1.36);
+  [[-0.26, 0.06, 0.27], [0.26, 0.06, 0.27], [0, -0.14, 0.33]].forEach(([x, y, r]) => { const m = solid(new THREE.SphereGeometry(r, 16, 12), BEAN, padMat, 0.004); m.position.set(x, y, 0); m.scale.z = 0.38; pads.add(m); });
   const toes = [];
-  [[-1.02, 0.52, -0.25], [-0.36, 0.92, -0.08], [0.36, 0.92, 0.08], [1.02, 0.52, 0.25]].forEach(([x, y, rz]) => {
-    const pivot = new THREE.Group(); pivot.position.set(x * 0.92, y * 0.75, 0.95); pivot.rotation.z = rz; hand.add(pivot);
-    const toe = solid(new THREE.SphereGeometry(0.48, 14, 10), SOCK); toe.scale.set(1, 1.05, 0.95); toe.position.set(0, 0.32, 0.25); pivot.add(toe);
-    const bean = solid(new THREE.SphereGeometry(0.22, 10, 8), BEAN); bean.scale.z = 0.4; bean.position.set(0, 0.36, 0.68); pivot.add(bean);
-    const claw = solid(new THREE.ConeGeometry(0.1, 0.55, 8).rotateX(Math.PI / 2).translate(0, 0, 0.27), CLAW); claw.position.set(0, 0.62, 0.5); claw.rotation.x = -0.6; claw.scale.setScalar(0.01); pivot.add(claw);
+  [[-0.86, 0.42, -0.32], [-0.3, 0.72, -0.1], [0.3, 0.72, 0.1], [0.86, 0.42, 0.32]].forEach(([x, y, rz]) => {
+    const pivot = new THREE.Group(); pivot.position.set(x, y * 0.8, 0.9); pivot.rotation.z = rz; hand.add(pivot);
+    const toe = solid(new THREE.SphereGeometry(0.4, 18, 14), SOCK); toe.scale.set(0.95, 1.05, 0.9); toe.position.set(0, 0.25, 0.22); pivot.add(toe);
+    const bean = solid(new THREE.SphereGeometry(0.15, 12, 10), BEAN, padMat, 0.003); bean.scale.set(1, 1.15, 0.35); bean.position.set(0, 0.24, 0.57); pivot.add(bean);
+    const claw = solid(new THREE.ConeGeometry(0.06, 0.38, 8).rotateX(Math.PI / 2).translate(0, 0, 0.19), CLAW, padMat, 0); claw.position.set(0, 0.5, 0.42); claw.rotation.x = -0.7; claw.scale.setScalar(0.01); pivot.add(claw);
     toes.push({ pivot, claw });
   });
-  // a few tufts of fur sticking out between the toes
-  for (let k = 0; k < 3; k++) { const t = solid(new THREE.ConeGeometry(0.12, 0.5, 6), SOCK); t.position.set(-0.68 + k * 0.68, 1.05, 0.7); t.rotation.x = 0.4; hand.add(t); }
   paw.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
   return {
     group: paw,
@@ -61,10 +76,10 @@ function buildPaw() {
       armMesh.scale.z = Math.max(0.01, len);
       hand.position.z = len;
       toes.forEach(({ pivot, claw }, i) => {
-        pivot.rotation.x = (1 - open) * 1.25 + (i % 2) * 0.05;
+        pivot.rotation.x = (1 - open) * 1.15 + (i % 2) * 0.05;
         claw.scale.setScalar(0.01 + claws * 0.99);
       });
-      pads.scale.setScalar(0.85 + open * 0.15);
+      pads.scale.setScalar(0.9 + open * 0.1);
     }
   };
 }
@@ -136,7 +151,9 @@ export function createPortal({ scene, trees, camera, isClearing }) {
     unhover: hideTip,
     // click on a link tree: the paw grabs you, then the page becomes the link.
     // before = where you stood (so Back can bring you back there)
-    go(id, quick, before) {
+    // mode 'near': you're pulled up close and a normal-size paw swipes you in;
+    //      'far' : you stay where you are and the leg stretches all the way out to you
+    go(id, quick, before, mode = 'near') {
       const t = byTree.get(id); if (!t || P.active) return false;
       const b = trees.base[id];
       P.active = true; P.gone = false; P.link = t.link; P.back = before || null;
@@ -146,7 +163,7 @@ export function createPortal({ scene, trees, camera, isClearing }) {
       // the paw comes out of the tree at your eye height (a far tree: you're pulled closer first)
       P.tree.set(b.p.x, Math.max(b.p.y + 4, Math.min(camera.position.y, t.top - 2)), b.p.z);
       dir.subVectors(camera.position, P.tree); dir.y = 0; const d = dir.length(); dir.normalize();
-      P.start.copy(P.tree).addScaledVector(dir, Math.min(d, 26)); P.start.y = camera.position.y;
+      P.start.copy(P.tree).addScaledVector(dir, Math.min(d, mode === 'far' ? 1e9 : 13)); P.start.y = camera.position.y;
       P.trunkR = b.s.x * 0.9;
       hideTip();
       to.innerHTML = `${(t.link.title || host(t.link.url)).replace(/[<>&]/g, '')}<br><span style="opacity:.6;font-size:14px">${host(t.link.url)}</span>`;
