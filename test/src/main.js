@@ -25,6 +25,7 @@ import { WIND, TEXON } from './kit.js';
 import { createComputer } from './computer.js';
 import { createPortal } from './portal.js';
 import { createSSFX } from './ssfx.js';
+import { createOnline } from './online.js';
 import { installFootsteps } from './footsteps.js';
 installFootsteps();
 import { installSfx } from './sfx.js';
@@ -128,6 +129,7 @@ import { createAssets } from './assets.js';
   const trailAt = { x: 0, z: 0 };
   const REACH = { mode: 'near', near: 40 }; try { REACH.mode = localStorage.getItem('meow.reach') || 'near'; } catch { /* ignore */ }
   const toastMsg = (m) => { const el = document.getElementById('toast'); if (!el) return; el.textContent = m; el.classList.add('show'); clearTimeout(toastMsg.t); toastMsg.t = setTimeout(() => el.classList.remove('show'), 1800); };
+  const online = createOnline({ scene, player, scenes, toast: toastMsg }); window.MEOW_ONLINE = online;   // Settings → Play together
   {
     const seg = document.getElementById('reachSeg');
     const mark = () => seg && seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === REACH.mode)));
@@ -209,6 +211,7 @@ import { createAssets } from './assets.js';
     props.update(s, time);
     if (!GFX.plants) for (const [o, key] of props.groups) if (key === 'pGrass' || key === 'pFerns' || key === 'flowers') o.visible = false;   // graphics: None
     cabin.update(s, time, now, s.water, player.walking ? player.state.feet : undefined, frameDt);
+    online.update(frameDt, time);
     if (window.MEOW_SFX) { const fd = camera.position.distanceTo(FIRE_POS); window.MEOW_SFX.fireAt(Math.min(1, s.pCabin || 0) * Math.pow(1 - Math.min(1, Math.max(0, (fd - 3) / 45)), 2)); }
     assets.update(s, time);
     refreshEnv(now);

@@ -185,6 +185,7 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
         <button type="button" role="tab" data-tab="sound">Sound</button>
         <button type="button" role="tab" data-tab="graphics">Graphics</button>
         <button type="button" role="tab" data-tab="controls">Controls</button>
+        <button type="button" role="tab" data-tab="online">Play together</button>
         <button type="button" role="tab" data-tab="language">Language</button>
         <button type="button" role="tab" data-tab="security">Lock &amp; reset</button>
       </nav>
@@ -281,6 +282,24 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
         <input id="sens" type="range" min="20" max="250" step="5" aria-label="Mouse sensitivity" data-i18n-aria="sSens">
       </section>
       </div>
+      <div class="set-tab" data-tab="online" hidden>
+      <section class="p-sec" style="--d:0">
+        <h3>Play together</h3>
+        <div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Your name</h3><input id="onName" maxlength="14" style="font:inherit;padding:6px 10px;border-radius:10px;border:1px solid var(--glass-line,rgba(0,0,0,.15));background:var(--glass-strong,#fff);color:inherit;width:140px"></div>
+        <div class="set-row" style="margin-top:10px;gap:8px">
+          <input id="onCode" placeholder="Room code" maxlength="8" style="font:inherit;letter-spacing:.15em;text-transform:uppercase;padding:6px 10px;border-radius:10px;border:1px solid var(--glass-line,rgba(0,0,0,.15));background:var(--glass-strong,#fff);color:inherit;width:120px">
+          <button id="onCopy" type="button" class="btn">Copy</button>
+        </div>
+        <div class="set-row" style="margin-top:10px;gap:8px;justify-content:flex-start">
+          <button id="onHost" type="button" class="btn solid">Host a room</button>
+          <button id="onJoin" type="button" class="btn">Join</button>
+          <button id="onLeave" type="button" class="btn danger" hidden>Leave</button>
+        </div>
+        <p id="onStatus" style="margin:10px 0 0;font-size:12px">Not connected</p>
+        <p id="onList" style="margin:4px 0 0;font-size:12px;opacity:.75"></p>
+        <p style="margin:8px 0 0;font-size:11px;opacity:.6">Host → send your friend the code → they type it and press Join (or open the site with ?room=CODE). Then both press WASD to enter the world. You'll see each other as cats.</p>
+      </section>
+      </div>
       <div class="set-tab" data-tab="language" hidden>
       <section class="p-sec" style="--d:2">
         <h3 data-i18n="sLanguage">Language</h3>
@@ -358,7 +377,7 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
     "three-addons/": "./test/vendor/three/examples/jsm/"
   } }
   </script>
-  <script type="module" src="test/src/main.js?v=t8"></script>
+  <script type="module" src="test/src/main.js?v=t9"></script>
   <div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:rgba(200,60,40,.85);padding:6px 10px;border-radius:999px">TEST COPY · new cabin &amp; sailboat</div>
 </body>
 </html>
