@@ -45,3 +45,5 @@ Update 5 (graphics):
 - Best: + softer shadow edges, contact shadows, shadows from the fire, the hanging light and the dock lamp (only redrawn when something moves).
 - Extreme: + screen-space reflections on the lake/ice, bounce light, sun shafts. All screen-space effects are in `test/src/ssfx.js`.
 - Settings shows roughly how much graphics memory the chosen level uses (about 0.5–1 GB at 1440p on Extreme).
+
+- Footsteps: cut from the user-supplied freesound recording "footsteps in wet coarse sand" (test/assets/audio/steps.mp3).
