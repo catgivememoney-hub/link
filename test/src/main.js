@@ -134,7 +134,16 @@ import { createAssets } from './assets.js';
     if (seg) seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; REACH.mode = b.dataset.val; try { localStorage.setItem('meow.reach', REACH.mode); } catch { /* ignore */ } mark(); });
     mark();
   }
-  const GFX = { level: 'balanced', plants: true }; try { GFX.level = localStorage.getItem('meow.gfx') || 'balanced'; } catch { /* ignore */ }
+  // sound mix (Settings → Sound): footsteps and world sounds, 0..1.5 each
+  window.MEOW_MIX = { steps: 1, world: 1 };
+  try { Object.assign(window.MEOW_MIX, JSON.parse(localStorage.getItem('meow.mix') || '{}')); } catch { /* ignore */ }
+  [['volSteps', 'steps'], ['volWorld', 'world']].forEach(([id, k]) => {
+    const el = document.getElementById(id), out = document.getElementById(id + 'Val'); if (!el) return;
+    const show = () => { out.textContent = Math.round(window.MEOW_MIX[k] * 100) + '%'; };
+    el.value = String(Math.round(window.MEOW_MIX[k] * 100)); show();
+    el.addEventListener('input', () => { window.MEOW_MIX[k] = +el.value / 100; show(); try { localStorage.setItem('meow.mix', JSON.stringify(window.MEOW_MIX)); } catch { /* ignore */ } });
+  });
+  const GFX = { level: 'balanced', plants: true }; try { GFX.level = localStorage.getItem('meow.gfx') || 'none'; } catch { /* ignore */ }   // first visit: lightest graphics, so weak computers can open the menu
 
   /* ---------- state ---------- */
   let started = false, entranceAt = 0, exposure = 1, exposureTo = 1, indoorK = 0, walkK = 0, arc = 0;
@@ -331,14 +340,18 @@ import { createAssets } from './assets.js';
     const doorHit = active ? aimAtDoor(cx, cy) : null;
     const pc = active && !doorHit && !boat.active && computer.pick(rayAt(cx, cy));
     const sw = active && !doorHit && !pc && !boat.active && cabin.pickSwitch(rayAt(cx, cy));
-    const door = !!doorHit || pc || sw;
+    const lmp = active && !doorHit && !pc && !sw && !boat.active && cabin.pickLamp(rayAt(cx, cy));
+    const drw = active && !doorHit && !pc && !sw && !lmp && !boat.active && cabin.pickDrawer(rayAt(cx, cy));
+    const door = !!doorHit || pc || sw || lmp || drw;
     if (door !== doorShown) { doorShown = door; actHint.classList.toggle('show', door); }
-    if (sw) actHint.querySelector('span').textContent = cabin.lightOn ? 'Click to turn the light off' : 'Click to turn the light on';
+    if (lmp) actHint.querySelector('span').textContent = cabin.lampOn ? 'Click to turn the lamp off' : 'Click to turn the lamp on';
+    else if (drw) actHint.querySelector('span').textContent = cabin.drawerOpen ? 'Click to close the drawer' : 'Click to open the drawer';
+    else if (sw) actHint.querySelector('span').textContent = cabin.lightOn ? 'Click to turn the light off' : 'Click to turn the light on';
     else if (pc) actHint.querySelector('span').textContent = 'Click to use the computer';
     else if (door) actHint.querySelector('span').textContent = doorHit.to > 0.5 ? t$('doorClose', 'Click to close the door') : t$('doorOpen', 'Click to open the door');
     root.classList.toggle('on-book', study.hover(rayAt(cx, cy), active && scenes.cur.pCabin > 0.5 && indoorK > 0.5));
     // trees light up under the dot (or the mouse at home); not from indoors or over the page's own buttons
-    const treeOK = !busy() && indoorK < 0.5 && !player.gliding && (player.walking || (look.inside && !look.ui));
+    const treeOK = !busy() && indoorK < 0.5 && !player.gliding && player.walking;   // only once you're in the game (WASD)
     if (locked()) { hover.x = cx; hover.y = cy; }
     setTreeHover(treeOK ? trees.pick(rayAt(cx, cy)) : -1);
     if (trees.hovered >= 0 && portal.isLink(trees.hovered)) portal.hover(trees.hovered, hover.x, hover.y);
@@ -394,8 +407,11 @@ import { createAssets } from './assets.js';
     if (player.walking && fishing.click(now)) return;
     if (player.walking && scenes.cur.pCabin > 0.5 && indoorK > 0.5 && study.click(rayAt(cx, cy), now)) return;
     if (player.walking && !boat.active && cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; }
+    if (player.walking && !boat.active && cabin.pickLamp(rayAt(cx, cy))) { cabin.toggleLamp(); if (window.MEOW_SOUND && window.MEOW_SOUND.click) window.MEOW_SOUND.click(); hover.pending = true; return; }
+    if (player.walking && !boat.active && cabin.pickDrawer(rayAt(cx, cy))) { const o = cabin.toggleDrawer(); if (window.MEOW_SFX) window.MEOW_SFX.drawer(o); hover.pending = true; return; }
     if (player.walking && !boat.active && computer.pick(rayAt(cx, cy))) { openComputer(); return; }
     { const d = aimAtDoor(cx, cy); if (d) { toggleDoor(d); return; } }
+    if (!player.walking) { dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'miss' } })); return; }   // the trees aren't links on the home page
     const id = trees.hovered >= 0 ? trees.hovered : (indoorK < 0.5 ? trees.pick(rayAt(cx, cy)) : -1);
     if (id >= 0 && portal.isLink(id)) {
       // a link tree: the cat paw grabs you and takes you to the website.

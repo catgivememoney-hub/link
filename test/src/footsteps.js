@@ -22,7 +22,7 @@ export function installFootsteps() {
   let ac = null, buf = null, loading = false, last = -1;
   const S = () => window.MEOW_STATE || {};
   const enabled = () => S().sound !== false;
-  const vol = () => Math.pow(S().volume === undefined ? 0.7 : S().volume, 1.5);
+  const vol = () => Math.pow(S().volume === undefined ? 0.7 : S().volume, 1.5) * ((window.MEOW_MIX && window.MEOW_MIX.steps) ?? 1);
   const ensure = () => {
     if (!ac) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false; ac = new AC(); }
     if (ac.state === 'suspended') ac.resume();

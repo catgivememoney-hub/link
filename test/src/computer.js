@@ -49,7 +49,7 @@ export function createComputer({ camera, house }) {
       .pc-page h2{margin:0;font-size:20px;letter-spacing:.06em}
       .pc-page input{width:min(420px,90%);border:0;outline:0;border-radius:999px;padding:10px 16px;background:#222;color:#fff;font:inherit}
       .pc-page form{display:flex;gap:8px;justify-content:center;width:min(520px,95%)}.pc-page form input{flex:1;width:auto}
-      .yt-go{border:0;border-radius:999px;padding:10px 18px;background:#f00;color:#fff;font:inherit;font-weight:600;cursor:pointer}.yt-search .yt-go{background:#333}
+      .yt-go{border:0;border-radius:999px;padding:10px 18px;background:#f00;color:#fff;font:inherit;font-weight:600;cursor:pointer}.yt-search .yt-go,.yt-paste{background:#333!important}
       .pc-page small{opacity:.6;max-width:440px}
       .pc-left{position:absolute;left:0;right:0;top:0;display:none;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:#fff7d6;color:#3a3220;border-bottom:1px solid #e8d79a;font-size:12px;z-index:2}
       .pc-left button{all:unset;cursor:pointer;padding:4px 10px;border-radius:6px;background:#2f5f9e;color:#fff;white-space:nowrap}
@@ -67,9 +67,8 @@ export function createComputer({ camera, house }) {
       <iframe allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
       <div class="pc-page yt">
         <h2>▶ YouTube</h2>
-        <form class="yt-play"><input name="v" placeholder="Paste a YouTube link to play it here" autocomplete="off"><button type="submit" class="yt-go">▶ Play</button></form>
+        <form class="yt-play"><input name="v" placeholder="Paste link" autocomplete="off"><button type="button" class="yt-go yt-paste">📋 Paste link</button><button type="submit" class="yt-go">▶ Play</button></form>
         <form class="yt-search"><input name="q" placeholder="…or search YouTube (opens a new tab)" autocomplete="off"><button type="submit" class="yt-go">Search</button></form>
-        <small>YouTube doesn't allow its own site inside other websites, but its videos play here.</small>
       </div>
       <div class="pc-left"><span>Opened a site from the results. If it says <b>refused to connect</b>, that site doesn't allow being shown inside other websites.</span><button data-go="back">◀ Back to Google</button><button class="ghost" data-go="newsearch">↗ Search in a real tab</button></div>
       <div class="pc-note">If a page stays blank, that site blocks being shown inside other sites — press ↗ to open it in a new tab.</div>
@@ -112,6 +111,11 @@ export function createComputer({ camera, house }) {
   };
   el.querySelector('.pc-bar form').addEventListener('submit', (e) => { e.preventDefault(); go(addr.value); });
   el.querySelector('.yt-play').addEventListener('submit', (e) => { e.preventDefault(); const v = e.target.v.value; const id = ytId(v); if (id) youtube(id); else { e.target.v.value = ''; e.target.v.placeholder = 'That isn\'t a YouTube link — try again'; } });
+  el.querySelector('.yt-paste').addEventListener('click', async () => {
+    const f = el.querySelector('.yt-play');
+    try { const t = (await navigator.clipboard.readText()).trim(); f.v.value = t; const id = ytId(t); if (id) youtube(id); }
+    catch { f.v.focus(); f.v.placeholder = 'Press Ctrl+V to paste the link'; }
+  });
   el.querySelector('.yt-search').addEventListener('submit', (e) => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) window.open('https://www.youtube.com/results?search_query=' + encodeURIComponent(q), '_blank', 'noopener'); });
   el.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-go]'); if (!b) return;

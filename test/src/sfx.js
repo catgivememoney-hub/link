@@ -11,7 +11,7 @@ export function installSfx() {
     if (!ac && navigator.userActivation && !navigator.userActivation.hasBeenActive) return false;   // browsers only allow sound after a click / key
     if (!ac) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false; ac = new AC(); out = ac.createGain(); out.connect(ac.destination); }
     if (ac.state === 'suspended') ac.resume();
-    out.gain.value = vol();
+    out.gain.value = vol() * ((window.MEOW_MIX && window.MEOW_MIX.world) ?? 1);
     return ac.state === 'running';
   };
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -105,8 +105,15 @@ export function installSfx() {
     eng.wg.gain.setTargetAtTime(k * speed * 0.12, t, 0.4);
   };
 
+  // a wooden drawer sliding on its runners, then a soft knock at the end
+  const drawer = (open) => {
+    if (!ok()) return;
+    burst(0.32, [['bandpass', open ? 900 : 750, 0.9], ['lowpass', 2200]], 0.12);
+    for (let i = 0; i < 6; i++) burst(0.012, [['bandpass', rand(1500, 2600), 3]], 0.05, 0.03 + i * 0.045);
+    burst(0.12, [['lowpass', 300]], open ? 0.25 : 0.45, 0.3);
+  };
   const hook = () => { if (window.MEOW_SOUND) window.MEOW_SOUND.door = door; };
   hook(); setTimeout(hook, 500);
-  window.MEOW_SFX = { door, fireAt, engine };
+  window.MEOW_SFX = { door, fireAt, engine, drawer };
   return window.MEOW_SFX;
 }

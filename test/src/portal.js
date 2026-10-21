@@ -25,10 +25,28 @@ function fuzz(geo, amt) {
   }
   geo.computeVertexNormals(); return geo;
 }
+// a fur texture drawn once: thousands of short, soft strands (used as colour detail and as a bump map)
+let FURTEX = null;
+function furTexture() {
+  if (FURTEX) return FURTEX;
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+  g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 22000; i++) {
+    const x = Math.random() * 512, y = Math.random() * 512, len = 6 + Math.random() * 12, a = Math.PI / 2 + (Math.random() - 0.5) * 0.5, v = Math.floor(90 + Math.random() * 150);
+    g.strokeStyle = `rgba(${v},${v},${v},0.55)`; g.lineWidth = 0.6 + Math.random() * 1.1;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * len * 0.5 + (Math.random() - 0.5) * 3, y + Math.sin(a) * len * 0.5, x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+    // wrap around the edges so the tile repeats seamlessly
+    if (y > 512 - 20) { g.beginPath(); g.moveTo(x, y - 512); g.lineTo(x + Math.cos(a) * len, y - 512 + Math.sin(a) * len); g.stroke(); }
+  }
+  FURTEX = new THREE.CanvasTexture(c); FURTEX.wrapS = FURTEX.wrapT = THREE.RepeatWrapping; FURTEX.colorSpace = THREE.SRGBColorSpace; FURTEX.anisotropy = 8;
+  return FURTEX;
+}
 function buildPaw() {
   const paw = new THREE.Group();
   // fur: very rough, with a soft sheen at grazing angles (velvet / fuzz), not a glossy rubber look
-  const furMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, metalness: 0, sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color('#ffffff'), fog: false });
+  const ft = furTexture(), armT = ft.clone(); armT.repeat.set(5, 9); armT.needsUpdate = true; const handT = ft.clone(); handT.repeat.set(3, 3); handT.needsUpdate = true;
+  const furMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, map: handT, bumpMap: handT, bumpScale: 2.5, roughness: 1, metalness: 0, sheen: 1, sheenRoughness: 0.6, sheenColor: new THREE.Color('#ffffff'), fog: false });
+  const armMat = furMat.clone(); armMat.map = armT; armMat.bumpMap = armT;
   const padMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.75, sheen: 0.3, sheenRoughness: 0.4, fog: false });
   // the leg: a tapered tube along +z (0 at the tree, 1 at the wrist); stretched to length each frame
   const arm = fuzz(new THREE.CylinderGeometry(0.9, 1.15, 1, 22, 48, true).rotateX(Math.PI / 2).translate(0, 0, 0.5), 0.035);
@@ -37,7 +55,7 @@ function buildPaw() {
     for (let i = 0; i < p.count; i++) {
       const z = p.getZ(i), a = Math.atan2(p.getY(i), p.getX(i)), top = Math.max(0, p.getY(i));
       // tabby stripes across the top, fading on the underside; a pale sock toward the wrist
-      const ring = Math.sin(z * 30 + Math.sin(a * 3) * 1.2 + nz(a, z, 1) * 0.8) > 0.15 ? 1 : 0;
+      const ring = ease(clamp((Math.sin(z * 30 + Math.sin(a * 3) * 1.2 + nz(a, z, 1) * 0.8) + 0.2) / 0.9));   // soft-edged stripes
       const col = FUR.clone().lerp(STRIPE, ring * 0.8 * (0.25 + 0.75 * top));
       col.lerp(SOCK, ease(clamp((z - 0.78) / 0.16)));
       col.multiplyScalar(0.9 + 0.1 * nz(a * 5, z * 40, 2));
@@ -45,11 +63,11 @@ function buildPaw() {
     }
     arm.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
   }
-  const armMesh = new THREE.Mesh(arm, furMat);
+  const armMesh = new THREE.Mesh(arm, armMat);
   paw.add(armMesh);
   const hand = new THREE.Group(); paw.add(hand);
   const solid = (geo, col, mat = furMat, f = 0.03) => {
-    const g = fuzz(geo.toNonIndexed(), f), n = g.attributes.position.count, c = [];
+    const g = fuzz(geo, f), n = g.attributes.position.count, c = [];   // indexed: smooth, not faceted
     for (let i = 0; i < n; i++) { const k = 0.93 + 0.07 * nz(g.attributes.position.getX(i) * 6, g.attributes.position.getY(i) * 6, i * 0.01); c.push(col.r * k, col.g * k, col.b * k); }
     g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); return new THREE.Mesh(g, mat);
   };

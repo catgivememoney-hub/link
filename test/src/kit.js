@@ -236,6 +236,13 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
           diffuseColor.rgb *= mix(vec3(1.0), clamp(td, 0.0, 2.6), tk);
         }` : ''}
         ${tree ? `{
+          // trunks are bark brown, not the needle colour of the scene
+          float trunk = 1.0 - vLeaf;
+          vec3 bark = vec3(0.24, 0.16, 0.1) * clamp(dot(vColor.rgb, vec3(0.33)), 0.4, 1.4);
+          ${TX ? 'if (uTexOn > 0.5) bark *= clamp(triD() / max(uTexAvg, vec3(0.02)), 0.0, 2.6);' : ''}
+          diffuseColor.rgb = mix(diffuseColor.rgb, bark, trunk);
+        }` : ''}
+        ${tree ? `{
           // seasons on the needles: summer lush green, spring blossom, autumn colours
           float shade = clamp(dot(vColor.rgb, vec3(0.33)), 0.2, 1.6);
           vec3 c = diffuseColor.rgb;

@@ -88,7 +88,8 @@ export function createHouse({ scene }) {
   // the hanging light over the living room (off until you flip the switch by the front door)
   const ceilLight = new THREE.PointLight(0xffd29a, 0, 48, 1.3); ceilLight.position.copy(toWorld(0, 0.7, 3.45)); group.add(ceilLight);
   const glowMats = { dock: [], bulb: [] };
-  const L = { ceiling: false, k: 0, lever: null, switchMeshes: [] };
+  const L = { ceiling: false, k: 0, lever: null, switchMeshes: [], lamp: true, lampK: 1, lampMeshes: [], lampGlow: [] };
+  const DR = { node: null, k: 0, to: 0, meshes: [], z0: 0 };   // the nightstand drawer (slides out 0.3 m)
   // shadows from the fire, the hanging light and the dock lamp (graphics Best and up). They're only
   // re-drawn when something moves (a door, the light switch) or every couple of seconds, so they're cheap.
   const SH = { size: 0, t: 0, lights: [fireLight, ceilLight, dockLight] };
@@ -96,28 +97,33 @@ export function createHouse({ scene }) {
 
   // light smoke drifting up out of the chimney (soft sprites that rise, spread and fade)
   const smoke = (() => {
-    const N = 36, cv = document.createElement('canvas'); cv.width = cv.height = 64;
-    const cx = cv.getContext('2d'), gr = cx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.18)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    cx.fillStyle = gr; cx.fillRect(0, 0, 64, 64);
+    const N = 70, cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    // a soft, lumpy puff: many faint blobs inside a round falloff (no hard centre, no edge)
+    const cx = cv.getContext('2d');
+    for (let i = 0; i < 60; i++) {
+      const a = Math.random() * 6.283, d = Math.pow(Math.random(), 0.7) * 34, x = 64 + Math.cos(a) * d, y = 64 + Math.sin(a) * d, r = 14 + Math.random() * 22;
+      const g = cx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(255,255,255,0.09)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      cx.fillStyle = g; cx.fillRect(0, 0, 128, 128);
+    }
+    { const g = cx.createRadialGradient(64, 64, 20, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = g; cx.fillRect(0, 0, 128, 128); cx.globalCompositeOperation = 'source-over'; }
     const tex = new THREE.CanvasTexture(cv);
     const geo = new THREE.BufferGeometry(), pos = new Float32Array(N * 3), age = new Float32Array(N);
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aAge', new THREE.BufferAttribute(age, 1));
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, fog: true,
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tMap: { value: tex }, uColor: { value: new THREE.Color(0xc9c9c6) }, uOp: { value: 0.5 }, uScale: { value: 400 } }]),
-      vertexShader: 'attribute float aAge; varying float vAge; uniform float uScale;\n#include <fog_pars_vertex>\nvoid main(){ vAge = aAge; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition; gl_PointSize = uScale * (1.5 + aAge * 7.0) / -mvPosition.z;\n#include <fog_vertex>\n}',
-      fragmentShader: 'uniform sampler2D tMap; uniform vec3 uColor; uniform float uOp; varying float vAge;\n#include <fog_pars_fragment>\nvoid main(){ float a = texture2D(tMap, gl_PointCoord).a * uOp * smoothstep(0.0, 0.12, vAge) * (1.0 - smoothstep(0.45, 1.0, vAge)); gl_FragColor = vec4(uColor, a);\n#include <fog_fragment>\n}'
+      vertexShader: 'attribute float aAge; varying float vAge; uniform float uScale;\n#include <fog_pars_vertex>\nvoid main(){ vAge = aAge; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition; gl_PointSize = uScale * (3.5 + aAge * 16.0) / -mvPosition.z;\n#include <fog_vertex>\n}',
+      fragmentShader: 'uniform sampler2D tMap; uniform vec3 uColor; uniform float uOp; varying float vAge;\n#include <fog_pars_fragment>\nvoid main(){ float a = texture2D(tMap, gl_PointCoord).a * uOp * smoothstep(0.0, 0.2, vAge) * (1.0 - smoothstep(0.3, 1.0, vAge)); gl_FragColor = vec4(uColor, a);\n#include <fog_fragment>\n}'
     });
     const points = new THREE.Points(geo, mat); points.frustumCulled = false; points.visible = false; points.renderOrder = 2;
     group.add(points);
     const seed = Array.from({ length: N }, (_, i) => ({ t: i / N, dx: Math.random() - 0.5, dz: Math.random() - 0.5 }));
     const origin = new THREE.Vector3();
-    const LIFE = 9;
+    const LIFE = 12;
     return {
       points, origin,
       update(dt, time, on, wind) {
-        mat.uniforms.uOp.value = 0.45 * on;
+        mat.uniforms.uOp.value = 0.32 * on;
         if (on < 0.01) return;
         for (let i = 0; i < N; i++) {
           const p = seed[i]; p.t += dt / LIFE; if (p.t > 1) { p.t -= 1; p.dx = Math.random() - 0.5; p.dz = Math.random() - 0.5; }
@@ -146,6 +152,7 @@ export function createHouse({ scene }) {
         o.material = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.55, metalness: 0, envMapIntensity: 0.12, name: n });
       } else if (n === 'Fire' || n === 'Screen' || n === 'Lamp glow') {
         o.material = new THREE.MeshBasicMaterial({ vertexColors: true, name: n });
+        if (n === 'Lamp glow') L.lampGlow.push(o.material);
         o.castShadow = false;
       } else if (n === 'Glass') {
         m.transparent = true; m.opacity = 0.14; m.depthWrite = false; m.side = THREE.DoubleSide; m.roughness = 0.05; m.metalness = 0.1;
@@ -168,6 +175,9 @@ export function createHouse({ scene }) {
       if (d.node) { d.node.traverse((o) => { if (o.isMesh) d.meshes.push(o); }); d.hinge = d.node.getWorldPosition(new THREE.Vector3()); }
     }
     H.fire = root.getObjectByName('Fire');
+    { const lamp = root.getObjectByName('Bedside_lamp') || root.getObjectByName('Bedside lamp'); if (lamp) lamp.traverse((m) => { if (m.isMesh) L.lampMeshes.push(m); }); }
+    DR.node = root.getObjectByName('Drawer');
+    if (DR.node) { DR.z0 = DR.node.position.z; DR.node.traverse((m) => { if (m.isMesh) DR.meshes.push(m); }); }
     L.lever = root.getObjectByName('Light_switch_lever') || root.getObjectByName('Light switch lever');
     ['Light_switch', 'Light switch', 'Light_switch_lever', 'Light switch lever'].forEach((n) => { const o = root.getObjectByName(n); if (o) o.traverse((m) => { if (m.isMesh && !L.switchMeshes.includes(m)) L.switchMeshes.push(m); }); });
     // the bookshelf gets real books (titles on their spines)
@@ -266,6 +276,13 @@ export function createHouse({ scene }) {
     // the light switch by the front door
     pickSwitch(ray, reach = 22) { if (!L.switchMeshes.length) return false; const h = ray.intersectObjects(L.switchMeshes, false)[0]; return !!h && h.distance < reach; },
     toggleLight() { L.ceiling = !L.ceiling; return L.ceiling; },
+    // the bedside lamp and the nightstand drawer (click them)
+    pickLamp(ray, reach = 22) { if (!L.lampMeshes.length) return false; const h = ray.intersectObjects(L.lampMeshes, false)[0]; return !!h && h.distance < reach; },
+    toggleLamp() { L.lamp = !L.lamp; return L.lamp; },
+    get lampOn() { return L.lamp; },
+    pickDrawer(ray, reach = 22) { if (!DR.meshes.length) return false; const h = ray.intersectObjects(DR.meshes, false)[0]; return !!h && h.distance < reach; },
+    toggleDrawer() { DR.to = DR.to > 0.5 ? 0 : 1; return DR.to > 0.5; },
+    get drawerOpen() { return DR.to > 0.5; },
     get lightOn() { return L.ceiling; },
     setLightShadows(size) {
       SH.size = size;
@@ -286,7 +303,11 @@ export function createHouse({ scene }) {
       const on = Math.min(1, s.pCabin || 0);
       const flick = 0.82 + 0.1 * Math.sin(time * 9.1 + Math.sin(time * 3.3) * 2) + 0.08 * Math.sin(time * 23.7);
       fireLight.intensity = 70 * flick * on;
-      lampLight.intensity = 22 * on;
+      L.lampK += ((L.lamp ? 1 : 0) - L.lampK) * Math.min(1, dt * 12);
+      lampLight.intensity = 22 * on * L.lampK;
+      L.lampGlow.forEach((m) => m.color.setScalar(0.22 + 0.78 * L.lampK));
+      DR.k += (DR.to - DR.k) * (1 - Math.pow(0.002, dt));
+      if (DR.node) DR.node.position.z = DR.z0 - 0.3 * smooth(DR.k);
       // the dock lamp comes on as it gets dark (night, aurora, rain…), off on bright days
       const night = Math.min(1, Math.max(0, ((s.pGlow || 0) - 0.3) / 0.45));
       dockLight.intensity = night * 900 * on * (0.97 + 0.03 * flick);
