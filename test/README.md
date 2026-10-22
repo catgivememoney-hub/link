@@ -42,6 +42,11 @@ Update 4:
 Update 6:
 - Five new cats in Settings → Play together → Your cat, modelled on Jeffy's cat photos: Smokey (grey kitten with a dark cap), Silver tabby (bold stripes), November (felt kitten: tabby head, fluffy white body, pink bag, little boots), Blep (brown tabby, tongue out), El Gato (ginger with huge pleading eyes). Each button now shows a picture of the cat; the chosen one is what other players see.
 
+Update 7 (new cat model):
+- Other players are now a real cat model built in Blender (test/assets/cat_low.glb, cat_mid.glb, cat_high.glb; source file kept on Jeffy's PC in Documents/MEOW cat/meow_cat.blend): one skinned mesh with 23 bones, so legs, head and tail bend.
+- Detail follows Settings → Graphics: None/Fast/Default = low (2,600 triangles, 34 KB), Balanced/Fancy/Custom = mid (16,000, 149 KB), Best/Extreme = very high (110,000 with a fur-clump surface, 866 KB). Only the file you need is downloaded.
+- All 13 skins are painted on the model from masks baked into it (pale belly/chest/muzzle/paws, stripe areas, darker back, pink nose and inner ears). Until the model file arrives, the old sphere cat shows.
+
 Update 5 (graphics):
 - Settings → Frame rate: Match screen / 240 / 165 / 144 / 120 / 90 / 60 / 30, and Show FPS (fps, frame time, your screen's refresh rate). V-Sync is always on in browsers.
 - Fancy: cascaded sun shadows (three.js SunLight: sharp near you, wider further out) + ambient occlusion.
