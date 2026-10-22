@@ -88,7 +88,7 @@ function buildCat(skin, name) {
     const ear = mesh(new THREE.ConeGeometry(0.42, 0.85, 12), headFur, 0.6 * k, 0.9, -0.05); ear.rotation.z = -0.3 * k; head.add(ear);
     const inner = mesh(new THREE.ConeGeometry(0.25, 0.55, 10), pink, 0.6 * k, 0.86, -0.17); inner.rotation.z = -0.3 * k; head.add(inner);
   });
-  if (sk.tongue) { const t = mesh(S(0.17), new THREE.MeshStandardMaterial({ color: 0xe8728a, roughness: 0.35 }), 0, -0.66, -1.02, 1.05, 0.45, 1.1); t.rotation.x = 0.5; head.add(t); }   // blep
+  if (sk.tongue) { const t = mesh(S(0.21), new THREE.MeshStandardMaterial({ color: 0xe8728a, roughness: 0.35 }), 0, -0.72, -1.08, 1.0, 0.42, 1.25); t.rotation.x = 0.75; head.add(t); }   // blep
   if (sk.purse) {   // the pink crossbody bag
     const pm = new THREE.MeshStandardMaterial({ color: sk.purse, roughness: 0.55 });
     const strap = mesh(new THREE.TorusGeometry(1.0, 0.07, 8, 40), pm, 0, 0.05, -1.05, 1.2 * fl, 1.08 * fl, 1); strap.rotation.z = 0.45; body.add(strap);
@@ -255,7 +255,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
           const sc = new THREE.Scene();
           sc.add(new THREE.HemisphereLight(0xffffff, 0x6b5a4a, 2.2));
           const sun = new THREE.DirectionalLight(0xffffff, 2.6); sun.position.set(-4, 9, -8); sc.add(sun);
-          const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100); cam.position.set(-6.5, 5.6, -10.5); cam.lookAt(0, 3.2, -0.6);
+          const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100); cam.position.set(-7.6, 5.4, -12.2); cam.lookAt(0, 2.7, -0.4);
           [...sk.querySelectorAll('button')].forEach((b) => {
             const c = buildCat(SKINS[+b.dataset.i], ''); c.group.rotation.y = 0.15; sc.add(c.group); c.animate(0, 0, 0.6);
             r.render(sc, cam); b.style.backgroundImage = `url(${r.domElement.toDataURL()})`;
