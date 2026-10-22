@@ -254,7 +254,7 @@ function buildModelCat(tpl, sk, name) {
   }
   if (sk.boots) {
     const bm = new THREE.MeshStandardMaterial({ color: sk.boots, roughness: 0.8 }), sole = new THREE.MeshStandardMaterial({ color: 0x5a3d24, roughness: 0.9 }), lace = new THREE.MeshStandardMaterial({ color: 0x6b4a2c });
-    [['hand.L', 0.6, -1.5], ['hand.R', -0.6, -1.5], ['foot.L', 0.6, 1.3], ['foot.R', -0.6, 1.3]].forEach(([b, x, z]) => {
+    [['handL', 0.6, -1.5], ['handR', -0.6, -1.5], ['footL', 0.6, 1.3], ['footR', -0.6, 1.3]].forEach(([b, x, z]) => {
       const boot = new THREE.Group();
       boot.add(at(mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.62, 16), bm), new THREE.Vector3(0, 0.42, 0.05)));
       boot.add(at(mesh(S(0.36), bm), new THREE.Vector3(0, 0.2, -0.16), new THREE.Vector3(1.05, 0.6, 1.4)));
@@ -290,7 +290,7 @@ function buildModelCat(tpl, sk, name) {
     if (pitch) j.b.quaternion.multiply(q.setFromAxisAngle(j.pitch, pitch));
     if (yaw) j.b.quaternion.multiply(q.setFromAxisAngle(j.yaw, yaw));
   };
-  const LEG = ['upperarm.L', 'upperarm.R', 'thigh.L', 'thigh.R'];
+  const LEG = ['upperarmL', 'upperarmR', 'thighL', 'thighR'];
   const tailB = Object.keys(J).filter((k) => k.startsWith('tail')).sort();
   let phase = 0, lt = 0, sit = 0, look = 0, bob = 0;
   const legA = [0, 0, 0, 0];
@@ -308,7 +308,7 @@ function buildModelCat(tpl, sk, name) {
     },
     _apply() {
       LEG.forEach((n, i) => turn(n, legA[i] * (1 - sit) + (i < 2 ? -1.2 : 1.1) * sit));
-      ['forearm.L', 'forearm.R'].forEach((n) => turn(n, 0.9 * sit)); ['shin.L', 'shin.R'].forEach((n) => turn(n, -1.2 * sit));
+      ['forearmL', 'forearmR'].forEach((n) => turn(n, 0.9 * sit)); ['shinL', 'shinR'].forEach((n) => turn(n, -1.2 * sit));
       body.position.y = bob - sit * 1.6;
     },
     setLook(pitch) {
