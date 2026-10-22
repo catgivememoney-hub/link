@@ -728,6 +728,7 @@ import { createAssets } from './assets.js';
       sunCSM.shadow.bias = -0.0003; sunCSM.shadow.normalBias = 0.12;
     }
     cabin.setLightShadows(G.lamps);
+    dispatchEvent(new CustomEvent('meow:gfx', { detail: lv }));   // other players' cats pick their detail level from this
     lens.fx.configure(Object.assign({ ao: 0, aoSamples: 8, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.5 }, G.fx));
     scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
     resize();

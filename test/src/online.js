@@ -4,6 +4,9 @@
    Everyone is a cat: a body with a head, ears, tail and four legs that walk, and a name tag.
    The host relays everybody's position to everybody (a star), ~15 times a second; others are smoothed in between. */
 import * as THREE from 'three';
+import { GLTFLoader } from 'three-addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three-addons/libs/meshopt_decoder.module.js';
+import * as SkeletonUtils from 'three-addons/utils/SkeletonUtils.js';
 
 const PEERJS = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
 const PREFIX = 'meow-cabin-';
@@ -50,7 +53,7 @@ function furMat(color, sk, axis, freq, gate, backAmt = 1) {
   return m;
 }
 
-function buildCat(skin, name) {
+function buildSimpleCat(skin, name) {
   const sk = typeof skin === 'string' ? { color: skin } : (skin || { color: '#999' });
   const color = sk.color;
   const g = new THREE.Group();
@@ -148,6 +151,182 @@ function buildCat(skin, name) {
   };
 }
 
+/* ---------- the modelled cat (built in Blender: test/assets/cat_low|mid|high.glb) ----------
+   One skinned mesh + 23 bones. The fur pattern is painted from per-vertex masks baked in Blender:
+   colour R = pale (belly, chest, muzzle, paws, tail tip), G = where stripes may go, B = darker back / ears, A = pink (nose, inner ears);
+   uv.x = stripe position along each body part. So every skin works on every detail level with no textures. */
+const CAT_FILES = { low: 'test/assets/cat_low.glb', mid: 'test/assets/cat_mid.glb', high: 'test/assets/cat_high.glb' };
+// graphics level → model detail: None/Fast/Default = low (2.6k triangles), Balanced/Fancy = mid (16k), Best/Extreme = very high (110k)
+const detailFor = (lv) => (lv === 'best' || lv === 'extreme') ? 'high' : (lv === 'balanced' || lv === 'fancy' || lv === 'custom') ? 'mid' : 'low';
+const catModels = {}, catLoading = {};
+let wantDetail = (() => { try { return detailFor(localStorage.getItem('meow.gfx') || 'none'); } catch { return 'low'; } })();
+const loadCatModel = (d) => {
+  if (catModels[d] || catLoading[d]) return;
+  catLoading[d] = true;
+  new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(CAT_FILES[d], (g) => {
+    g.scene.traverse((o) => {
+      if (!o.isSkinnedMesh) return;
+      const geo = o.geometry;   // rename so three.js doesn't treat them as ordinary vertex colours / texture coords
+      if (geo.getAttribute('color')) { geo.setAttribute('furMask', geo.getAttribute('color')); geo.deleteAttribute('color'); }
+      if (geo.getAttribute('uv')) { geo.setAttribute('furT', geo.getAttribute('uv')); geo.deleteAttribute('uv'); }
+    });
+    catModels[d] = g.scene; catLoading[d] = false;
+    dispatchEvent(new CustomEvent('meow:catmodel', { detail: d }));
+  }, undefined, (e) => { catLoading[d] = false; console.warn('[MEOW] cat model not loaded', d, e && e.message); });
+};
+const catModel = () => catModels[wantDetail] || null;
+
+function furSkinMat(sk) {
+  const color = new THREE.Color(sk.color);
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 });
+  const u = {
+    uFur: { value: color }, uBody: { value: new THREE.Color(sk.bodyColor || sk.color) }, uBodyOn: { value: sk.bodyColor ? 1 : 0 },
+    uPale: { value: new THREE.Color(sk.belly || new THREE.Color(sk.color).lerp(new THREE.Color('#ffffff'), 0.55)) },
+    uStripe: { value: new THREE.Color(sk.stripe || sk.color) }, uAmt: { value: sk.stripe ? (sk.stripeAmt ?? 0.8) : 0 },
+    uBack: { value: new THREE.Color(sk.back || sk.color) }, uBackAmt: { value: sk.back ? (sk.backAmt ?? 0.8) : 0 },
+    uPink: { value: new THREE.Color(0xe3a1ae) }, uInflate: { value: sk.fluffy ? 0.2 : 0 }
+  };
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = 'attribute vec4 furMask;\nattribute vec2 furT;\nuniform float uInflate;\nvarying vec4 vMask;\nvarying float vT;\nvarying vec3 vFurP;\n' +
+      sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        vMask = furMask; vT = furT.x * 100.0 - 50.0; vFurP = position;
+        float headK = 1.0 - smoothstep(1.2, 1.6, length((position - vec3(0.0, 4.02, -2.2)) / vec3(1.3, 1.2, 1.25)));
+        transformed += normal * uInflate * (1.0 - headK) * smoothstep(0.7, 1.4, position.y);`);
+    sh.fragmentShader = 'uniform vec3 uFur, uBody, uPale, uStripe, uBack, uPink;\nuniform float uBodyOn, uAmt, uBackAmt;\nvarying vec4 vMask;\nvarying float vT;\nvarying vec3 vFurP;\n' +
+      sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        vec3 p = vFurP;
+        float headK = 1.0 - smoothstep(1.15, 1.35, length((p - vec3(0.0, 4.02, -2.2)) / vec3(1.3, 1.2, 1.25)));
+        vec3 c = mix(uBody, uFur, max(1.0 - uBodyOn, headK));
+        c = mix(c, uBack, vMask.b * uBackAmt);
+        float t = vT + sin(p.x * 3.1 + p.y * 2.3) * 0.9 + sin(p.z * 4.1 - p.x * 1.7) * 0.5;
+        float s = smoothstep(0.3, 0.75, sin(t));
+        c = mix(c, uStripe, s * vMask.g * uAmt * max(1.0 - uBodyOn, headK));
+        c = mix(c, uPale, clamp(vMask.r, 0.0, 1.0));
+        c = mix(c, uPink, vMask.a);
+        diffuseColor.rgb *= c;
+      }`);
+  };
+  m.customProgramCacheKey = () => 'meow-catskin';
+  return m;
+}
+
+// bind-pose points on the model (three.js coords: x right, y up, -z forward)
+const EYE = [new THREE.Vector3(0.576, 4.276, -2.644), new THREE.Vector3(-0.576, 4.276, -2.644)], EYE_N = [new THREE.Vector3(0.62, 0.35, -0.70), new THREE.Vector3(-0.62, 0.35, -0.70)];
+const MOUTH = new THREE.Vector3(0, 3.62, -2.96);
+
+function buildModelCat(tpl, sk, name) {
+  const g = new THREE.Group();
+  const body = new THREE.Group(); g.add(body);
+  const root = SkeletonUtils.clone(tpl); body.add(root);
+  const fur = furSkinMat(sk);
+  root.traverse((o) => { if (o.isMesh) { o.material = fur; o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  g.updateMatrixWorld(true);
+  const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
+  const mesh = (geo, m) => { const o = new THREE.Mesh(geo, m); o.castShadow = true; return o; };
+  // put an object at a bind-pose world spot, then hang it on a bone (it follows the bone from then on)
+  const pin = (bone, o, pos, look) => { o.position.copy(pos); if (look) o.lookAt(pos.clone().add(look)); g.add(o); o.updateMatrixWorld(true); bones[bone].attach(o); return o; };
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: sk.iris || sk.bigEyes ? 0.15 : 0.4 });
+  const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  EYE.forEach((p, i) => {
+    const n = EYE_N[i], c = p.clone().addScaledVector(n, -0.05);
+    const e = new THREE.Group();
+    if (sk.bigEyes) {
+      e.add(Object.assign(mesh(S(0.27), dark), { scale: new THREE.Vector3(1, 1.1, 0.55) }));
+      const h1 = mesh(S(0.07, 10, 8), white); h1.position.set(i ? 0.06 : -0.06, 0.1, 0.13); e.add(h1);
+      const h2 = mesh(S(0.035, 8, 6), white); h2.position.set(i ? -0.08 : 0.08, -0.1, 0.13); e.add(h2);
+    } else if (sk.iris) {
+      e.add(Object.assign(mesh(S(0.17), new THREE.MeshStandardMaterial({ color: sk.iris, roughness: 0.15 })), { scale: new THREE.Vector3(1, 1.1, 0.55) }));
+      const pu = mesh(S(0.09), dark); pu.scale.set(0.7, 1.35, 0.5); pu.position.z = 0.06; e.add(pu);
+      const hl = mesh(S(0.035, 8, 6), white); hl.position.set(0.05, 0.08, 0.1); e.add(hl);
+    } else e.add(Object.assign(mesh(S(0.16), dark), { scale: new THREE.Vector3(1, 1.15, 0.55) }));
+    pin('head', e, c, n);
+  });
+  if (sk.tongue) { const t = mesh(S(0.15), new THREE.MeshStandardMaterial({ color: 0xe8728a, roughness: 0.35 })); t.scale.set(1.0, 0.45, 1.2); t.rotation.x = 0.6; pin('head', t, MOUTH.clone().add(new THREE.Vector3(0, -0.12, 0.02))); }
+  if (sk.purse) {
+    const pm = new THREE.MeshStandardMaterial({ color: sk.purse, roughness: 0.55 });
+    const strap = mesh(new THREE.TorusGeometry(1.0, 0.06, 8, 48), pm); strap.scale.set(0.95, 0.92, 1); strap.rotation.z = 0.45; pin('chest', strap, new THREE.Vector3(0, 2.75, -0.9));
+    const bag = mesh(new THREE.BoxGeometry(0.42, 0.55, 0.8), pm); bag.rotation.z = 0.12; pin('chest', bag, new THREE.Vector3(1.0, 2.15, -0.75));
+    pin('chest', mesh(S(0.06, 8, 6), new THREE.MeshStandardMaterial({ color: 0xd9b45a, metalness: 0.8, roughness: 0.3 })), new THREE.Vector3(1.22, 2.25, -0.75));
+  }
+  if (sk.boots) {
+    const bm = new THREE.MeshStandardMaterial({ color: sk.boots, roughness: 0.8 }), sole = new THREE.MeshStandardMaterial({ color: 0x5a3d24, roughness: 0.9 }), lace = new THREE.MeshStandardMaterial({ color: 0x6b4a2c });
+    [['hand.L', 0.6, -1.5], ['hand.R', -0.6, -1.5], ['foot.L', 0.6, 1.3], ['foot.R', -0.6, 1.3]].forEach(([b, x, z]) => {
+      const boot = new THREE.Group();
+      boot.add(Object.assign(mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.62, 16), bm), { position: new THREE.Vector3(0, 0.42, 0.05) }));
+      boot.add(Object.assign(mesh(S(0.36), bm), { position: new THREE.Vector3(0, 0.2, -0.16), scale: new THREE.Vector3(1.05, 0.6, 1.4) }));
+      boot.add(Object.assign(mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.08, 16), sole), { position: new THREE.Vector3(0, 0.04, -0.1), scale: new THREE.Vector3(1, 1, 1.4) }));
+      [0.38, 0.56].forEach((y) => boot.add(Object.assign(mesh(new THREE.BoxGeometry(0.3, 0.035, 0.035), lace), { position: new THREE.Vector3(0, y, -0.32) })));
+      pin(b, boot, new THREE.Vector3(x, 0, z));
+    });
+  }
+  // name tag, flashlight and lantern (same as the simple cat)
+  const tag = (() => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d');
+    x.fillStyle = 'rgba(20,26,32,0.6)'; x.beginPath(); x.roundRect(4, 8, 248, 48, 24); x.fill();
+    x.fillStyle = '#fff'; x.font = '600 28px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(name.slice(0, 14), 128, 33);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
+    sp.scale.set(4, 1, 1); sp.position.y = 6.6; sp.renderOrder = 10; return sp;
+  })();
+  g.add(tag); if (!name) tag.visible = false;
+  const torch = new THREE.SpotLight(0xffeedd, 0, 280, THREE.MathUtils.degToRad(30), 0.7, 1.35);
+  torch.position.set(0.6, 5.6, -2.6); g.add(torch); g.add(torch.target);
+  const lamp = new THREE.PointLight(0xffb060, 0, 60, 1.6); lamp.position.set(0.9, 4.0, -2.2); g.add(lamp);
+  // bones turn about fixed world axes measured in the rest pose
+  const X = new THREE.Vector3(1, 0, 0), q = new THREE.Quaternion(), wq = new THREE.Quaternion();
+  const J = {};
+  Object.values(bones).forEach((b) => {
+    b.getWorldQuaternion(wq); const inv = wq.clone().invert();
+    const kid = b.children.find((c) => c.isBone); let side = new THREE.Vector3(0, 1, 0);
+    if (kid) { const a = b.getWorldPosition(new THREE.Vector3()), c = kid.getWorldPosition(new THREE.Vector3()); side = new THREE.Vector3().crossVectors(c.sub(a).normalize(), X).normalize(); }
+    J[b.name] = { b, rest: b.quaternion.clone(), pitch: X.clone().applyQuaternion(inv), yaw: side.applyQuaternion(inv) };
+  });
+  const turn = (n, pitch, yaw = 0) => {
+    const j = J[n]; if (!j) return;
+    j.b.quaternion.copy(j.rest);
+    if (pitch) j.b.quaternion.multiply(q.setFromAxisAngle(j.pitch, pitch));
+    if (yaw) j.b.quaternion.multiply(q.setFromAxisAngle(j.yaw, yaw));
+  };
+  const LEG = ['upperarm.L', 'upperarm.R', 'thigh.L', 'thigh.R'];
+  const tailB = Object.keys(J).filter((k) => k.startsWith('tail')).sort();
+  let phase = 0, lt = 0, sit = 0, look = 0, bob = 0;
+  const legA = [0, 0, 0, 0];
+  return {
+    group: g, model: true,
+    animate(dt, speed, time) {
+      const k = Math.min(1, speed / 25);
+      phase += dt * (2 + speed * 0.28);
+      LEG.forEach((n, i) => { legA[i] = Math.sin(phase + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.6 * k; });
+      bob = Math.abs(Math.sin(phase)) * 0.15 * k;
+      tailB.forEach((n, i) => turn(n, Math.sin(time * 1.3 - i * 0.4) * 0.03, Math.sin(time * 2.2 - i * 0.5) * (0.08 + 0.14 * (1 - k))));
+      look = look || 0;
+      turn('neck', 0); turn('head', -look * 0.6 + Math.sin(time * 0.7) * 0.05);
+      this._apply();
+    },
+    _apply() {
+      LEG.forEach((n, i) => turn(n, legA[i] * (1 - sit) + (i < 2 ? -1.2 : 1.1) * sit));
+      ['forearm.L', 'forearm.R'].forEach((n) => turn(n, 0.9 * sit)); ['shin.L', 'shin.R'].forEach((n) => turn(n, -1.2 * sit));
+      body.position.y = bob - sit * 1.6;
+    },
+    setLook(pitch) {
+      look = pitch;
+      torch.target.position.set(0.6, 5.6 + Math.sin(pitch) * 50, -2.6 - Math.cos(pitch) * 50);
+    },
+    setLight(state, t) { lt += ((state === 1 ? 1 : 0) - lt) * 0.2; torch.intensity = lt * 520; lamp.intensity = (state === 2 ? 900 * (0.92 + 0.08 * Math.sin(t * 13)) : 0); },
+    setSit(on) { sit += ((on ? 1 : 0) - sit) * 0.15; this._apply(); },
+    dispose() { fur.dispose(); }
+  };
+}
+
+// the modelled cat when its file has loaded, otherwise the simple one made of spheres
+function buildCat(skin, name) {
+  const sk = typeof skin === 'string' ? { color: skin } : (skin || { color: '#999' });
+  const tpl = catModel();
+  return tpl ? buildModelCat(tpl, sk, name) : buildSimpleCat(sk, name);
+}
+
 export function createOnline({ scene, player, scenes, toast, extra }) {
   let peer = null, host = false, conns = new Map(), myId = null, code = null, sendT = 0;
   const others = new Map();   // id -> { cat, cur, tgt, name, scene }
@@ -172,6 +351,21 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     return o;
   };
   const drop = (id, quiet) => { const o = others.get(id); if (!o) return; scene.remove(o.cat.group); others.delete(id); if (!quiet) toast('🐾 ' + (o.name || 'A cat') + ' left'); refreshList(); };
+  // swap every other player's cat when the model arrives or the graphics level changes
+  const rebuildAll = () => {
+    others.forEach((o) => {
+      const old = o.cat; scene.remove(old.group); if (old.dispose) old.dispose();
+      o.cat = buildCat(skinOf(o.tgt), o.name || 'Cat'); scene.add(o.cat.group);
+      o.cat.group.position.copy(old.group.position); o.cat.group.rotation.copy(old.group.rotation); o.cat.group.visible = old.group.visible;
+    });
+  };
+  addEventListener('meow:catmodel', (e) => { if (e.detail === wantDetail) { rebuildAll(); redrawSkins(); } });
+  addEventListener('meow:gfx', (e) => {
+    const d = detailFor(e.detail); if (d === wantDetail) return;
+    wantDetail = d; if (catModels[d]) { rebuildAll(); redrawSkins(); } else loadCatModel(d);
+  });
+  setTimeout(() => loadCatModel(wantDetail), 1200);
+  let redrawSkins = () => {};
   const refreshList = () => { if (ui.list) ui.list.textContent = others.size ? 'Here: ' + [...others.values()].map((o) => o.name).join(', ') : ''; };
 
   const onData = (from, d) => {
@@ -259,12 +453,13 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
           [...sk.querySelectorAll('button')].forEach((b) => {
             const c = buildCat(SKINS[+b.dataset.i], ''); c.group.rotation.y = 0.15; sc.add(c.group); c.animate(0, 0, 0.6);
             r.render(sc, cam); b.style.backgroundImage = `url(${r.domElement.toDataURL()})`;
-            sc.remove(c.group); c.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
+            sc.remove(c.group); c.group.traverse((o) => { if (o.geometry && !o.isSkinnedMesh) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
           });
           r.dispose(); r.forceContextLoss();
         } catch { /* no pictures, the colours still show */ }
       };
-      const mo = new MutationObserver(() => { draw(); if (drawn) mo.disconnect(); });
+      redrawSkins = () => { drawn = false; draw(); };
+      const mo = new MutationObserver(draw);
       mo.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class', 'hidden', 'open'] });
       setTimeout(draw, 3000);
     }
