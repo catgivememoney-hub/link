@@ -39,6 +39,9 @@ Update 4:
 - Gallery: the category chips (All, #learn, …) are bigger and sit on an even, gentle slant.
 - Chimney stones laid in proper staggered courses (nothing overlapping); bookshelf books never overlap; reeds by the water only nod gently.
 
+Update 6:
+- Five new cats in Settings → Play together → Your cat, modelled on Jeffy's cat photos: Smokey (grey kitten with a dark cap), Silver tabby (bold stripes), November (felt kitten: tabby head, fluffy white body, pink bag, little boots), Blep (brown tabby, tongue out), El Gato (ginger with huge pleading eyes). Each button now shows a picture of the cat; the chosen one is what other players see.
+
 Update 5 (graphics):
 - Settings → Frame rate: Match screen / 240 / 165 / 144 / 120 / 90 / 60 / 30, and Show FPS (fps, frame time, your screen's refresh rate). V-Sync is always on in browsers.
 - Fancy: cascaded sun shadows (three.js SunLight: sharp near you, wider further out) + ambient occlusion.
