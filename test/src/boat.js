@@ -10,7 +10,9 @@ import { heightAt } from './terrain.js';
 import { builtAt } from './house.js';
 
 const MAX = 21, BOOST = 1.6, BACK = 6;          // speeds, world units / s
-const HALF_L = 11.2, HALF_B = 3.9;              // half length / half beam of the hull (world units)
+const HALF_L = 15.2, HALF_B = 5.3;              // half length / half beam of the hull (world units; the boat is 1.35× its first size)
+// the four seats (forward, right of the boat's centre, world units): driver, passenger, back left, back right
+const SEATS = [[-8.2, 1.95], [-8.2, -1.95], [-12.4, 1.95], [-12.4, -1.95]];
 const H0 = Math.PI / 2;                          // the heading it has at the mooring (bow toward -x)
 const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
@@ -19,7 +21,10 @@ export function createBoat({ scene, house, physics }) {
     node: null, mooring: null, parts: {}, ready: false,
     active: false, moored: true,
     x: 0, z: 0, h: H0, v: 0, steer: 0, sails: 0, bumpT: 0,
-    home: null
+    home: null,
+    seat: 0,              // my seat (0 = driver)
+    remote: null,         // the boat as the driver (another player) last sent it: { x, z, h, v, steer, on, by, t }
+    net: null             // online: { id, send(state) }
   };
   const UP = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), tgt = new THREE.Vector3(), cam = new THREE.Vector3();
 
@@ -69,6 +74,20 @@ export function createBoat({ scene, house, physics }) {
 
   const api = {
     get active() { return B.active; },
+    get seat() { return B.seat; },
+    get moored() { return B.moored; },
+    // multiplayer: another player is steering it right now
+    get drivenByOther() { return !!(B.remote && B.remote.on && performance.now() - B.remote.t < 1500 && (!B.active || B.seat !== 0)); },
+    // the state to send while I drive
+    snapshot() { return B.active && B.seat === 0 ? { on: 1, x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3), v: +B.v.toFixed(2), steer: +B.steer.toFixed(2) } : null; },
+    applyRemote(st, from) {
+      if (B.active && B.seat === 0) return;   // I'm driving: mine wins
+      B.remote = { ...st, t: performance.now(), by: from };
+      if (st.on) { B.x = st.x; B.z = st.z; B.h = st.h; B.v = st.v; B.steer = st.steer; B.moored = false; setSails(true); if (B.mooring) B.mooring.visible = false; }
+      else if (st.home && B.home) { B.x = B.home.x; B.z = B.home.z; B.h = B.home.h; B.v = 0; B.moored = true; setSails(B.active); if (B.mooring) B.mooring.visible = true; }
+    },
+    // where a seat is in the world right now
+    seatAt(i) { const [a, b] = SEATS[i] || SEATS[0], fx = -Math.sin(B.h), fz = -Math.cos(B.h), rx = Math.cos(B.h), rz = -Math.sin(B.h); return { x: B.x + fx * a + rx * b, z: B.z + fz * a + rz * b }; },
     get ready() { return B.ready; },
     // while you walk, the hull is solid (you can't walk through it on the water)
     blocks(x, z, feet) {
@@ -86,7 +105,11 @@ export function createBoat({ scene, house, physics }) {
     },
     board(player) {
       if (!B.ready) return false;
-      B.active = true; B.moored = false; B.v = 0; B.steer = 0;
+      // someone else is driving: take a free passenger seat
+      const driven = api.drivenByOther;
+      const taken = api.takenSeats ? api.takenSeats() : [];   // seats other players sit in (online)
+      B.seat = driven ? ([1, 2, 3].find((i) => !taken.includes(i)) || 1) : 0;
+      B.active = true; B.moored = false; if (!driven) { B.v = 0; B.steer = 0; }
       setSails(true); if (B.mooring) B.mooring.visible = false;
       const ps = player.state;
       // look the way the boat is pointing
@@ -112,9 +135,9 @@ export function createBoat({ scene, house, physics }) {
         }
       }
       if (!best && !force) { showPrompt('Sail closer to the dock or a shore to step off'); setTimeout(() => showPrompt(''), 1800); return false; }
-      B.active = false; B.v = 0; B.steer = 0; setSails(false); say(hud, ''); document.documentElement.classList.remove('boating');
+      const wasDriver = B.seat === 0; B.active = false; if (wasDriver) { B.v = 0; B.steer = 0; } setSails(api.drivenByOther); B.seat = 0; say(hud, ''); document.documentElement.classList.remove('boating');
       // back near the dock: it ties itself up at its mooring again
-      if (B.home && Math.hypot(B.x - B.home.x, B.z - B.home.z) < 70) { B.x = B.home.x; B.z = B.home.z; B.h = B.home.h; B.moored = true; if (B.mooring) B.mooring.visible = true; }
+      if (wasDriver && B.home && Math.hypot(B.x - B.home.x, B.z - B.home.z) < 70) { B.x = B.home.x; B.z = B.home.z; B.h = B.home.h; B.moored = true; if (B.mooring) B.mooring.visible = true; }
       if (best) { player.place(best.x, best.z, best.y); player.face(Math.atan2(-(best.x - B.x), -(best.z - B.z)), 0); }
       else if (B.home) { const x = B.home.x + 30, z = B.home.z - 9; player.place(x, z); }
       return true;
@@ -128,8 +151,9 @@ export function createBoat({ scene, house, physics }) {
     update(dt, time, keys, player, out, waterY, s, motionFull, canBoardNow) {
       if (!B.ready) return;
       const node = B.node;
-      node.visible = B.active || !B.moored || s.pCabin > 0.5;
-      if (B.active) {
+      node.visible = B.active || !B.moored || s.pCabin > 0.5 || api.drivenByOther;
+      if (B.active && B.seat !== 0 && !api.drivenByOther) { B.seat = 0; }   // the driver left: you take the helm
+      if (B.active && B.seat === 0) {
         const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
         const r = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
         const boost = keys.has('ShiftLeft') || keys.has('ShiftRight');
@@ -148,6 +172,10 @@ export function createBoat({ scene, house, physics }) {
           B.bumpT = time; B.v *= -0.3;
         }
         if (window.MEOW_SFX) window.MEOW_SFX.engine(true, f > 0 ? (boost ? 1 : 0.65) : f < 0 ? 0.45 : 0.05, Math.min(1, Math.abs(B.v) / MAX));
+      } else if (api.drivenByOther) {
+        // someone else drives: move with what they send (smoothly in between)
+        const R = B.remote; B.x += R.v * -Math.sin(B.h) * dt; B.z += R.v * -Math.cos(B.h) * dt;
+        if (window.MEOW_SFX) window.MEOW_SFX.engine(true, Math.min(1, Math.abs(R.v) / MAX) * 0.8 + 0.05, Math.min(1, Math.abs(R.v) / MAX));
       } else { B.v *= Math.exp(-dt * 2); if (window.MEOW_SFX) window.MEOW_SFX.engine(false); }
       // float, rock with the waves, heel into turns, lift the bow a little at speed
       const sp = Math.abs(B.v) / MAX;
@@ -167,7 +195,7 @@ export function createBoat({ scene, house, physics }) {
       }
       // you, sitting in the cockpit
       const ps = player.state;
-      ps.x = B.x; ps.z = B.z; ps.feet = waterY + 2.2; ps.eyeY = ps.feet + 7.5; ps.vx = -Math.sin(B.h) * B.v; ps.vz = -Math.cos(B.h) * B.v; ps.air = false;
+      { const st = api.seatAt(B.seat); ps.x = st.x; ps.z = st.z; } ps.feet = waterY + 2.2; ps.eyeY = ps.feet + 7.5; ps.vx = -Math.sin(B.h) * B.v; ps.vz = -Math.cos(B.h) * B.v; ps.air = false;
       // the camera: behind the boat, the mouse orbits it, it drifts back behind you while you sail
       const lk = motionFull ? 1 - Math.pow(1 - 0.12, dt * 60) : 1;
       if (Math.abs(B.v) > 2) ps.yawTo += angDiff(B.h, ps.yawTo) * (1 - Math.exp(-dt * 0.9));

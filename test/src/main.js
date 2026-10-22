@@ -80,8 +80,8 @@ import { createAssets } from './assets.js';
   const trees = createTrees({ scene, shared: props.shared, isClearing: (x, z) => props.inClearing(x, z) });
   props.plant(trees.base, 0);
   // soft shade on the ground under every tree and around the cabin
-  const treeShade = createContactShadows(scene, heightAt, trees.base.map((b) => ({ x: b.p.x, z: b.p.z, sx: b.s.x * 3.4, sz: b.s.z * 3.4 })), 0.32);
-  const cabinShade = createContactShadows(scene, heightAt, [{ x: CABIN.x - 4.5, z: CABIN.z, sx: 7.4 * CABIN.S, sz: 8.2 * CABIN.S, yaw: CABIN.yaw }], 0.35);
+  const treeShade = createContactShadows(scene, heightAt, trees.base.map((b) => ({ x: b.p.x, z: b.p.z, sx: b.s.x * 3.4, sz: b.s.z * 3.4 })), 0.32, 'trees');
+  const cabinShade = createContactShadows(scene, heightAt, [{ x: CABIN.x - 4.5, z: CABIN.z, sx: 7.4 * CABIN.S, sz: 8.2 * CABIN.S, yaw: CABIN.yaw }], 0.35, 'cabin');
   const cabin = createHouse({ scene });
   // the old library (links as books) lived under the old cabin; not in this test copy
   const study = { reset() {}, back() { return false; }, hover() { return false; }, click() { return false; } };
@@ -121,6 +121,25 @@ import { createAssets } from './assets.js';
   const physics = createPhysics({ trees, props, cabin, scenes, water: water.mesh });
   const player = createPlayer({ physics, trees });
   const boat = createBoat({ scene, house: cabin, physics });
+  // Settings → Play together: other players, and the doors / lights / boat / scene shared with them
+  const online = createOnline({ scene, player, scenes, toast: (m) => toastMsg(m),
+    extra: () => ({ lt: hand.state === 'torch' ? 1 : hand.state === 'lamp' ? 2 : 0, seat: boat.active ? boat.seat : -1, boat: boat.snapshot() || undefined, skin: undefined }) });
+  window.MEOW_ONLINE = online;
+  boat.takenSeats = () => online.takenSeats();
+  {
+    const S = () => window.MEOW_SOUND || {};
+    online.on('door', ([i, open]) => { if (cabin.setDoor(i, open) && S().door) S().door(!!open); });
+    online.on('light', (on) => { cabin.setState({ light: on }); if (S().door) S().door(false); });
+    online.on('lamp', (on) => { cabin.setState({ lamp: on }); if (S().click) S().click(); });
+    online.on('drawer', (open) => { cabin.setState({ drawer: open }); if (window.MEOW_SFX) window.MEOW_SFX.drawer(!!open); });
+    online.on('boat', (st, from) => boat.applyRemote(st, from));
+    // only the room's host picks the scene; everyone else follows it
+    online.on('scene', (name) => { if (!online.isHost) applySceneFromHost(name); });
+    online.setSync({
+      snapshot: () => ({ scene: scenes.name, house: cabin.getState() }),
+      apply: (v) => { if (v.house) cabin.setState(v.house); if (v.scene) applySceneFromHost(v.scene); }
+    });
+  }
   cabin.setBoatBlock((x, z, feet) => boat.blocks(x, z, feet));
   const computer = createComputer({ camera, house: cabin });
   const portal = createPortal({ scene, trees, camera, isClearing: (x, z) => props.inClearing(x, z) });
@@ -129,7 +148,6 @@ import { createAssets } from './assets.js';
   const trailAt = { x: 0, z: 0 };
   const REACH = { mode: 'near', near: 40 }; try { REACH.mode = localStorage.getItem('meow.reach') || 'near'; } catch { /* ignore */ }
   const toastMsg = (m) => { const el = document.getElementById('toast'); if (!el) return; el.textContent = m; el.classList.add('show'); clearTimeout(toastMsg.t); toastMsg.t = setTimeout(() => el.classList.remove('show'), 1800); };
-  const online = createOnline({ scene, player, scenes, toast: toastMsg }); window.MEOW_ONLINE = online;   // Settings → Play together
   {
     const seg = document.getElementById('reachSeg');
     const mark = () => seg && seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === REACH.mode)));
@@ -282,7 +300,7 @@ import { createAssets } from './assets.js';
     if (e.code === 'KeyE' && !e.repeat) {
       // E: step off the boat / go aboard / open or close the door you're looking at (or the nearest one)
       const wy = water.mesh.position.y;
-      if (boat.active) { boat.leave(player, wy); return; }
+      if (boat.active) { const drv = boat.seat === 0; if (boat.leave(player, wy) && drv) online.emit('boat', { on: 0, home: boat.moored ? 1 : 0 }); return; }
       if ((scenes.cur.ice || 0) < 0.5 && boat.canBoard(player.state, wy)) { boat.board(player); return; }
       { const [cx, cy] = aimPoint(); if (cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; } if (computer.pick(rayAt(cx, cy))) { openComputer(); return; } }
       if (scenes.cur.pCabin > 0.5) {
@@ -318,11 +336,12 @@ import { createAssets } from './assets.js';
     return cabin.pickDoor(rayAt(cx, cy), 26);
   };
   // sit down at the computer (the pointer comes back so you can use the screen)
-  const flipLight = () => { cabin.toggleLight(); if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(false); hover.pending = true; };
+  const flipLight = () => { online.emit('light', cabin.toggleLight()); if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(false); hover.pending = true; };
   const openComputer = () => { unlockPointer(); keys.clear(); actHint.classList.remove('show'); doorShown = false; computer.open(camera.position, camera.quaternion); };
   const toggleDoor = (d) => {
     if (!d) return false;
     const opened = cabin.toggle(d);
+    online.emit('door', [cabin.doorIndex(d), opened ? 1 : 0]);
     if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(opened);
     return true;
   };
@@ -410,8 +429,8 @@ import { createAssets } from './assets.js';
     if (player.walking && fishing.click(now)) return;
     if (player.walking && scenes.cur.pCabin > 0.5 && indoorK > 0.5 && study.click(rayAt(cx, cy), now)) return;
     if (player.walking && !boat.active && cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; }
-    if (player.walking && !boat.active && cabin.pickLamp(rayAt(cx, cy))) { cabin.toggleLamp(); if (window.MEOW_SOUND && window.MEOW_SOUND.click) window.MEOW_SOUND.click(); hover.pending = true; return; }
-    if (player.walking && !boat.active && cabin.pickDrawer(rayAt(cx, cy))) { const o = cabin.toggleDrawer(); if (window.MEOW_SFX) window.MEOW_SFX.drawer(o); hover.pending = true; return; }
+    if (player.walking && !boat.active && cabin.pickLamp(rayAt(cx, cy))) { online.emit('lamp', cabin.toggleLamp()); if (window.MEOW_SOUND && window.MEOW_SOUND.click) window.MEOW_SOUND.click(); hover.pending = true; return; }
+    if (player.walking && !boat.active && cabin.pickDrawer(rayAt(cx, cy))) { const o = cabin.toggleDrawer(); online.emit('drawer', o); if (window.MEOW_SFX) window.MEOW_SFX.drawer(o); hover.pending = true; return; }
     if (player.walking && !boat.active && computer.pick(rayAt(cx, cy))) { openComputer(); return; }
     { const d = aimAtDoor(cx, cy); if (d) { toggleDoor(d); return; } }
     if (!player.walking) { dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'miss' } })); return; }   // the trees aren't links on the home page
@@ -603,6 +622,8 @@ import { createAssets } from './assets.js';
   /* ---------- scenes ---------- */
   const themeExposure = () => (root.getAttribute('data-theme') === 'dark' ? 0.62 : 1.0);
   new MutationObserver(() => { exposureTo = themeExposure(); }).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  const markScene = (name) => document.querySelectorAll('#sceneGrid button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.val === name)));
+  function applySceneFromHost(name) { if (window.MEOW_STATE) window.MEOW_STATE.scene = name; markScene(name); window.MEOW_BG.setScene(name, true); }
   const goTo = (name, ms) => {
     scenes.go(name, full() ? ms : 1, performance.now());
     root.setAttribute('data-scene', scenes.name);
@@ -612,8 +633,16 @@ import { createAssets } from './assets.js';
 
   window.MEOW_BG = {
     scenes: SCENE_NAMES,
-    setScene(name) {
+    setScene(name, fromHost) {
       if (!PRESETS[name]) name = 'rain';
+      // in a room, only the host changes the scene (for everyone)
+      if (!fromHost && online.inRoom && !online.isHost && name !== scenes.name) {
+        toastMsg('🐾 Only the room\'s host can change the scene');
+        if (window.MEOW_STATE) window.MEOW_STATE.scene = scenes.name;
+        markScene(scenes.name);
+        return;
+      }
+      if (online.inRoom && online.isHost) online.emit('scene', name);
       if (name === scenes.name && started) return;
       if (!started) { scenes.go(name, 1, performance.now()); root.setAttribute('data-scene', name); return; }
       goTo(name, 3200);

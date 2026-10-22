@@ -241,6 +241,9 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
           vec3 bark = vec3(0.24, 0.16, 0.1) * clamp(dot(vColor.rgb, vec3(0.33)), 0.4, 1.4);
           ${TX ? 'if (uTexOn > 0.5) bark *= clamp(triD() / max(uTexAvg, vec3(0.02)), 0.0, 2.6);' : ''}
           diffuseColor.rgb = mix(diffuseColor.rgb, bark, trunk);
+          // needles: fine streaks along each branch, so the foliage isn't a smooth plastic surface
+          float nd = gN(vec3(atan(vObj.z, vObj.x) * 26.0, vObj.y * 9.0, length(vObj.xz) * 30.0)) * 0.6 + gN(vObj * 55.0) * 0.4;
+          diffuseColor.rgb *= mix(1.0, 0.72 + 0.5 * nd, vLeaf);
         }` : ''}
         ${tree ? `{
           // seasons on the needles: summer lush green, spring blossom, autumn colours

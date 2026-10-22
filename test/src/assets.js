@@ -14,7 +14,7 @@ export function createAssets({ fishing }) {
     g.scene.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
     if (!mesh) return;
     const geo = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-    geo.rotateY(-Math.PI / 2);         // the model's head points to -z; ours to +x
+    geo.rotateY(-Math.PI / 2);         // the model's head points to -z; ours to +x (head first when leaping)
     geo.computeBoundingBox();
     const b = geo.boundingBox, c = b.getCenter(new THREE.Vector3());
     geo.translate(-c.x, -c.y, -c.z);

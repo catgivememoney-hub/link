@@ -3,6 +3,7 @@
    tree placement, walking and the cabin site all use it. */
 import * as THREE from 'three';
 import { TEXON } from './kit.js';
+import { CONTACT } from './contact.js';
 import { CABIN } from './house.js';
 
 /* ---------- small deterministic noise ---------- */
@@ -75,13 +76,13 @@ export function createTerrain(scene) {
   geo.computeVertexNormals();
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, TU);
+    Object.assign(sh.uniforms, TU, CONTACT);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying float vH; varying float vSlope; varying vec2 vXZ;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y; vXZ = position.xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; uniform sampler2D tDetail, tGrassD, tRockD, tRockN; uniform float uTexOn; varying float vH; varying float vSlope; varying vec2 vXZ;
+        uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; uniform sampler2D tDetail, tGrassD, tRockD, tRockN; uniform float uTexOn; uniform sampler2D tContact; uniform vec4 uContactBox, uContactStr; varying float vH; varying float vSlope; varying vec2 vXZ;
         uniform sampler2D tTrail; uniform vec4 uTrailBox;
         float trl(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
         float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -124,6 +125,12 @@ export function createTerrain(scene) {
         float drift = sin(vXZ.x * 0.55 + vXZ.y * 0.18 + d1 * 7.0) * 0.5 + 0.5;
         vec3 snowCol = uSnow * (0.93 + 0.05 * d2 + 0.04 * drift) * mix(vec3(0.94, 0.97, 1.0), vec3(1.0), d1);
         diffuseColor.rgb = mix(land, snowCol, snow);
+        {
+          // contact shadows baked into the ground (contact.js): under rocks, logs, trees, the cabin
+          vec2 cuv = (vXZ - uContactBox.xy) / uContactBox.zw;
+          float cs = dot(texture2D(tContact, cuv), uContactStr);
+          diffuseColor.rgb *= 1.0 - clamp(cs, 0.0, 0.8) * (1.0 - snow * 0.5);
+        }
         // pressed snow where you walked: packed down, a little blue-grey in its own shadow, with a bright rim
         float trA = trl(vXZ) * snow;
         if (trA > 0.002) diffuseColor.rgb = mix(diffuseColor.rgb, snowCol * vec3(0.62, 0.7, 0.82), clamp(trA * 1.1, 0.0, 0.95));`)

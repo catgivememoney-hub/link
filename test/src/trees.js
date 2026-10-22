@@ -28,12 +28,12 @@ export function createTrees({ scene, shared, isClearing }) {
       color: (v) => { const c = 0.42 + 0.16 * vnoise(v.y * 7, Math.atan2(v.z, v.x) * 2.5); return [c * 1.35, c * 0.98, c * 0.72]; },
       normal: (v, n) => n.set(v.x, 0.12, v.z).normalize()
     });
-    const TIERS = 6;
+    const TIERS = 8;   // more, thinner layers of branches read as a real fir
     let topY = 0;
     for (let t = 0; t < TIERS; t++) {
       const k = t / (TIERS - 1);
-      const r = 1.1 - k * 0.8, h = 1.02 - k * 0.42, base = 0.5 + k * 2.5;
-      const lobes = 5 + (t % 3), ph = t * 1.93;
+      const r = (1.12 - k * 0.86) * (0.92 + 0.16 * hash2(t * 3.1, 1.7)), h = 0.82 - k * 0.36, base = 0.45 + k * 2.6;
+      const lobes = 7 + (t % 4) * 2, ph = t * 1.93;   // each lobe is a branch reaching out
       const shape = (geo, under) => {
         const P = geo.attributes.position, v = new THREE.Vector3();
         for (let i = 0; i < P.count; i++) {
@@ -41,23 +41,23 @@ export function createTrees({ scene, shared, isClearing }) {
           const rad = Math.hypot(v.x, v.z);
           if (rad < 0.001) continue;
           const a = Math.atan2(v.z, v.x);
-          const lobe = Math.pow(0.5 + 0.5 * Math.sin(a * lobes + ph), 2);
-          const jag = 0.82 + 0.32 * lobe + 0.06 * Math.sin(a * 17 + t * 3) + 0.04 * Math.sin(a * 31 + t);
+          const lobe = Math.pow(0.5 + 0.5 * Math.sin(a * lobes + ph + Math.sin(a * 3 + t) * 0.6), 3);
+          const jag = 0.74 + 0.42 * lobe + 0.07 * Math.sin(a * 23 + t * 3) + 0.05 * Math.sin(a * 41 + t);
           const rim = rad / r;
-          P.setXYZ(i, v.x * jag, v.y - (0.1 + 0.16 * lobe) * r * rim * rim - (under ? 0.02 : 0), v.z * jag);
+          P.setXYZ(i, v.x * jag, v.y - (0.12 + 0.26 * lobe) * r * rim * rim - (under ? 0.02 : 0), v.z * jag);   // branch tips droop
         }
       };
-      const cone = new THREE.ConeGeometry(r, h, 14, 3, true);
+      const cone = new THREE.ConeGeometry(r, h, 22, 2, true);
       shape(cone, false);
       cone.translate(0, base + h / 2, 0);
       parts.add(cone, {
         mat: 13,
-        color: (v) => { const up = (v.y - base) / h, rad = Math.min(1, Math.hypot(v.x, v.z) / r); const c = 0.55 + 0.5 * rad + 0.22 * up + 0.08 * (hash2(v.x * 9.1, v.z * 7.3 + v.y) - 0.5) + t * 0.03; return [c * 0.98, c, c * 0.94]; },
+        color: (v) => { const up = (v.y - base) / h, rad = Math.min(1, Math.hypot(v.x, v.z) / r); const a = Math.atan2(v.z, v.x), lobe = Math.pow(0.5 + 0.5 * Math.sin(a * lobes + ph), 3); const c = 0.38 + 0.55 * rad * (0.6 + 0.4 * lobe) + 0.18 * up + 0.1 * (hash2(v.x * 9.1, v.z * 7.3 + v.y) - 0.5) + t * 0.025; return [c * (0.94 + 0.08 * lobe * rad), c * (1.0 + 0.06 * lobe * rad), c * 0.9]; },
         normal: (v, n) => { const rad = Math.hypot(v.x, v.z); n.set(v.x, rad * 0.55 + 0.32, v.z).normalize(); },
         // where snow settles: the upper part of each tier
         tip: (v) => { const up = (v.y - base) / h; const a = Math.atan2(v.z, v.x); const lobe = 0.5 + 0.5 * Math.sin(a * lobes + ph); return Math.min(1, Math.max(0, (up - 0.08) * 1.5) * (0.45 + 0.55 * lobe) + 0.25 * hash2(v.x * 5.3, v.z * 4.1)); }
       });
-      const under = new THREE.ConeGeometry(r * 0.97, h * 0.38, 14, 1, true);
+      const under = new THREE.ConeGeometry(r * 0.97, h * 0.38, 22, 1, true);
       shape(under, true);
       under.translate(0, base + h * 0.19 - 0.02, 0);
       parts.add(under, { mat: 13, flip: true, color: (v) => { const rad = Math.min(1, Math.hypot(v.x, v.z) / r); const c = 0.42 + 0.3 * rad; return [c * 0.95, c, c * 0.9]; }, normal: (v, n) => n.set(v.x * 0.3, -1, v.z * 0.3).normalize() });

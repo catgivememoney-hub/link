@@ -6,6 +6,7 @@
    Every group fades in and out with the scene: it grows out of / sinks into the
    ground while the scene cross-fades. The amounts per scene live in SHOW below. */
 import * as THREE from 'three';
+import { mergeVertices } from 'three-addons/utils/BufferGeometryUtils.js';
 
 /* how much of each group every scene shows (0 = hidden, 1 = fully there) */
 export const SHOW = {
@@ -61,9 +62,9 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
   // soft contact shadows under things that sit on the ground
   const blobs = [];
   const yawOf = (q) => { const d = new THREE.Vector3(1, 0, 0).applyQuaternion(q); return Math.atan2(-d.z, d.x); };
-  const shadowsFor = (list, key, size, strength) => {
+  const shadowsFor = (list, key, size, strength, channel) => {
     const items = list.map((it) => { const [sx, sz] = size(it.s); return { x: it.p.x, z: it.p.z, sx, sz, yaw: yawOf(it.q) }; });
-    blobs.push({ key, b: createContactShadows(scene, heightAt, items, strength) });
+    blobs.push({ key, b: createContactShadows(scene, heightAt, items, strength, channel) });
   };
   const instanced = (geo, mat, list, key, opts) => {
     const cells = new Map();
@@ -97,7 +98,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
 
   /* ===== rocks ===== */
   const rockGeo = (seed, detail) => {
-    const g = new THREE.IcosahedronGeometry(1, detail);
+    let g = new THREE.IcosahedronGeometry(1, detail + 1); g.deleteAttribute('normal'); g.deleteAttribute('uv'); g = mergeVertices(g);   // shared corners → smooth, natural shading
     const P = g.attributes.position, v = new THREE.Vector3();
     for (let i = 0; i < P.count; i++) {
       v.fromBufferAttribute(P, i);
@@ -107,8 +108,9 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       v.y *= 0.72; v.x *= 1.12;
       P.setXYZ(i, v.x, v.y, v.z);
     }
+    g.computeVertexNormals();
     return new Parts().add(g, {
-      flat: true,
+      flat: false,
       color: (p) => { const c = 0.5 + n3(p.x * 3 + seed, p.y * 3, p.z * 3) * 0.28 + p.y * 0.12; return [c, c * 0.99, c * 0.95]; }
     }).geometry();
   };
@@ -117,9 +119,11 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
   const putRock = (x, z, s, list, solid) => {
     const h = heightAt(x, z);
     const sc = new THREE.Vector3(s * rr(0.8, 1.25), s * rr(0.6, 1.1), s * rr(0.8, 1.2));
-    list.push({ p: new THREE.Vector3(x, h - s * 0.12, z), q: groundQ(x, z, R() * 6.28, 0.6), s: sc });
+    // sunk well into the ground and only slightly tilted, so no edge ever lifts off a slope
+    const sink = s * 0.3 + Math.abs(heightAt(x + s, z) - heightAt(x - s, z)) * 0.5 + Math.abs(heightAt(x, z + s) - heightAt(x, z - s)) * 0.5;
+    list.push({ p: new THREE.Vector3(x, h - sink, z), q: groundQ(x, z, R() * 6.28, 0.3), s: sc });
     // top: how high it is (you can jump over it or stand on it); rt: the flat-ish area on top
-    if (solid) solids.push({ x, z, r: s * 0.92 + 0.45, key: 'pRocks', top: h - s * 0.12 + sc.y * 0.82, rt: s * 0.75 });
+    if (solid) solids.push({ x, z, r: s * 0.92 + 0.45, key: 'pRocks', top: h - sink + sc.y * 0.82, rt: s * 0.75 });
   };
   for (let i = 0, tries = 0; i < 260 && tries < 20000; tries++) {
     const x = rr(-560, 560), z = rr(-560, 230), h = heightAt(x, z);
@@ -142,7 +146,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
     putRock(x, z, rr(0.35, 1.0), pebbles, false); i++;
   }
   rockSets.forEach((list, i) => instanced(rockGeo(i * 17.3, 2), rockMat, list, 'pRocks', { cast: true }));
-  shadowsFor(rockSets.flat(), 'pRocks', (sc) => [sc.x * 3.0, sc.z * 3.0], 0.5);
+  shadowsFor(rockSets.flat(), 'pRocks', (sc) => [sc.x * 1.45, sc.z * 1.45], 0.38, 'rocks');   // just a soft darkening where it meets the ground
   instanced(rockGeo(5.1, 1), rockMat, pebbles, 'pRocks');
 
   /* ===== fallen logs and stumps ===== */
@@ -406,7 +410,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       beeSpots.push(x, h + 4.5, z);
     });
     instanced(hiveGeo, coverMaterial(shared, show.hives, { rich: true, grain: 0.02 }), hives, 'hives', { cast: true });
-    shadowsFor(hives, 'hives', () => [CABIN.S * 1.2, CABIN.S * 1.1], 0.4);
+    shadowsFor(hives, 'hives', () => [CABIN.S * 1.2, CABIN.S * 1.1], 0.4, 'cabin');
     // a few bees busy around the hives
     {
       const N = 60, g = new THREE.BufferGeometry(), pos = new Float32Array(N * 3), seed = new Float32Array(N);
@@ -561,8 +565,8 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       }
       instanced(logGeo, woodMat, logs, 'pLogs', { cast: true });
       instanced(stumpGeo, woodMat, stumps, 'pLogs', { cast: true });
-      shadowsFor(logs, 'pLogs', (sc) => [sc.x * 1.2, sc.y * 3.4], 0.45);
-      shadowsFor(stumps, 'pLogs', (sc) => [sc.x * 3.2, sc.z * 3.2], 0.45);
+      shadowsFor(logs, 'pLogs', (sc) => [sc.x * 1.2, sc.y * 3.4], 0.45, 'logs');
+      shadowsFor(stumps, 'pLogs', (sc) => [sc.x * 3.2, sc.z * 3.2], 0.45, 'logs');
 
       // grass: meadows and forest floor, thicker in clumps
       const grass = [];

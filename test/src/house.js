@@ -273,6 +273,17 @@ export function createHouse({ scene }) {
       return best;
     },
     toggle(d) { if (!d) return false; d.to = d.to > 0.5 ? 0 : 1; return d.to > 0.5; },
+    // online: the same doors / lights / drawer for everyone
+    doorIndex(d) { return doors.indexOf(d); },
+    setDoor(i, open) { const d = doors[i]; if (!d || (d.to > 0.5) === !!open) return false; d.to = open ? 1 : 0; return true; },
+    getState() { return { doors: doors.map((d) => (d.to > 0.5 ? 1 : 0)), light: L.ceiling ? 1 : 0, lamp: L.lamp ? 1 : 0, drawer: DR.to > 0.5 ? 1 : 0 }; },
+    setState(st) {
+      if (!st) return;
+      if (st.doors) st.doors.forEach((v, i) => { if (doors[i]) doors[i].to = v ? 1 : 0; });
+      if ('light' in st) L.ceiling = !!st.light;
+      if ('lamp' in st) L.lamp = !!st.lamp;
+      if ('drawer' in st) DR.to = st.drawer ? 1 : 0;
+    },
     // the light switch by the front door
     pickSwitch(ray, reach = 22) { if (!L.switchMeshes.length) return false; const h = ray.intersectObjects(L.switchMeshes, false)[0]; return !!h && h.distance < reach; },
     toggleLight() { L.ceiling = !L.ceiling; return L.ceiling; },
