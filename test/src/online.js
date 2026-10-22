@@ -226,6 +226,7 @@ function buildModelCat(tpl, sk, name) {
   const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
   const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
   const mesh = (geo, m) => { const o = new THREE.Mesh(geo, m); o.castShadow = true; return o; };
+  const at = (o, p, sc) => { if (p) o.position.copy(p); if (sc) o.scale.copy(sc); return o; };
   // put an object at a bind-pose world spot, then hang it on a bone (it follows the bone from then on)
   const pin = (bone, o, pos, look) => { o.position.copy(pos); if (look) o.lookAt(pos.clone().add(look)); g.add(o); o.updateMatrixWorld(true); bones[bone].attach(o); return o; };
   const dark = new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: sk.iris || sk.bigEyes ? 0.15 : 0.4 });
@@ -234,14 +235,14 @@ function buildModelCat(tpl, sk, name) {
     const n = EYE_N[i], c = p.clone().addScaledVector(n, -0.05);
     const e = new THREE.Group();
     if (sk.bigEyes) {
-      e.add(Object.assign(mesh(S(0.27), dark), { scale: new THREE.Vector3(1, 1.1, 0.55) }));
+      e.add(at(mesh(S(0.27), dark), null, new THREE.Vector3(1, 1.1, 0.55)));
       const h1 = mesh(S(0.07, 10, 8), white); h1.position.set(i ? 0.06 : -0.06, 0.1, 0.13); e.add(h1);
       const h2 = mesh(S(0.035, 8, 6), white); h2.position.set(i ? -0.08 : 0.08, -0.1, 0.13); e.add(h2);
     } else if (sk.iris) {
-      e.add(Object.assign(mesh(S(0.17), new THREE.MeshStandardMaterial({ color: sk.iris, roughness: 0.15 })), { scale: new THREE.Vector3(1, 1.1, 0.55) }));
+      e.add(at(mesh(S(0.17), new THREE.MeshStandardMaterial({ color: sk.iris, roughness: 0.15 })), null, new THREE.Vector3(1, 1.1, 0.55)));
       const pu = mesh(S(0.09), dark); pu.scale.set(0.7, 1.35, 0.5); pu.position.z = 0.06; e.add(pu);
       const hl = mesh(S(0.035, 8, 6), white); hl.position.set(0.05, 0.08, 0.1); e.add(hl);
-    } else e.add(Object.assign(mesh(S(0.16), dark), { scale: new THREE.Vector3(1, 1.15, 0.55) }));
+    } else e.add(at(mesh(S(0.16), dark), null, new THREE.Vector3(1, 1.15, 0.55)));
     pin('head', e, c, n);
   });
   if (sk.tongue) { const t = mesh(S(0.15), new THREE.MeshStandardMaterial({ color: 0xe8728a, roughness: 0.35 })); t.scale.set(1.0, 0.45, 1.2); t.rotation.x = 0.6; pin('head', t, MOUTH.clone().add(new THREE.Vector3(0, -0.12, 0.02))); }
@@ -255,10 +256,10 @@ function buildModelCat(tpl, sk, name) {
     const bm = new THREE.MeshStandardMaterial({ color: sk.boots, roughness: 0.8 }), sole = new THREE.MeshStandardMaterial({ color: 0x5a3d24, roughness: 0.9 }), lace = new THREE.MeshStandardMaterial({ color: 0x6b4a2c });
     [['hand.L', 0.6, -1.5], ['hand.R', -0.6, -1.5], ['foot.L', 0.6, 1.3], ['foot.R', -0.6, 1.3]].forEach(([b, x, z]) => {
       const boot = new THREE.Group();
-      boot.add(Object.assign(mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.62, 16), bm), { position: new THREE.Vector3(0, 0.42, 0.05) }));
-      boot.add(Object.assign(mesh(S(0.36), bm), { position: new THREE.Vector3(0, 0.2, -0.16), scale: new THREE.Vector3(1.05, 0.6, 1.4) }));
-      boot.add(Object.assign(mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.08, 16), sole), { position: new THREE.Vector3(0, 0.04, -0.1), scale: new THREE.Vector3(1, 1, 1.4) }));
-      [0.38, 0.56].forEach((y) => boot.add(Object.assign(mesh(new THREE.BoxGeometry(0.3, 0.035, 0.035), lace), { position: new THREE.Vector3(0, y, -0.32) })));
+      boot.add(at(mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.62, 16), bm), new THREE.Vector3(0, 0.42, 0.05)));
+      boot.add(at(mesh(S(0.36), bm), new THREE.Vector3(0, 0.2, -0.16), new THREE.Vector3(1.05, 0.6, 1.4)));
+      boot.add(at(mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.08, 16), sole), new THREE.Vector3(0, 0.04, -0.1), new THREE.Vector3(1, 1, 1.4)));
+      [0.38, 0.56].forEach((y) => boot.add(at(mesh(new THREE.BoxGeometry(0.3, 0.035, 0.035), lace), new THREE.Vector3(0, y, -0.32))));
       pin(b, boot, new THREE.Vector3(x, 0, z));
     });
   }
