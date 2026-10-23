@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';   // fast picking (MIT, test/vendor/three-mesh-bvh)
 
 export const MAX_STAMPS = 6000;
-const BRUSH = { soft: 0, hard: 1, spray: 2, erase: 3, highlighter: 4, pencil: 5, pen: 6, marker: 7 };
+const BRUSH = { soft: 0, hard: 1, spray: 2, erase: 3, highlighter: 4, pencil: 5, pen: 6, marker: 7, fill: 8 };
 // the paint tools: which kind of dab each makes, its starting size and strength
 export const TOOLS = {
   soft:        { k: 0, size: 22, alpha: 85, name: 'Soft brush',  icon: '🖌' },
@@ -18,6 +18,7 @@ export const TOOLS = {
   marker:      { k: 7, size: 14, alpha: 90, name: 'Marker',      icon: '🖍' },
   highlighter: { k: 4, size: 24, alpha: 40, name: 'Highlighter', icon: '▮' },
   spray:       { k: 2, size: 32, alpha: 85, name: 'Spray',       icon: '💨' },
+  fill:        { k: 8, size: 22, alpha: 100, name: 'Fill',       icon: '🪣' },
   erase:       { k: 3, size: 24, alpha: 100, name: 'Eraser',     icon: '⌫' }
 };
 
@@ -87,6 +88,44 @@ export function bakeModelSpace(mesh, root) {
   }
   g.userData.grid = { cell, map, pos, nor: nr ? nor : null };
 }
+// which vertices touch which (for the fill bucket), built the first time it's needed
+const adjOf = (g) => {
+  const grid = g.userData.grid; if (grid.adj) return grid.adj;
+  const n = grid.pos.length / 3, idx = g.index ? g.index.array : null, tri = idx ? idx.length / 3 : n / 3;
+  const deg = new Uint32Array(n + 1), at = (t, k) => (idx ? idx[t * 3 + k] : t * 3 + k);
+  for (let t = 0; t < tri; t++) for (let k = 0; k < 3; k++) deg[at(t, k)] += 2;
+  const start = new Uint32Array(n + 1); for (let i = 0; i < n; i++) start[i + 1] = start[i] + deg[i];
+  const fillp = start.slice(0, n), list = new Uint32Array(start[n]);
+  for (let t = 0; t < tri; t++) { const a = at(t, 0), b = at(t, 1), c = at(t, 2); list[fillp[a]++] = b; list[fillp[a]++] = c; list[fillp[b]++] = a; list[fillp[b]++] = c; list[fillp[c]++] = a; list[fillp[c]++] = b; }
+  // vertices at the same spot (seams) count as touching too
+  const same = new Map(); for (let i = 0; i < n; i++) { const k = Math.round(grid.pos[i * 3] * 2000) + ',' + Math.round(grid.pos[i * 3 + 1] * 2000) + ',' + Math.round(grid.pos[i * 3 + 2] * 2000); const a = same.get(k); if (a) a.push(i); else same.set(k, [i]); }
+  const twin = new Int32Array(n).fill(-1); same.forEach((a) => { if (a.length > 1) for (let j = 0; j < a.length; j++) twin[a[j]] = a[(j + 1) % a.length]; });
+  return (grid.adj = { start, list, twin });
+};
+// the fill bucket: from the vertex nearest the click, spread over touching vertices that have the same paint
+function flood(g, F, st, lc) {
+  const grid = g.userData.grid, { pos, map, cell } = grid, n = pos.length / 3;
+  let seed = -1, best = 0.09;   // nearest vertex within ~0.3
+  const cx = Math.floor(st.p[0] / cell), cy = Math.floor(st.p[1] / cell), cz = Math.floor(st.p[2] / cell);
+  for (let x = cx - 2; x <= cx + 2; x++) for (let y = cy - 2; y <= cy + 2; y++) for (let z = cz - 2; z <= cz + 2; z++) {
+    const l = map.get(x + ',' + y + ',' + z); if (!l) continue;
+    for (const i of l) { const dx = pos[i * 3] - st.p[0], dy = pos[i * 3 + 1] - st.p[1], dz = pos[i * 3 + 2] - st.p[2], d = dx * dx + dy * dy + dz * dz; if (d < best) { best = d; seed = i; } }
+  }
+  if (seed < 0) return [Infinity, -1];
+  const { start, list, twin } = adjOf(g);
+  const s0 = [F[seed * 4], F[seed * 4 + 1], F[seed * 4 + 2], F[seed * 4 + 3]];
+  const like = (i) => { const o = i * 4, da = Math.abs(F[o + 3] - s0[3]); if (da > 0.12) return false; if (s0[3] < 0.05 && F[o + 3] < 0.05) return true; return Math.abs(F[o] - s0[0]) + Math.abs(F[o + 1] - s0[1]) + Math.abs(F[o + 2] - s0[2]) < 0.12; };
+  const seen = new Uint8Array(n), out = [], stack = [seed]; seen[seed] = 1;
+  while (stack.length) {
+    const i = stack.pop(); out.push(i);
+    const push = (j) => { if (j >= 0 && !seen[j]) { seen[j] = 1; if (like(j)) stack.push(j); } };
+    for (let e = start[i]; e < start[i + 1]; e++) push(list[e]);
+    push(twin[i]);
+  }
+  let lo = Infinity, hi = -1;
+  for (const i of out) { const o = i * 4; F[o] = lc[0]; F[o + 1] = lc[1]; F[o + 2] = lc[2]; F[o + 3] = Math.max(F[o + 3], st.a); if (i < lo) lo = i; if (i > hi) hi = i; }
+  return [lo, hi];
+}
 const gridOf = (g) => g.userData.grid;
 const tmpC = new THREE.Color();
 const linear = (c) => { tmpC.setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace); return [tmpC.r, tmpC.g, tmpC.b]; };
@@ -99,6 +138,7 @@ export function applyPaint(g, stamps, from = 0, keep = false) {   // keep: paint
   let lo = Infinity, hi = -1;
   for (let s = from; s < stamps.length; s++) {
     const st = stamps[s], r = Math.max(0.005, st.r), lc = linear(st.c);
+    if (st.k === BRUSH.fill) { const [a, b] = flood(g, F, st, lc); lo = Math.min(lo, a); hi = Math.max(hi, b); continue; }
     const x0 = Math.floor((st.p[0] - r) / cell), x1 = Math.floor((st.p[0] + r) / cell);
     const y0 = Math.floor((st.p[1] - r) / cell), y1 = Math.floor((st.p[1] + r) / cell);
     const z0 = Math.floor((st.p[2] - r) / cell), z1 = Math.floor((st.p[2] + r) / cell);
@@ -203,7 +243,7 @@ export function openPaintEditor(opts) {
       <h2>Paint your cat</h2>
       <div><h4>Tool</h4><div class="mp-row" data-g="mode"><button class="mp-b" data-v="paint">🖌 Paint</button><button class="mp-b" data-v="erase">⌫ Eraser</button><button class="mp-b" data-v="turn">✋ Turn</button></div>
         <div class="mp-row" style="margin-top:6px"><button class="mp-b mp-lock" data-l="lockX" title="Stop the cat turning left and right"><svg viewBox="0 0 24 24"><path class="sh" d="M7 11V8a5 5 0 0 1 10 0v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect class="bd" x="4.5" y="11" width="15" height="10" rx="2.5" stroke="currentColor" stroke-width="2"/></svg>Lock X</button><button class="mp-b mp-lock" data-l="lockY" title="Stop the cat tipping up and down"><svg viewBox="0 0 24 24"><path class="sh" d="M7 11V8a5 5 0 0 1 10 0v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect class="bd" x="4.5" y="11" width="15" height="10" rx="2.5" stroke="currentColor" stroke-width="2"/></svg>Lock Y</button><button class="mp-b" data-a="view">Reset view</button></div></div>
-      <div><h4>Brush <span data-o="tool" style="text-transform:none;letter-spacing:0;opacity:.8"></span></h4><div class="mp-tools" data-g="brush">${['soft','fine','hard','pen','pencil','marker','highlighter','spray'].map((k) => `<button class="mp-b" data-v="${k}" title="${TOOLS[k].name}"><span>${TOOLS[k].icon}</span>${TOOLS[k].name.replace(' brush', '')}</button>`).join('')}</div></div>
+      <div><h4>Brush <span data-o="tool" style="text-transform:none;letter-spacing:0;opacity:.8"></span></h4><div class="mp-tools" data-g="brush">${['soft','fine','hard','pen','pencil','marker','highlighter','spray','fill'].map((k) => `<button class="mp-b" data-v="${k}" title="${TOOLS[k].name}"><span>${TOOLS[k].icon}</span>${TOOLS[k].name.replace(' brush', '')}</button>`).join('')}</div></div>
       <div><h4>Brush size <span data-o="size"></span></h4><input type="range" data-i="size" min="1" max="100" value="22"></div>
       <div><h4>Strength <span data-o="alpha"></span></h4><input type="range" data-i="alpha" min="5" max="100" value="85"></div>
       <div><h4>Colour</h4><div class="mp-col"><label class="mp-wheel" title="Pick any colour"><input type="color" data-i="color"></label><div class="mp-cur"></div><span data-o="hex" style="font-size:12px;opacity:.7"></span></div>
@@ -327,7 +367,10 @@ export function openPaintEditor(opts) {
     if (!first && last && last.distanceTo(h.local) < R * (tool() === 'spray' ? 0.6 : 0.28)) return;
     const from = stamps.length;
     const base = { n: [h.n.x, h.n.y, h.n.z], c, a: st.alpha / 100, k: TOOLS[tool()].k };
-    if (tool() === 'spray') {
+    if (tool() === 'fill') {
+      if (!first) return;
+      stamps.push({ ...base, p: [h.local.x, h.local.y, h.local.z], r: 0.05 });
+    } else if (tool() === 'spray') {
       // speckles scattered over the brush circle
       const t1 = new THREE.Vector3().crossVectors(h.n, Math.abs(h.n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize(), t2 = new THREE.Vector3().crossVectors(h.n, t1);
       for (let i = 0; i < 9; i++) {

@@ -16,7 +16,7 @@ const PREFIX = 'meow-cabin-';
 export const SKINS = [
   { name: 'El Gato', color: '#e29b56', stripe: '#bb6529', stripeAmt: 0.6, belly: '#f8f0e5', bigEyes: true },
   // realistic cat: "3d modelling my cat: Fripouille" by guillaume bolis (Sketchfab, CC BY 4.0), re-rigged for MEOW
-  { name: 'Fripouille', color: '#c47a3f', model: 'frip', iris: '#b49a3a' }
+  { name: 'Fripouille', color: '#c47a3f', model: 'frip', iris: '#a9a63c' }
 ];
 
 const loadPeer = () => new Promise((res, rej) => {
@@ -218,8 +218,50 @@ function furSkinMat(sk) {
 // bind-pose points on the model (three.js coords: x right, y up, -z forward)
 const SPOTS = {
   cat: { eye: [new THREE.Vector3(0.576, 4.276, -2.644), new THREE.Vector3(-0.576, 4.276, -2.644)], eyeN: [new THREE.Vector3(0.62, 0.35, -0.70), new THREE.Vector3(-0.62, 0.35, -0.70)], mouth: new THREE.Vector3(0, 3.62, -2.96), eyeR: 1, inset: 0.05 },
-  frip: { eye: [new THREE.Vector3(0.262, 4.49, -4.6), new THREE.Vector3(-0.262, 4.49, -4.6)], eyeN: [new THREE.Vector3(0.42, 0.12, -0.9), new THREE.Vector3(-0.42, 0.12, -0.9)], mouth: new THREE.Vector3(0, 4.26, -4.97), eyeR: 0.62, inset: -0.02 }
+  frip: { eye: [new THREE.Vector3(0.262, 4.49, -4.6), new THREE.Vector3(-0.262, 4.49, -4.6)], eyeN: [new THREE.Vector3(0.4, 0.08, -0.91), new THREE.Vector3(-0.4, 0.08, -0.91)], mouth: new THREE.Vector3(0, 4.26, -4.97), eyeR: 1, inset: 0.0 }
 };
+
+// a realistic cat eye (for Fripouille): painted iris with fibres, a dark rim, a rounded pupil, glossy and set into the head
+const irisTex = (() => {
+  const cache = new Map();
+  return (col) => {
+    if (cache.has(col)) return cache.get(col);
+    const S = 256, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d'), m = S / 2;
+    const base = new THREE.Color(col), inner = base.clone().lerp(new THREE.Color('#d9d27a'), 0.45), outer = base.clone().multiplyScalar(0.62);
+    x.fillStyle = '#2a2116'; x.fillRect(0, 0, S, S);
+    let g = x.createRadialGradient(m, m, 10, m, m, m);
+    g.addColorStop(0, '#' + inner.getHexString()); g.addColorStop(0.55, '#' + base.getHexString()); g.addColorStop(0.9, '#' + outer.getHexString()); g.addColorStop(1, '#1b140c');
+    x.fillStyle = g; x.beginPath(); x.arc(m, m, m - 2, 0, Math.PI * 2); x.fill();
+    // fibres
+    for (let i = 0; i < 260; i++) {
+      const a = Math.random() * Math.PI * 2, r0 = 30 + Math.random() * 20, r1 = 80 + Math.random() * 40;
+      x.strokeStyle = Math.random() < 0.5 ? 'rgba(255,240,170,0.13)' : 'rgba(60,40,10,0.16)'; x.lineWidth = 1 + Math.random() * 1.5;
+      x.beginPath(); x.moveTo(m + Math.cos(a) * r0, m + Math.sin(a) * r0); x.lineTo(m + Math.cos(a + (Math.random() - 0.5) * 0.08) * r1, m + Math.sin(a) * r1); x.stroke();
+    }
+    // a soft ring around the pupil and the pupil itself (a calm, rounded oval)
+    g = x.createRadialGradient(m, m, 30, m, m, 70); g.addColorStop(0, 'rgba(110,80,20,0.55)'); g.addColorStop(1, 'rgba(110,80,20,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(m, m, 70, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#050403'; x.beginPath(); x.ellipse(m, m, 34, 50, 0, 0, Math.PI * 2); x.fill();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; cache.set(col, t); return t;
+  };
+})();
+function realEye(col) {
+  const e = new THREE.Group();
+  const geo = new THREE.SphereGeometry(1, 40, 28);
+  // map the iris picture straight on from the front (+z)
+  const p = geo.attributes.position, uv = geo.attributes.uv;
+  for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 0.5 + 0.5, p.getY(i) * 0.5 + 0.5);
+  const ball = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({ map: irisTex(col), roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.2 }));
+  ball.scale.set(1, 0.9, 0.42); e.add(ball);
+  // a dark eyelid rim, slightly almond-shaped
+  const lid = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.14, 10, 40), new THREE.MeshStandardMaterial({ color: 0x24170f, roughness: 0.8 }));
+  lid.scale.set(1.04, 0.86, 0.6); lid.position.z = 0.02; e.add(lid);
+  // a small window highlight
+  const hl = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }));
+  hl.scale.set(1, 1, 0.3); hl.position.set(0.32, 0.34, 0.42); e.add(hl);
+  e.scale.setScalar(0.155);
+  return e;
+}
 
 function buildModelCat(tpl, sk, name) {
   const g = new THREE.Group();
@@ -282,7 +324,9 @@ function buildModelCat(tpl, sk, name) {
   SP.eye.forEach((p, i) => {
     const n = SP.eyeN[i].clone().normalize(), c = p.clone().addScaledVector(n, -SP.inset);
     const e = new THREE.Group(); e.scale.setScalar(SP.eyeR);
-    if (sk.bigEyes) {
+    if (real) {
+      const re = realEye(sk.iris || '#b49a3a'); if (i === 0) re.scale.x *= -1; e.add(re);   // mirror the highlight on the left eye
+    } else if (sk.bigEyes) {
       e.add(at(mesh(S(0.27), dark), null, new THREE.Vector3(1, 1.1, 0.55)));
       const h1 = mesh(S(0.07, 10, 8), white); h1.position.set(i ? 0.06 : -0.06, 0.1, 0.13); e.add(h1);
       const h2 = mesh(S(0.035, 8, 6), white); h2.position.set(i ? -0.08 : 0.08, -0.1, 0.13); e.add(h2);
