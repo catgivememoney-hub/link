@@ -184,7 +184,7 @@ export function openPaintEditor(opts) {
   const cam = new THREE.PerspectiveCamera(32, 1, 0.05, 300); scn.add(cam);
   cam.add(new THREE.DirectionalLight(0xffffff, 0.6));   // a light that follows your view, so no side stays dark
   const pivot = new THREE.Group(); scn.add(pivot);       // the cat turns inside this
-  let cat = null, mesh = null, center = new THREE.Vector3(0, 2.8, 0), dist = 15, target = new THREE.Vector3();
+  let cat = null, mesh = null, pick = null, center = new THREE.Vector3(0, 2.8, 0), dist = 15, target = new THREE.Vector3();
   const resetView = () => { pivot.quaternion.setFromEuler(new THREE.Euler(0, Math.PI * 0.8, 0)); target.set(0, 0, 0); dist = 15; };
   const setCat = (c) => {
     if (cat) pivot.remove(cat.group);
@@ -193,6 +193,15 @@ export function openPaintEditor(opts) {
     c.group.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(mesh, true); box.getCenter(center); c.group.position.sub(center);
     pivot.add(c.group); c.setPaint(stamps);
+    // a frozen copy of the cat's shape just for finding the spot under the pointer:
+    // picking on the boned model recalculates every triangle on its bones each time; this copy skips that
+    const grid = mesh.geometry.userData.grid;
+    if (grid) {
+      const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(grid.pos, 3));
+      if (mesh.geometry.index) pg.setIndex(mesh.geometry.index);
+      pg.computeBoundingSphere(); pg.computeBoundingBox();
+      pick = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); pick.visible = false; c.root.add(pick);
+    } else pick = mesh;
     const tag = c.group.children.find((o) => o.isSprite); if (tag) tag.visible = false;
   };
   setCat(opts.build());
@@ -238,10 +247,12 @@ export function openPaintEditor(opts) {
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
   const hitAt = (x, y) => {
     const rc = canvas.getBoundingClientRect(); ndc.set(((x - rc.left) / rc.width) * 2 - 1, -((y - rc.top) / rc.height) * 2 + 1);
-    ray.setFromCamera(ndc, cam); const h = ray.intersectObject(mesh, false)[0]; if (!h) return null;
+    ray.setFromCamera(ndc, cam); const h = ray.intersectObject(pick, false)[0]; if (!h) return null;
     const root = cat.root; root.updateMatrixWorld(true);
     const local = root.worldToLocal(h.point.clone());
-    const wn = (h.face ? h.face.normal.clone() : new THREE.Vector3(0, 1, 0)).transformDirection(mesh.matrixWorld);
+    const wn = (h.face ? h.face.normal.clone() : new THREE.Vector3(0, 1, 0)).transformDirection(pick.matrixWorld);
+    // make the normal face the viewer (the copy is two-sided)
+    if (wn.dot(ray.ray.direction) > 0) wn.negate();
     const n = wn.clone().transformDirection(root.matrixWorld.clone().invert());
     return { point: h.point, local, n, wn };
   };
@@ -302,11 +313,10 @@ export function openPaintEditor(opts) {
       const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       zoomAt(pinch.d / Math.max(1, d), mx, my); pan(mx - pinch.x, my - pinch.y); pinch = { d, x: mx, y: my }; return;
     }
-    const h = hitAt(e.clientX, e.clientY); hover = h;
+    pending = { x: e.clientX, y: e.clientY };   // the spot under the pointer is found once per frame, not per mouse event
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
-    if (drag.how === 'turn') turn(dx, dy); else if (drag.how === 'pan') pan(dx, dy);
-    else if (h) dab(h, false);
+    if (drag.how === 'turn') { turn(dx, dy); hover = null; } else if (drag.how === 'pan') { pan(dx, dy); hover = null; }
   });
   const end = (e) => {
     ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
@@ -314,7 +324,7 @@ export function openPaintEditor(opts) {
     drag = null;
   };
   canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
-  canvas.addEventListener('pointerleave', () => { hover = null; });
+  canvas.addEventListener('pointerleave', () => { hover = null; pending = null; });
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(Math.exp(e.deltaY * 0.0012), e.clientX, e.clientY); }, { passive: false });
   const onKey = (e) => {
     if (e.key === 'Escape') q('[data-a=cancel]').click();
@@ -324,9 +334,14 @@ export function openPaintEditor(opts) {
   };
   addEventListener('keydown', onKey, true);
 
-  let hover = null, raf = 0, alive = true;
+  let hover = null, pending = null, raf = 0, alive = true;
   const frame = () => {
     if (!alive) return;
+    if (pending && (!drag || drag.how === 'paint') && st.mode === 'paint' || (pending && drag && drag.how === 'paint')) {
+      hover = hitAt(pending.x, pending.y);
+      if (drag && drag.how === 'paint' && hover) dab(hover, false);
+    }
+    pending = null;
     const w = view.clientWidth, h = view.clientHeight;
     if (canvas.width !== Math.round(w * r.getPixelRatio())) { r.setSize(w, h, false); cam.aspect = w / Math.max(1, h); cam.updateProjectionMatrix(); }
     cam.position.copy(target).add(new THREE.Vector3(0, 0, dist)); cam.lookAt(target);
