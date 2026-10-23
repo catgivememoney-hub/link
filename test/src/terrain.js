@@ -237,12 +237,12 @@ export function createWater(scene, U) {
             // a web of white cracks (big plates and fine ones), frozen bubbles, skate scratches and drifts of frost
             vec2 p = vWXZ;
             float deepK = smoothstep(0.5, 10.0, depth);
-            vec3 ice = mix(vec3(0.52, 0.77, 0.9), vec3(0.13, 0.38, 0.58), deepK);
+            vec3 ice = mix(vec3(0.42, 0.72, 0.88), vec3(0.08, 0.32, 0.55), deepK);
             float cloud = wn(p * 0.05) * 0.6 + wn(p * 0.21) * 0.4;
             ice = mix(ice, vec3(0.74, 0.88, 0.95), smoothstep(0.55, 0.9, cloud) * 0.6);
             ice *= 0.92 + 0.12 * wn(p * 0.7);
-            float cr1 = smoothstep(0.07, 0.0, ivor(p * 0.03 + wn(p * 0.05) * 0.7));
-            float cr2 = smoothstep(0.05, 0.0, ivor(p * 0.12 + 3.0 + wn(p * 0.3) * 0.4)) * (0.4 + 0.6 * wn(p * 0.04 + 5.0));
+            float cr1 = smoothstep(0.03, 0.0, ivor(p * 0.03 + wn(p * 0.05) * 0.7));
+            float cr2 = smoothstep(0.022, 0.0, ivor(p * 0.12 + 3.0 + wn(p * 0.3) * 0.4)) * (0.4 + 0.6 * wn(p * 0.04 + 5.0));
             ice = mix(ice, vec3(0.9, 0.96, 1.0), clamp(cr1 * 0.9 + cr2 * 0.55, 0.0, 1.0));
             ice = mix(ice, ice * 0.8, smoothstep(0.2, 0.0, ivor(p * 0.03 + wn(p * 0.05) * 0.7)) * 0.25);   // the crack edges go a little darker underneath
             vec2 bc = floor(p * 2.5); float bub = step(0.975, wh(bc)) * smoothstep(0.3, 0.05, length(fract(p * 2.5) - 0.5 - (wh(bc + 3.0) - 0.5) * 0.3));
