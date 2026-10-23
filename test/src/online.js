@@ -265,6 +265,16 @@ function realEye(col) {
   return e;
 }
 
+// poses for the modelled cats: bone → [pitch, yaw] (radians), body → [drop, forward shift, tilt]
+const POSE = window.MEOW_POSE = {
+  curl: { body: [-2.05, -0.6, 0], hips: [0, -0.5], chest: [0, 0.75], neck: [-0.25, 0.7], head: [0.35, 0.7],
+    upperarmL: [-1.35, 0.35], upperarmR: [-1.35, -0.35], thighL: [1.45, 0.35], thighR: [1.45, -0.35],
+    forearmL: [2.3, 0], forearmR: [2.3, 0], shinL: [-2.0, 0], shinR: [-2.0, 0],
+    tail1: [-0.05, 0.75], tail2: [-0.05, 0.87], tail3: [-0.05, 0.99], tail4: [-0.05, 1.11] },
+  pc: { body: [-0.6, 1.4, 0], hips: [-0.55, 0], chest: [0.25, 0], neck: [0.2, 0], head: [0.35, 0],
+    upperarmL: [-0.95, 0], upperarmR: [-0.95, 0], thighL: [1.5, 0], thighR: [1.5, 0],
+    forearmL: [1.25, 0], forearmR: [1.25, 0], shinL: [-2.2, 0], shinR: [-2.2, 0] }
+};
 function buildModelCat(tpl, sk, name) {
   const g = new THREE.Group();
   const body = new THREE.Group(); g.add(body);
@@ -408,22 +418,25 @@ function buildModelCat(tpl, sk, name) {
     },
     _apply(time = 0) {
       const w = 1 - curlK - pcK;   // how much of the normal walk / boat-sit pose is left
-      const breathe = Math.sin(time * 1.6) * 0.02 * curlK;
-      // legs: walking swing · boat sit · curled (all four tucked in) · on the chair (hind legs folded, front paws on the desk)
-      LEG.forEach((n, i) => turn(n, (legA[i] * (1 - sit) + (i < 2 ? -1.2 : 1.1) * sit) * w + (i < 2 ? -1.35 : 1.45) * curlK + (i < 2 ? -0.95 : 1.5) * pcK, (i % 2 ? -0.35 : 0.35) * curlK));
-      ['forearmL', 'forearmR'].forEach((n) => turn(n, 0.9 * sit * w + 2.3 * curlK + 1.25 * pcK));
-      ['shinL', 'shinR'].forEach((n) => turn(n, -1.2 * sit * w - 2.0 * curlK - 2.2 * pcK));
-      // the body: curled into a ring (spine bent to one side, head resting back on the hind legs) or sitting up straight
-      turn('hips', -0.55 * pcK, -0.5 * curlK);
-      turn('chest', 0.25 * pcK + breathe, 0.75 * curlK);
-      turn('neck', 0.2 * pcK - 0.25 * curlK, 0.7 * curlK);
-      turn('head', (-look * 0.6) * w + 0.35 * curlK + 0.35 * pcK, 0.7 * curlK);
-      body.position.y = bob * w - sit * 1.6 * w - 2.05 * curlK - 0.6 * pcK;
-      body.position.z = -0.6 * curlK + 1.4 * pcK;
+      const base = {};
+      LEG.forEach((n, i) => { base[n] = [(legA[i] * (1 - sit) + (i < 2 ? -1.2 : 1.1) * sit) * w, 0]; });
+      ['forearmL', 'forearmR'].forEach((n) => { base[n] = [0.9 * sit * w, 0]; });
+      ['shinL', 'shinR'].forEach((n) => { base[n] = [-1.2 * sit * w, 0]; });
+      base.head = [-look * 0.6 * w, 0];
+      const C = POSE.curl, P = POSE.pc;
+      const names = new Set([...Object.keys(base), ...Object.keys(C), ...Object.keys(P)]);
+      names.forEach((n) => {
+        if (n === 'body' || (n.startsWith('tail') && curlK < 0.01 && !P[n])) return;
+        const b0 = base[n] || [0, 0], c = C[n] || [0, 0], p = P[n] || [0, 0];
+        turn(n, b0[0] + c[0] * curlK + p[0] * pcK, b0[1] + c[1] * curlK + p[1] * pcK);
+      });
+      if (curlK > 0.01) turn('chest', (C.chest || [0])[0] * curlK + Math.sin(time * 1.6) * 0.02 * curlK, (C.chest || [0, 0])[1] * curlK);   // breathing
+      body.position.y = bob * w - sit * 1.6 * w + C.body[0] * curlK + P.body[0] * pcK;
+      body.position.z = C.body[1] * curlK + P.body[1] * pcK;
+      body.rotation.x = (C.body[2] || 0) * curlK + (P.body[2] || 0) * pcK;
     },
     setPose(p, time) {
       curlK += ((p === 1 ? 1 : 0) - curlK) * 0.12; pcK += ((p === 2 ? 1 : 0) - pcK) * 0.12;
-      if (curlK > 0.01) tailB.forEach((n, i) => turn(n, -0.05 * curlK, (0.75 + i * 0.12) * curlK + Math.sin(time * 0.8 - i) * 0.03));
       this._apply(time);
     },
     setLook(pitch) {
