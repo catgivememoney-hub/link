@@ -255,7 +255,7 @@ function buildModelCat(tpl, sk, name) {
     const P = pmesh.geometry.userData.grid.pos, n = P.length / 3;
     let minY = Infinity; for (let i = 0; i < n; i++) minY = Math.min(minY, P[i * 3 + 1]);
     let midZ = 0, cnt = 0; for (let i = 0; i < n; i++) if (P[i * 3 + 1] < minY + 0.5) { midZ += P[i * 3 + 2]; cnt++; } midZ /= Math.max(1, cnt);
-    const col = new THREE.Color(sk.pads || (real ? '#d88f98' : '#e49aa6')), c = [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)];
+    const col = new THREE.Color(sk.pads || (real ? '#d99aa3' : '#eba7b2')), c = [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)];
     const down = [0, -1, 0];
     [[1, true], [-1, true], [1, false], [-1, false]].forEach(([sx, front]) => {
       const pts = []; for (let i = 0; i < n; i++) {
@@ -267,9 +267,9 @@ function buildModelCat(tpl, sk, name) {
       let wx = 0, wz = 0; pts.forEach((q) => { wx = Math.max(wx, Math.abs(q[0] - cx)); wz = Math.max(wz, Math.abs(q[2] - cz)); });
       const W = Math.max(0.1, Math.min(wx, wz)), y0 = minY + 0.03;
       // the big heel pad (a few dabs side by side), toward the back of the paw (+z)
-      [-0.35, 0, 0.35].forEach((t) => padStamps.push({ p: [cx + t * W * 0.55, y0, cz + W * 0.3], n: down, r: W * 0.42, c, a: 1, k: 1 }));
+      [-0.35, 0, 0.35].forEach((t) => padStamps.push({ p: [cx + t * W * 0.5, y0, cz + W * 0.32], n: down, r: W * 0.5, c, a: 1, k: 7 }));
       // four toe beans in an arc toward the front (-z)
-      [-1.5, -0.5, 0.5, 1.5].forEach((t) => padStamps.push({ p: [cx + t * W * 0.36, y0, cz - W * 0.55 + Math.abs(t) * W * 0.12], n: down, r: W * 0.2, c, a: 1, k: 1 }));
+      [-1.5, -0.5, 0.5, 1.5].forEach((t) => padStamps.push({ p: [cx + t * W * 0.37, y0, cz - W * 0.52 + Math.abs(t) * W * 0.12], n: down, r: W * 0.26, c, a: 1, k: 7 }));
     });
   }
   const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
