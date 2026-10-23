@@ -69,8 +69,8 @@ export function createFish({ scene, camera, heightAt, water }) {
     // a gill line
     const gill = new THREE.TorusGeometry(0.2, 0.012, 6, 20, Math.PI * 0.9); gill.rotateY(Math.PI / 2); gill.rotateZ(Math.PI / 2 + 0.25); gill.translate(0.62, -0.01, 0);
     parts.push(col(gill, () => [0.3, 0.22, 0.2]));
-    parts.forEach((g) => { if (g.index) return; });
-    const merged = mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)), false);
+    // every part keeps only position + colour so they can be joined into one mesh
+    const merged = mergeGeometries(parts.map((g) => { const n = g.index ? g.toNonIndexed() : g; ['uv', 'normal'].forEach((k) => n.deleteAttribute(k)); return n; }), false);
     merged.computeVertexNormals();
     return merged;
   };
