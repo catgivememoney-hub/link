@@ -220,7 +220,7 @@ function furSkinMat(sk) {
 // bind-pose points on the model (three.js coords: x right, y up, -z forward)
 const SPOTS = {
   cat: { eye: [new THREE.Vector3(0.576, 4.276, -2.644), new THREE.Vector3(-0.576, 4.276, -2.644)], eyeN: [new THREE.Vector3(0.62, 0.35, -0.70), new THREE.Vector3(-0.62, 0.35, -0.70)], mouth: new THREE.Vector3(0, 3.62, -2.96), eyeR: 1, inset: 0.05 },
-  cur: { eye: [], eyeN: [], mouth: new THREE.Vector3(0, 3.2, -4.3), eyeR: 1, inset: 0 },   // has its own eyes
+  cur: { eye: [], eyeN: [], mouth: new THREE.Vector3(0.03, 3.5, -4.35), eyeR: 1, inset: 0 },   // has its own eyes
   frip: { eye: [new THREE.Vector3(0.262, 4.49, -4.6), new THREE.Vector3(-0.262, 4.49, -4.6)], eyeN: [new THREE.Vector3(0.4, 0.08, -0.91), new THREE.Vector3(-0.4, 0.08, -0.91)], mouth: new THREE.Vector3(0, 4.26, -4.97), eyeR: 1, inset: 0.035 }
 };
 
@@ -607,7 +607,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
   const wire = (c) => {
     c.on('open', () => {
       if (host && conns.size + 1 >= world.max) { try { c.send({ t: 'full' }); } catch { /* ignore */ } setTimeout(() => c.close(), 300); return; }
-      conns.set(c.peer, c); if (host) { c.send({ t: 'world', v: { ...world } }); c.send({ t: 'snap', v: sync.snapshot() }); paintsBy.forEach((v, id) => c.send({ t: 'ev', k: 'catpaint', v: { skin: v.skin, d: v.d }, id })); } setTimeout(() => sendPaint(c), 400); onStatusChange(); status(host ? `Hosting · room ${code} · ${conns.size} joined` : `Joined room ${code}`); refreshList(); });
+      conns.set(c.peer, c); if (host) { c.send({ t: 'world', v: { ...world } }); c.send({ t: 'snap', v: sync.snapshot() }); paintsBy.forEach((v, id) => c.send({ t: 'ev', k: 'catpaint', v: { skin: v.skin, d: v.d }, id })); } setTimeout(() => sendPaint(c), 400); if (handlers.hello) setTimeout(() => handlers.hello(c.peer), 700); onStatusChange(); status(host ? `Hosting · room ${code} · ${conns.size} joined` : `Joined room ${code}`); refreshList(); });
     c.on('data', (d) => onData(c.peer, d));
     c.on('close', () => { conns.delete(c.peer); onStatusChange(); drop(c.peer); if (host) { conns.forEach((x) => x.open && x.send({ t: 'bye', id: c.peer })); status(`Hosting · room ${code} · ${conns.size} joined`); } else status('Disconnected from the host'); });
   };
@@ -870,6 +870,8 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     _recv: onData,   // (testing)
     updateSelf,
     get id() { return myId; },
+    // where the other cats are right now (for their snow trails)
+    peers() { const a = []; others.forEach((o, id) => { if (o.cat.group.visible) a.push({ id, x: o.cur.x, y: o.cur.y, z: o.cur.z }); }); return a; },
     update(dt, time) {
       // send my position
       if (peer && conns.size) {

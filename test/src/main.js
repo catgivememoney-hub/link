@@ -135,6 +135,7 @@ import { createAssets } from './assets.js';
   const boat = createBoat({ scene, house: cabin, physics });
   // Settings → Play together: other players, and the doors / lights / boat / scene shared with them
   const curl = { t: 0, k: 0 };
+  const peerTrail = new Map();
   // camera view (Settings → Controls → View; the switch key is T unless you change it)
   const VIEW = { mode: 0, shown: 0, t: 1, body: 0, dist: 9, distTo: 9, key: 'KeyT', fromP: new THREE.Vector3(), fromQ: new THREE.Quaternion(), tp: new THREE.Vector3(), tq: new THREE.Quaternion(), v1: new THREE.Vector3(), v2: new THREE.Vector3(), e: new THREE.Euler() };
   try { VIEW.mode = Math.min(1, Math.max(0, parseInt(localStorage.getItem('meow.view') || '0', 10) || 0)); VIEW.key = localStorage.getItem('meow.key.view') || 'KeyT'; } catch { /* ignore */ }
@@ -145,13 +146,32 @@ import { createAssets } from './assets.js';
     VIEW.distTo = Math.min(28, Math.max(3, VIEW.distTo * Math.pow(1.0015, e.deltaY)));
     try { localStorage.setItem('meow.camdist', VIEW.distTo.toFixed(1)); } catch { /* ignore */ }
   }, { passive: true });
+  const DROP = { key: 'KeyQ' }; try { DROP.key = localStorage.getItem('meow.key.drop') || 'KeyQ'; } catch { /* ignore */ }
   const keyName = (c) => c.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ').replace(/^Arrow/, '').replace(/(Left|Right)$/, ' $1').trim();
   const setView = (m) => {
     VIEW.mode = m; try { localStorage.setItem('meow.view', String(m)); } catch { /* ignore */ }
   };
   {
+    // a key button: click it, press any key (Esc cancels); keys the game already uses are refused
+    const bindKey = (btn, get, set, store, other) => {
+      if (!btn) return;
+      btn.textContent = keyName(get());
+      btn.addEventListener('click', () => {
+        btn.textContent = 'Press a key…';
+        const grab = (e) => {
+          e.preventDefault(); e.stopImmediatePropagation(); removeEventListener('keydown', grab, true);
+          if (e.code !== 'Escape') {
+            if (RESERVED.includes(e.code) || e.code === other()) toastMsg(keyName(e.code) + ' is already used — pick another key');
+            else { set(e.code); try { localStorage.setItem(store, e.code); } catch { /* ignore */ } }
+          }
+          btn.textContent = keyName(get());
+        };
+        addEventListener('keydown', grab, true);
+      });
+    };
+    bindKey(document.getElementById('dropKey'), () => DROP.key, (k) => { DROP.key = k; }, 'meow.key.drop', () => VIEW.key);
     const kb = document.getElementById('viewKey');
-    const RESERVED = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'KeyF', 'KeyR', 'KeyQ', 'Enter', 'Escape', 'Tab'];
+    const RESERVED = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'KeyF', 'KeyR', 'Enter', 'Escape', 'Tab'];
     if (kb) {
       kb.textContent = keyName(VIEW.key);
       kb.addEventListener('click', () => {
@@ -159,7 +179,7 @@ import { createAssets } from './assets.js';
         const grab = (e) => {
           e.preventDefault(); e.stopImmediatePropagation(); removeEventListener('keydown', grab, true);
           if (e.code !== 'Escape') {
-            if (RESERVED.includes(e.code)) toastMsg(keyName(e.code) + ' is already used — pick another key');
+            if (RESERVED.includes(e.code) || e.code === DROP.key) toastMsg(keyName(e.code) + ' is already used — pick another key');
             else { VIEW.key = e.code; try { localStorage.setItem('meow.key.view', e.code); } catch { /* ignore */ } }
           }
           kb.textContent = keyName(VIEW.key);
@@ -368,7 +388,7 @@ import { createAssets } from './assets.js';
     if (e.code === VIEW.key && !e.repeat && started && player.walking && !busy()) { e.preventDefault(); setView(VIEW.mode ? 0 : 1); toastMsg(VIEW.mode ? '🐈 Third person' : '👀 First person'); return; }
     if (e.code === 'KeyF' && !e.repeat && started && !root.classList.contains('locked')) { e.preventDefault(); hand.toggle(now); return; }
     if (busy() || !player.walking) return;
-    if (e.code === 'KeyQ' && !e.repeat) { if (items.drop(player.state, VIEW.body)) { e.preventDefault(); hover.pending = true; } return; }
+    if (e.code === DROP.key && !e.repeat) { if (items.drop(player.state, VIEW.body)) { e.preventDefault(); hover.pending = true; } return; }
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && !boat.active) player.jump(); return; }
     if (e.code === 'KeyR' && !e.repeat) { if (!boat.active && fishing.key(now)) e.preventDefault(); return; }
     if (e.code === 'KeyE' && !e.repeat) {
@@ -443,7 +463,7 @@ import { createAssets } from './assets.js';
     const itm = active && !doorHit && !pc && !sw && !lmp && !drw && !boat.active && items.hover(rayAt(cx, cy), player.state);
     const door = !!doorHit || pc || sw || lmp || drw || itm;
     if (door !== doorShown) { doorShown = door; actHint.classList.toggle('show', door); }
-    if (itm) actHint.querySelector('span').textContent = items.heldKind ? 'Click to swap (Q drops what you carry)' : 'Click to pick it up · Q to drop';
+    if (itm) actHint.querySelector('span').textContent = items.heldKind ? 'Click to swap what you carry' : 'Click to pick it up · ' + keyName(DROP.key) + ' to drop';
     else if (lmp) actHint.querySelector('span').textContent = cabin.lampOn ? 'Click to turn the lamp off' : 'Click to turn the lamp on';
     else if (drw) actHint.querySelector('span').textContent = cabin.drawerOpen ? 'Click to close the drawer' : 'Click to open the drawer';
     else if (sw) actHint.querySelector('span').textContent = cabin.lightOn ? 'Click to turn the light off' : 'Click to turn the light on';
@@ -505,7 +525,7 @@ import { createAssets } from './assets.js';
     const now = performance.now();
     // what was clicked: a biting fish, then a book, then the door, then a tree
     if (player.walking && fishing.click(now)) return;
-    if (player.walking && !boat.active && items.click(rayAt(cx, cy), player.state)) { hover.pending = true; return; }
+    if (player.walking && !boat.active && items.click(rayAt(cx, cy), player.state, VIEW.body)) { hover.pending = true; return; }
     if (player.walking && scenes.cur.pCabin > 0.5 && indoorK > 0.5 && study.click(rayAt(cx, cy), now)) return;
     if (player.walking && !boat.active && cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; }
     if (player.walking && !boat.active && cabin.pickLamp(rayAt(cx, cy))) { online.emit('lamp', cabin.toggleLamp()); if (window.MEOW_SOUND && window.MEOW_SOUND.click) window.MEOW_SOUND.click(); hover.pending = true; return; }
@@ -675,6 +695,20 @@ import { createAssets } from './assets.js';
     // snow trails: every bit of ground you cross on snow gets pressed down (refills while it snows)
     terrain.trail.update(dt, scenes.cur.snow || 0);
     deepSnow.update(ps.x, ps.z, scenes.cur.snowLine < heightAt(ps.x, ps.z) + 60);
+    // other players' paws press the snow too (where they walk on it, as you see them)
+    {
+      const PT = peerTrail;
+      for (const q of online.peers()) {
+        const last = PT.get(q.id); if (!last) { PT.set(q.id, { x: q.x, z: q.z }); continue; }
+        const dx = q.x - last.x, dz = q.z - last.z, d = Math.hypot(dx, dz); if (d < 0.5) continue;
+        const gh = heightAt(q.x, q.z), sl = scenes.cur.snowLine, ground = physics.groundAt(q.x, q.z);
+        const touching = q.y < ground + 0.6 || q.y < gh + 0.6;
+        if (touching && d < 40 && Math.min(1, Math.max(0, (gh - (sl - 12)) / 24)) > 0.35 && gh > water.mesh.position.y + 0.6) {
+          const n = Math.ceil(d / 0.5); for (let i = 1; i <= n; i++) terrain.trail.stamp(last.x + dx * i / n, last.z + dz * i / n, 1.15);
+        }
+        last.x = q.x; last.z = q.z;
+      }
+    }
     if (player.walking && !inside) {
       // only where your paws touch: a jump or a leap leaves the snow untouched until you land
       const ground = physics.groundAt(ps.x, ps.z), touching = !ps.air || ps.feet < ground + 0.5;

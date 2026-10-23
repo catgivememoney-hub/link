@@ -451,38 +451,98 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
       }
     }
     if (path.length > 4) {
-      const pos = [], uv = [], idx = [];
-      let along = 0;
-      path.forEach(([x, z], i) => {
-        const [px, pz] = path[Math.max(0, i - 1)], [qx, qz] = path[Math.min(path.length - 1, i + 1)];
-        let tx = qx - px, tz = qz - pz; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
-        const w = 3.0 + 3.6 * Math.min(1, i / 25) + Math.sin(i * 0.4) * 0.8;   // starts as a trickle, widens
-        const lx = x - tz * w, lz = z + tx * w, rx = x + tz * w, rz = z - tx * w;
-        const y = Math.max(heightAt(lx, lz), heightAt(rx, rz), heightAt(x, z)) + 0.32;
-        if (i) along += Math.hypot(x - path[i - 1][0], z - path[i - 1][1]);
-        pos.push(lx, y, lz, rx, y, rz); uv.push(0, along / 10, 1, along / 10);
-        if (i) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-      });
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
-      creekMat = new THREE.ShaderMaterial({
-        transparent: true, depthWrite: false, fog: true, side: THREE.DoubleSide,
-        uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uOpacity: { value: 0 }, uColor: { value: new THREE.Color(0x6a95a6) } }]),
-        vertexShader: ['varying vec2 vUv;', '#include <fog_pars_vertex>', 'void main() {', '  vUv = uv; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;', '  #include <fog_vertex>', '}'].join('\n'),
-        fragmentShader: ['uniform float uTime, uOpacity; uniform vec3 uColor; varying vec2 vUv;', '#include <fog_pars_fragment>',
-          'float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
-          'float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }',
-          'void main() {',
-          '  float edge = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x);',
-          '  float flow = n(vec2(vUv.x * 5.0, vUv.y * 6.0 - uTime * 1.6)) * 0.6 + n(vec2(vUv.x * 11.0, vUv.y * 14.0 - uTime * 2.4)) * 0.4;',
-          '  float foam = smoothstep(0.8, 0.95, flow) * 0.45;',
-          '  vec3 col = mix(uColor * (0.55 + 0.25 * flow), vec3(0.85, 0.92, 0.93), foam) * mix(0.75, 1.0, edge);',
-          '  gl_FragColor = vec4(col, uOpacity * (0.35 + 0.55 * edge));',
-          '  #include <colorspace_fragment>', '  #include <fog_fragment>', '}'].join('\n')
-      });
-      creekMat.uniforms.uTime = U.uTime;
-      creekMesh = new THREE.Mesh(g, creekMat); creekMesh.renderOrder = 1;
+      // The creek, reworked: before it was one flat strip laid level across the hillside, so on a slope one
+      // side floated over the grass like a sheet of plastic. Now it hugs the ground as it's drawn (the
+      // terrain's own triangles), is a smooth curve, runs faster and foams where the hill is steep, shows
+      // the sky in its surface, and sits in a darker wet bed with pebbles and rocks along both banks.
+      const GXN = 300, GZN = 245, GSX = 2200 / GXN, GSZ = 1800 / GZN, GX0 = -1100, GZ0 = -1300;
+      const surf = (x, z) => {   // the ground exactly as the terrain mesh draws it
+        const gx = (x - GX0) / GSX, gz = (z - GZ0) / GSZ, ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz;
+        const at = (i, k) => heightAt(GX0 + i * GSX, GZ0 + k * GSZ);
+        const ha = at(ix, iz), hb = at(ix, iz + 1), hc = at(ix + 1, iz + 1), hd = at(ix + 1, iz);
+        return fx + fz < 1 ? ha + (hd - ha) * fx + (hb - ha) * fz : hc + (hb - hc) * (1 - fx) + (hd - hc) * (1 - fz);
+      };
+      const curve = new THREE.CatmullRomCurve3(path.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+      const len = curve.getLength(), NS = Math.max(8, Math.round(len / 1.2)), NA = 10;
+      const pts = curve.getSpacedPoints(NS);
+      const strip = (widthK, lift, alongAttr) => {
+        const pos = [], uv = [], steep = [], idx = [];
+        let along = 0;
+        pts.forEach((p, i) => {
+          const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)];
+          let tx = q.x - r.x, tz = q.z - r.z; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+          const k = i / NS, w = (2.6 + 3.8 * Math.min(1, k * 6) + Math.sin(i * 0.17) * 0.7) * widthK;
+          if (i) along += p.distanceTo(r);
+          const drop = (surf(r.x, r.z) - surf(q.x, q.z)) / Math.max(0.5, q.distanceTo(r));
+          for (let a = 0; a <= NA; a++) {
+            const u = a / NA, o = (u - 0.5) * 2 * w, x = p.x - tz * o, z = p.z + tx * o;
+            pos.push(x, surf(x, z) + lift, z); uv.push(u, along / 8); steep.push(drop);
+          }
+          if (i) for (let a = 0; a < NA; a++) { const c = (i - 1) * (NA + 1) + a, d = c + NA + 1; idx.push(c, c + 1, d, c + 1, d + 1, d); }
+        });
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setAttribute('aSteep', new THREE.Float32BufferAttribute(steep, 1)); g.setIndex(idx); g.computeVertexNormals();
+        return g;
+      };
+      const CU = { uOpacity: { value: 0 }, uColor: { value: new THREE.Color(0x6a95a6) }, uTime: U.uTime };
+      // the wet bed: darker, glistening ground, fading out at its edges
+      const bedMat = new THREE.MeshStandardMaterial({ color: 0x2c2a24, roughness: 0.35, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      bedMat.onBeforeCompile = (sh) => {
+        Object.assign(sh.uniforms, CU);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vC;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvC = uv;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vC; uniform float uOpacity;')
+          .replace('#include <color_fragment>', '#include <color_fragment>\n float e = smoothstep(0.0, 0.28, vC.x) * smoothstep(1.0, 0.72, vC.x); diffuseColor.a = uOpacity * e * 0.85;');
+      };
+      const bed = new THREE.Mesh(strip(1.55, 0.04), bedMat); bed.renderOrder = 0;
+      add(bed, 'creek', { receive: true });
+      // the water
+      const wMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: false, envMapIntensity: 1.2, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+      wMat.onBeforeCompile = (sh) => {
+        Object.assign(sh.uniforms, CU);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSteep; varying float vSteep; varying vec2 vC;')
+          .replace('#include <uv_vertex>', '#include <uv_vertex>\nvC = uv; vSteep = aSteep;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+          varying float vSteep; varying vec2 vC; uniform float uTime, uOpacity; uniform vec3 uColor;
+          float ch(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float cn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(ch(i), ch(i + vec2(1, 0)), f.x), mix(ch(i + vec2(0, 1)), ch(i + vec2(1, 1)), f.x), f.y); }
+          float flowN(vec2 uv) { float sp = 1.2 + clamp(vSteep, 0.0, 1.5) * 3.0;
+            return cn(vec2(uv.x * 6.0, uv.y * 5.0 - uTime * sp)) * 0.6 + cn(vec2(uv.x * 13.0 + 3.0, uv.y * 12.0 - uTime * sp * 1.6)) * 0.4; }`)
+          .replace('#include <color_fragment>', `#include <color_fragment>
+            float edge = smoothstep(0.0, 0.16, vC.x) * smoothstep(1.0, 0.84, vC.x);
+            float mid = 1.0 - abs(vC.x - 0.5) * 2.0;
+            float f = flowN(vC);
+            float foam = smoothstep(0.62, 0.9, f + clamp(vSteep, 0.0, 1.2) * 0.35) * (0.25 + 0.6 * clamp(vSteep * 1.5, 0.0, 1.0)) + (1.0 - smoothstep(0.0, 0.1, min(vC.x, 1.0 - vC.x))) * 0.35;
+            vec3 deep = uColor * 0.42, shallow = uColor * 1.05 + vec3(0.04, 0.06, 0.05);
+            diffuseColor.rgb = mix(mix(shallow, deep, mid), vec3(0.92, 0.95, 0.96), clamp(foam, 0.0, 0.85));
+            diffuseColor.a = uOpacity * (0.45 + 0.45 * mid + 0.3 * foam) * edge;`)
+          .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+            { float e = 0.02, f0 = flowN(vC), fx = flowN(vC + vec2(e, 0.0)) - f0, fy = flowN(vC + vec2(0.0, e)) - f0;
+              normal = normalize(normal + (viewMatrix * vec4(-fx * 6.0, 0.0, -fy * 6.0, 0.0)).xyz * 0.6); }`);
+      };
+      creekMesh = new THREE.Mesh(strip(1.0, 0.14), wMat); creekMesh.renderOrder = 1;
       add(creekMesh, 'creek', { receive: false });
+      creekMat = { uniforms: CU };
+      // pebbles and rocks along both banks
+      {
+        const rg = new THREE.DodecahedronGeometry(1, 0); rg.scale(1, 0.55, 1);
+        const rm = new THREE.MeshStandardMaterial({ color: 0x77736b, roughness: 0.85, flatShading: true });
+        const R = [], rnd = mulberry(77), m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), e4 = new THREE.Euler();
+        pts.forEach((p, i) => {
+          if (i % 2) return;
+          const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)];
+          let tx = q.x - r.x, tz = q.z - r.z; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+          const w = 2.6 + 3.8 * Math.min(1, (i / NS) * 6);
+          for (const sd of [-1, 1]) {
+            if (rnd() < 0.35) continue;
+            const o = sd * w * (0.85 + rnd() * 0.5), x = p.x - tz * o + (rnd() - 0.5), z = p.z + tx * o + (rnd() - 0.5), s2 = 0.25 + Math.pow(rnd(), 2.5) * 1.1;
+            m4.compose(new THREE.Vector3(x, surf(x, z) + s2 * 0.15, z), q4.setFromEuler(e4.set(rnd() * 0.4, rnd() * 6.28, rnd() * 0.4)), new THREE.Vector3(s2 * (0.8 + rnd() * 0.5), s2, s2 * (0.8 + rnd() * 0.5)));
+            R.push(m4.clone());
+          }
+        });
+        const rocks = new THREE.InstancedMesh(rg, rm, R.length); R.forEach((m, i) => rocks.setMatrixAt(i, m));
+        add(rocks, 'creek', { cast: true, receive: true });
+      }
       creekPath = path;
     }
   };

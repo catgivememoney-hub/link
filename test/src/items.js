@@ -40,7 +40,7 @@ function buildBag() {
 
 /* ---------- bottles ---------- */
 // the bottle's outline (radius along its height), measured from the tea photo so all three share one shape
-const PROFILE = [[0, 0.135], [0.03, 0.15], [0.12, 0.155], [0.3, 0.14], [0.42, 0.148], [0.6, 0.15], [0.7, 0.135], [0.8, 0.095], [0.86, 0.065], [0.9, 0.06], [0.9, 0.0]];
+const PROFILE = [[0, 0.0], [0.002, 0.12], [0.012, 0.135], [0.03, 0.15], [0.12, 0.155], [0.3, 0.14], [0.42, 0.148], [0.6, 0.15], [0.7, 0.135], [0.8, 0.095], [0.86, 0.065], [0.9, 0.06], [0.9, 0.0]];
 const H = 1.0;
 function latheGeo(scale = 1, seg = 40) {
   const pts = PROFILE.map(([y, r]) => new THREE.Vector2(r * scale, y * H));
@@ -112,119 +112,145 @@ export function buildBottle(kind) {
   return g;
 }
 
-export function createItems({ scene, terrain, physics, player, camera, cabin, scenes, water, online, toast }) {
-  // the snack bag, leaning on the stilt
-  const bag = buildBag(); scene.add(bag);
-  const placeBag = () => {
-    const gy = terrain.surfaceAt(STILT.x, STILT.z - STILT.half - 0.3);
-    bag.position.set(STILT.x + 0.05, gy + 0.38, STILT.z - STILT.half - 0.17);
-    bag.rotation.set(0.22, Math.PI, 0.04, 'XYZ');   // its front faces out, its top leaning back on the post
-  };
-  placeBag();
+// how each thing sits when it's put down, and how big it is
+const SHAPES = {
+  bottle: { half: 0.47, lie: 0.15 },
+  mimi: { half: 0.39, lie: 0.09 }
+};
+const buildItem = (kind) => (kind === 'mimi' ? buildBag() : buildBottle(kind));
+const shapeOf = (kind) => (kind === 'mimi' ? SHAPES.mimi : SHAPES.bottle);
 
-  // the bottle
-  const B = { kind: 'water', obj: null, pos: TABLE.clone(), lying: false, held: '', where: 'table', t: 0, pop: null, owner: true };
+export function createItems({ scene, terrain, physics, player, camera, cabin, scenes, water, online, toast }) {
+  // the things in the world: { id, kind, obj, pos, lying, held, where, t, pop, yaw, lean }
+  const LIST = [
+    { id: 'bottle', kind: 'water', pos: TABLE.clone(), where: 'table' },
+    { id: 'mimi', kind: 'mimi', pos: new THREE.Vector3(), where: 'stilt' }
+  ].map((o) => Object.assign({ obj: null, lying: false, held: '', t: 0, pop: null, owner: false, yaw: 0 }, o));
+  const byId = (id) => LIST.find((o) => o.id === id);
   const holderMesh = new THREE.Group(); camera.add(holderMesh); holderMesh.position.set(0.05, -0.42, -1.05);
   if (!camera.parent) scene.add(camera);
-  const setObj = () => {
-    if (B.obj) { scene.remove(B.obj); B.obj = null; }
-    B.obj = buildBottle(B.kind); B.obj.traverse((m) => { if (m.isMesh) m.userData.item = true; }); scene.add(B.obj); place();
-  };
-  const place = () => {
+  const place = (B) => {
     if (!B.obj) return;
     B.obj.visible = !B.held;
     B.obj.position.copy(B.pos);
-    if (B.lying) { B.obj.rotation.set(0, B.yaw || 0, Math.PI / 2); B.obj.position.y += 0.15; } else { B.obj.rotation.set(0, B.yaw || 0, 0); B.obj.position.y += H * 0.47; }
+    const sh = shapeOf(B.kind);
+    if (B.where === 'stilt') { B.obj.rotation.set(0.22, Math.PI, 0.04); return; }   // the bag leaning on the post
+    if (B.lying) {
+      if (B.kind === 'mimi') { B.obj.rotation.set(-Math.PI / 2, 0, B.yaw || 0); B.obj.position.y += sh.lie; }
+      else { B.obj.rotation.set(0, B.yaw || 0, Math.PI / 2); B.obj.position.y += sh.lie; }
+    } else { B.obj.rotation.set(0, B.yaw || 0, 0); B.obj.position.y += sh.half; }
   };
-  setObj();
-  setHeldMaker((k) => buildBottle(k));
-  // what you carry in first person: the bottle sideways across your view, low
+  const setObj = (B) => {
+    if (B.obj) { scene.remove(B.obj); B.obj = null; }
+    B.obj = buildItem(B.kind); scene.add(B.obj); place(B);
+  };
+  // the bag's spot, leaning on the stilt's footing (ground from the terrain as drawn)
+  { const M = byId('mimi'), gy = terrain.surfaceAt(STILT.x, STILT.z - STILT.half - 0.3); M.pos.set(STILT.x + 0.05, gy + 0.38, STILT.z - STILT.half - 0.17); }
+  LIST.forEach(setObj);
+  // the bottle stands on the table's real top (found by looking straight down at the table once the house is in)
+  cabin.whenReady((root) => {
+    const B = byId('bottle'); if (B.where !== 'table') return;
+    const rc = new THREE.Raycaster(new THREE.Vector3(TABLE.x, TABLE.y + 3, TABLE.z), new THREE.Vector3(0, -1, 0));
+    const hit = rc.intersectObject(root, true).find((h) => h.object.visible);
+    if (hit) { B.pos.y = hit.point.y; place(B); }
+  });
+  setHeldMaker((k) => { const m = buildItem(k); if (k === 'mimi') m.rotation.set(0, Math.PI / 2, 0); return m; });
+  // what you carry in first person: sideways across your view, low
   let fpKind = '';
   const showFP = (kind, firstPerson) => {
     const want = firstPerson ? kind : '';
     if (want === fpKind) return; fpKind = want;
     holderMesh.clear();
-    if (want) { const m = buildBottle(want); m.rotation.set(0.15, 0.2, Math.PI / 2); m.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.depthTest = true; } }); holderMesh.add(m); }
+    if (want) { const m = buildItem(want); if (want === 'mimi') m.rotation.set(0.2, 0.5, 0); else m.rotation.set(0.15, 0.2, Math.PI / 2); holderMesh.add(m); }
   };
 
   const ray = new THREE.Raycaster();
-  const sync = () => online.emit('item', { k: B.kind, p: [B.pos.x, B.pos.y, B.pos.z], l: B.lying ? 1 : 0, h: B.held, w: B.where, y: B.yaw || 0 });
+  const sync = (B) => online.emit('item', { id: B.id, k: B.kind, p: [B.pos.x, B.pos.y, B.pos.z], l: B.lying ? 1 : 0, h: B.held, w: B.where, y: B.yaw || 0, pop: B.pop ? 1 : 0 });
   online.on('item', (v) => {
     if (!v) return;
+    const B = byId(v.id || 'bottle'); if (!B) return;
     const kindChanged = v.k !== B.kind; B.kind = v.k; B.pos.set(v.p[0], v.p[1], v.p[2]); B.lying = !!v.l; B.held = v.h || ''; B.where = v.w || ''; B.yaw = v.y || 0; B.t = 0; B.owner = false;
-    if (kindChanged) setObj(); else place();
+    if (kindChanged) setObj(B); else place(B);
+    if (v.pop) B.pop = { t: 0, from: FIRE.clone(), to: FIRE_OUT.clone() };
   });
+  // anyone new in the room: tell them where everything is (whoever moved a thing last tells)
+  online.on('hello', () => LIST.forEach((B) => { if (B.owner) sync(B); }));
   const me = () => online.id || 'me';
-  const iHold = () => B.held === me();
+  const mine = () => LIST.find((o) => o.held === me());
+  const aimed = (r, ps) => {
+    ray.ray.copy(r.ray);
+    let best = null, bd = Infinity;
+    for (const B of LIST) {
+      if (!B.obj || B.held || B.pop || !B.obj.visible) continue;
+      if (Math.hypot(ps.x - B.obj.position.x, ps.z - B.obj.position.z) > 7 || Math.abs(ps.feet - B.obj.position.y) > 6) continue;
+      const h = ray.intersectObject(B.obj, true)[0];
+      if (h && h.distance < bd) { bd = h.distance; best = B; }
+    }
+    return best;
+  };
 
   const api = {
-    get heldKind() { return iHold() ? B.kind : ''; },
-    // aiming at the bottle, close enough to pick it up?
-    hover(r, ps) {
-      if (!B.obj || B.held || !B.obj.visible) return false;
-      if (Math.hypot(ps.x - B.obj.position.x, ps.z - B.obj.position.z) > 7 || Math.abs(ps.feet - B.obj.position.y) > 6) return false;
-      ray.ray.copy(r.ray);
-      return ray.intersectObject(B.obj, true).length > 0;
-    },
-    click(r, ps) {
-      if (!api.hover(r, ps)) return false;
-      if (B.pop) return false;
-      B.held = me(); B.where = 'mouth'; B.t = 0; B.owner = true; place(); sync();
+    get heldKind() { const B = mine(); return B ? B.kind : ''; },
+    hover(r, ps) { return !!aimed(r, ps); },
+    // pick up what's under the dot (if you carry something already, it's put down where you stand first)
+    click(r, ps, yaw) {
+      const B = aimed(r, ps); if (!B) return false;
+      if (mine()) api.drop(ps, yaw);
+      B.held = me(); B.where = 'mouth'; B.t = 0; B.owner = true; place(B); sync(B);
       const S2 = window.MEOW_SOUND; if (S2 && S2.click) S2.click();
       return true;
     },
-    // Q: put it down where you stand (on the ice, in the fire, on the floor, anywhere)
+    // the drop key: put it down in front of you (on the ice, in the fire, on the floor, anywhere)
     drop(ps, yaw) {
-      if (!iHold()) return false;
+      const B = mine(); if (!B) return false;
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-      let x = ps.x + fx * 1.3, z = ps.z + fz * 1.3;
+      const x = ps.x + fx * 1.3, z = ps.z + fz * 1.3;
       B.yaw = yaw + Math.PI / 2; B.lying = true; B.owner = true; B.t = 0;
-      // into the fire?
-      if (Math.hypot(x - FIRE.x, z - FIRE.z) < 3.4 && Math.abs(ps.feet - 8.88) < 1.5) { B.pos.copy(FIRE); B.where = 'fire'; }
+      if (B.kind !== 'mimi' && Math.hypot(x - FIRE.x, z - FIRE.z) < 3.6 && Math.abs(ps.feet - 8.88) < 1.5) { B.pos.copy(FIRE); B.where = 'fire'; }
       else {
         let y = physics.floor(x, z, ps.feet + 1).y;
-        const wy = water.position.y;
-        if ((scenes.cur.ice || 0) > 0.5 && terrain.surfaceAt(x, z) < wy - 0.25 && ps.feet < wy + 1) { y = wy + 0.02; B.where = 'ice'; }
-        else if (terrain.surfaceAt(x, z) < wy - 0.25 && y <= wy + 0.05) { y = wy; B.where = 'water'; }
-        else B.where = 'ground';
+        const wy = water.position.y, ground = terrain.surfaceAt(x, z);
+        if ((scenes.cur.ice || 0) > 0.5 && ground < wy - 0.25 && ps.feet < wy + 1) { y = wy + 0.02; B.where = 'ice'; }
+        else if (ground < wy - 0.25 && y <= wy + 0.05) { y = wy; B.where = 'water'; }
+        else { B.where = 'ground'; if (!physics.floor(x, z, ps.feet + 1).built && Math.abs(y - physics.groundAt(x, z)) < 0.05) y = Math.max(wy, ground); }   // on the hillside as it's drawn
         B.pos.set(x, y, z);
       }
-      B.held = ''; place(); sync();
+      B.held = ''; place(B); sync(B);
       if (B.where === 'ice' && B.kind === 'water') toast && toast('🧊 Leave it on the ice…');
       if (B.where === 'fire' && B.kind === 'ice') toast && toast('🔥 Into the fire…');
       return true;
     },
     update(dt, time, ps, firstPerson) {
-      showFP(iHold() ? B.kind : '', firstPerson);
-      if (!B.obj) return;
-      // the tea popping out of the fire: a little arc onto the floor
-      if (B.pop) {
-        B.pop.t += dt / 0.9; const k = Math.min(1, B.pop.t);
-        B.obj.position.lerpVectors(B.pop.from, B.pop.to, k); B.obj.position.y += Math.sin(Math.PI * k) * 3.2 + 0.15;
-        B.obj.rotation.z = Math.PI / 2 + k * 6.3;
-        if (k >= 1) { B.pop = null; B.pos.copy(FIRE_OUT); B.where = 'ground'; B.lying = true; place(); if (B.owner) sync(); }
-        return;
-      }
-      if (B.held) return;
-      // the water bottle freezing on the ice
-      if (B.where === 'ice' && B.kind === 'water' && (scenes.cur.ice || 0) > 0.5) {
-        B.t += dt;
-        if (B.t > 10 && B.owner) { B.kind = 'ice'; B.t = 0; setObj(); sync(); toast && toast('🧊 It froze into an iced bottle!'); const S2 = window.MEOW_SOUND; if (S2 && S2.click) S2.click(); }
-      } else if (B.where === 'fire' && B.kind === 'ice') {
-        // in the flames: it shivers and glows, then pops out as tea
-        B.t += dt;
-        B.obj.position.x = B.pos.x + Math.sin(time * 40) * 0.03 * Math.min(1, B.t);
-        if (B.t > 5 && B.owner) {
-          B.kind = 'tea'; B.t = 0; setObj(); B.pop = { t: 0, from: FIRE.clone(), to: FIRE_OUT.clone() };
-          sync(); toast && toast('🍋 冰红茶!'); const S2 = window.MEOW_SOUND; if (S2 && S2.whoosh) S2.whoosh();
+      const H2 = mine(); showFP(H2 ? H2.kind : '', firstPerson);
+      for (const B of LIST) {
+        if (!B.obj) continue;
+        // the tea popping out of the fire: a little arc onto the floor
+        if (B.pop) {
+          B.pop.t += dt / 0.9; const k = Math.min(1, B.pop.t);
+          B.obj.visible = true;
+          B.obj.position.lerpVectors(B.pop.from, B.pop.to, k); B.obj.position.y += Math.sin(Math.PI * k) * 3.2 + 0.15;
+          B.obj.rotation.set(0, 0, Math.PI / 2 + k * 6.3);
+          if (k >= 1) { B.pop = null; B.pos.copy(FIRE_OUT); B.where = 'ground'; B.lying = true; place(B); if (B.owner) sync(B); }
+          continue;
         }
-      } else if (B.where === 'water') {
-        B.obj.position.y = B.pos.y + 0.12 + Math.sin(time * 1.6) * 0.04;   // bobbing
-      } else B.t = 0;
+        if (B.held) continue;
+        if (B.where === 'ice' && B.kind === 'water' && (scenes.cur.ice || 0) > 0.5) {
+          // the water bottle freezing on the ice (everyone sees the frost creep up; the owner makes the change)
+          B.t += dt;
+          if (B.t > 10 && B.owner) { B.kind = 'ice'; B.t = 0; setObj(B); sync(B); toast && toast('🧊 It froze into an iced bottle!'); const S2 = window.MEOW_SOUND; if (S2 && S2.click) S2.click(); }
+        } else if (B.where === 'fire' && B.kind === 'ice') {
+          B.t += dt;
+          B.obj.position.x = B.pos.x + Math.sin(time * 40) * 0.03 * Math.min(1, B.t);
+          if (B.t > 5 && B.owner) {
+            B.kind = 'tea'; B.t = 0; setObj(B); B.pop = { t: 0, from: FIRE.clone(), to: FIRE_OUT.clone() };
+            sync(B); toast && toast('🍋 冰红茶!'); const S2 = window.MEOW_SOUND; if (S2 && S2.whoosh) S2.whoosh();
+          }
+        } else if (B.where === 'water') {
+          B.obj.position.y = B.pos.y + shapeOf(B.kind).lie * 0.8 + Math.sin(time * 1.6) * 0.04;   // bobbing
+        } else B.t = 0;
+      }
     },
-    // someone joined: tell them where the bottle is
-    share() { if (B.owner) sync(); },
-    _B: B   // (testing)
+    _L: LIST, get _B() { return byId('bottle'); }   // (testing)
   };
   return api;
 }
