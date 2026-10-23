@@ -129,6 +129,7 @@ import { createAssets } from './assets.js';
   const online = createOnline({ scene, player, scenes, toast: (m) => toastMsg(m),
     extra: () => ({ lt: hand.state === 'torch' ? 1 : hand.state === 'lamp' ? 2 : 0, seat: boat.active ? boat.seat : -1, boat: boat.snapshot() || undefined, skin: undefined }) });
   window.MEOW_ONLINE = online;
+  setTimeout(() => { window.MEOW_DEBUG = { get portal() { return portal; }, trees, player, camera, scenes, cabin }; }, 0);   // (testing)
   boat.takenSeats = () => online.takenSeats();
   {
     const S = () => window.MEOW_SOUND || {};
