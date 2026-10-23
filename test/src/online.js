@@ -508,10 +508,25 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     });
     others.forEach((_, id) => applyRemotePaint(id));
   };
-  addEventListener('meow:catmodel', (e) => { if (e.detail === wantDetail) { rebuildAll(); redrawSkins(); } });
+  addEventListener('meow:catmodel', (e) => { if (e.detail === wantDetail) { selfGen++; rebuildAll(); redrawSkins(); } });
+  // your own cat, shown when you look from behind or from above (Settings → Controls → View)
+  let selfCat = null, selfKey = '', selfGen = 0;
+  const updateSelf = (show, s) => {
+    const key = me.skin + '|' + me.color + '|' + myPaint().length + '|' + selfGen;
+    if (show && (!selfCat || key !== selfKey)) {
+      if (selfCat) { scene.remove(selfCat.group); if (selfCat.dispose) selfCat.dispose(); }
+      selfCat = buildCat(skinOf({ skin: me.skin, color: me.color }), ''); scene.add(selfCat.group); selfKey = key;
+      if (selfCat.setPaint) selfCat.setPaint(decodePaint(myPaint()));
+    }
+    if (!selfCat) return;
+    selfCat.group.visible = show; if (!show) return;
+    selfCat.group.position.set(s.x, s.y, s.z); selfCat.group.rotation.y = s.yaw;
+    selfCat.animate(s.dt, s.pose ? 0 : s.speed, s.time); selfCat.setLook(s.pitch || 0); selfCat.setSit(!!s.sit);
+    if (selfCat.setPose) selfCat.setPose(s.pose || 0, s.time);
+  };
   addEventListener('meow:gfx', (e) => {
     const d = detailFor(e.detail); if (d === wantDetail) return;
-    wantDetail = d; if (catModels['cat:' + d]) { rebuildAll(); redrawSkins(); } else loadCatModel(d);
+    wantDetail = d; if (catModels['cat:' + d]) { selfGen++; rebuildAll(); redrawSkins(); } else loadCatModel(d);
   });
   setTimeout(() => loadCatModel(wantDetail), 1200);
   let redrawSkins = () => {};
@@ -834,6 +849,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     // which boat seats other players sit in
     takenSeats() { return [...others.values()].map((o) => o.tgt.seat).filter((x) => x >= 0); },
     _recv: onData,   // (testing)
+    updateSelf,
     update(dt, time) {
       // send my position
       if (peer && conns.size) {

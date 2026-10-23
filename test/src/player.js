@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { STEP_UP } from './physics.js';
 
-export const EYE = 7.5;            // eye height above your feet
+export const EYE = 3.9;            // eye height above your feet (a cat's head height)
 const SPEED = 24, RUN = 2.4;       // walking speed (units / s) and how much faster running is
 const GRAVITY = 44, JUMP = 15.5;
 const PITCH_MIN = -1.1, PITCH_MAX = 0.9;
