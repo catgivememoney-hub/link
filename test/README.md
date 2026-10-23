@@ -30,6 +30,7 @@ Update 3:
 | File | Source | License |
 | --- | --- | --- |
 | Monitor (inside `test/assets/house.glb`) | [Monitor](https://poly.pizza/m/3CNCR-m-KGH) by TheFlyingPotato Youtube, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Cat "Fripouille" (`test/assets/frip_*.glb`, changed: re-rigged, scaled, detail levels) | [3d modelling my cat: Fripouille](https://sketchfab.com/3d-models/0ab14bf98e754f8d90fe1bf1c84ca66c) by guillaume bolis, via Sketchfab | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Dock lamp (inside `test/assets/house.glb`) | [Garden Lamp](https://poly.pizza/m/cCiFRJLsuI) by Zsky, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 Update 4:
@@ -41,6 +42,10 @@ Update 4:
 
 Update 6:
 - Five new cats in Settings → Play together → Your cat, modelled on Jeffy's cat photos: Smokey (grey kitten with a dark cap), Silver tabby (bold stripes), November (felt kitten: tabby head, fluffy white body, pink bag, little boots), Blep (brown tabby, tongue out), El Gato (ginger with huge pleading eyes). Each button now shows a picture of the cat; the chosen one is what other players see.
+
+Update 8:
+- Only two cats now: El Gato (the Blender cat) and Fripouille, a realistic cat with real fur textures (test/assets/frip_low|mid|high.glb: 2,600 / 6,300 / 152,000 triangles; textures 512 / 1024 / 2048 px).
+- Fripouille: "3d modelling my cat: Fripouille" by guillaume bolis, https://sketchfab.com/3d-models/0ab14bf98e754f8d90fe1bf1c84ca66c, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changed for MEOW: turned upright, scaled, new 22-bone skeleton and weights, eyes and whiskers replaced, detail levels and texture sizes made.
 
 Update 7 (new cat model):
 - Other players are now a real cat model built in Blender (test/assets/cat_low.glb, cat_mid.glb, cat_high.glb; source file kept on Jeffy's PC in Documents/MEOW cat/meow_cat.blend): one skinned mesh with 23 bones, so legs, head and tail bend.

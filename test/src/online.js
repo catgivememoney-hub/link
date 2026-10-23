@@ -13,7 +13,9 @@ const PREFIX = 'meow-cabin-';
 // the cat skins (Settings → Play together). The last five are modelled on Jeffy's cat photos:
 // stripe = tabby stripes, back = darker back/cap, belly = chest/belly/muzzle/paws, iris = eye colour, extras = tongue, big eyes, boots, purse
 export const SKINS = [
-  { name: 'El Gato', color: '#e29b56', stripe: '#bb6529', stripeAmt: 0.6, belly: '#f8f0e5', bigEyes: true }
+  { name: 'El Gato', color: '#e29b56', stripe: '#bb6529', stripeAmt: 0.6, belly: '#f8f0e5', bigEyes: true },
+  // realistic cat: "3d modelling my cat: Fripouille" by guillaume bolis (Sketchfab, CC BY 4.0), re-rigged for MEOW
+  { name: 'Fripouille', color: '#c47a3f', model: 'frip', iris: '#b49a3a' }
 ];
 
 const loadPeer = () => new Promise((res, rej) => {
@@ -149,26 +151,27 @@ function buildSimpleCat(skin, name) {
    One skinned mesh + 23 bones. The fur pattern is painted from per-vertex masks baked in Blender:
    colour R = pale (belly, chest, muzzle, paws, tail tip), G = where stripes may go, B = darker back / ears, A = pink (nose, inner ears);
    uv.x = stripe position along each body part. So every skin works on every detail level with no textures. */
-const CAT_FILES = { low: 'test/assets/cat_low.glb', mid: 'test/assets/cat_mid.glb', high: 'test/assets/cat_high.glb' };
+const CAT_FILES = (m, d) => `test/assets/${m === 'frip' ? 'frip' : 'cat'}_${d}.glb`;
 // graphics level → model detail: None/Fast/Default = low (2.6k triangles), Balanced/Fancy = mid (16k), Best/Extreme = very high (110k)
 const detailFor = (lv) => (lv === 'best' || lv === 'extreme') ? 'high' : (lv === 'balanced' || lv === 'fancy' || lv === 'custom') ? 'mid' : 'low';
 const catModels = {}, catLoading = {};
 let wantDetail = (() => { try { return detailFor(localStorage.getItem('meow.gfx') || 'none'); } catch { return 'low'; } })();
-const loadCatModel = (d) => {
-  if (catModels[d] || catLoading[d]) return;
-  catLoading[d] = true;
-  new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(CAT_FILES[d], (g) => {
+const loadCatModel = (d, model = 'cat') => {
+  const key = model + ':' + d;
+  if (catModels[key] || catLoading[key]) return;
+  catLoading[key] = true;
+  new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(CAT_FILES(model, d), (g) => {
     g.scene.traverse((o) => {
       if (!o.isSkinnedMesh) return;
       const geo = o.geometry;   // rename so three.js doesn't treat them as ordinary vertex colours / texture coords
       if (geo.getAttribute('color')) { geo.setAttribute('furMask', geo.getAttribute('color')); geo.deleteAttribute('color'); }
       if (geo.getAttribute('uv')) { geo.setAttribute('furT', geo.getAttribute('uv')); geo.deleteAttribute('uv'); }
     });
-    catModels[d] = g.scene; catLoading[d] = false;
+    catModels[key] = g.scene; catLoading[key] = false;
     dispatchEvent(new CustomEvent('meow:catmodel', { detail: d }));
-  }, undefined, (e) => { catLoading[d] = false; console.warn('[MEOW] cat model not loaded', d, e && e.message); });
+  }, undefined, (e) => { catLoading[key] = false; console.warn('[MEOW] cat model not loaded', key, e && e.message); });
 };
-const catModel = () => catModels[wantDetail] || null;
+const catModel = (model = 'cat') => { const t = catModels[model + ':' + wantDetail]; if (!t) loadCatModel(wantDetail, model); return t || null; };
 
 function furSkinMat(sk) {
   const color = new THREE.Color(sk.color);
@@ -207,15 +210,18 @@ function furSkinMat(sk) {
 }
 
 // bind-pose points on the model (three.js coords: x right, y up, -z forward)
-const EYE = [new THREE.Vector3(0.576, 4.276, -2.644), new THREE.Vector3(-0.576, 4.276, -2.644)], EYE_N = [new THREE.Vector3(0.62, 0.35, -0.70), new THREE.Vector3(-0.62, 0.35, -0.70)];
-const MOUTH = new THREE.Vector3(0, 3.62, -2.96);
+const SPOTS = {
+  cat: { eye: [new THREE.Vector3(0.576, 4.276, -2.644), new THREE.Vector3(-0.576, 4.276, -2.644)], eyeN: [new THREE.Vector3(0.62, 0.35, -0.70), new THREE.Vector3(-0.62, 0.35, -0.70)], mouth: new THREE.Vector3(0, 3.62, -2.96), eyeR: 1, inset: 0.05 },
+  frip: { eye: [new THREE.Vector3(0.263, 4.64, -4.647), new THREE.Vector3(-0.263, 4.64, -4.645)], eyeN: [new THREE.Vector3(0.42, 0.12, -0.9), new THREE.Vector3(-0.42, 0.12, -0.9)], mouth: new THREE.Vector3(0, 4.26, -4.97), eyeR: 0.62, inset: -0.02 }
+};
 
 function buildModelCat(tpl, sk, name) {
   const g = new THREE.Group();
   const body = new THREE.Group(); g.add(body);
   const root = SkeletonUtils.clone(tpl); body.add(root);
-  const fur = furSkinMat(sk);
-  root.traverse((o) => { if (o.isMesh) { o.material = fur; o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  const real = sk.model === 'frip', SP = SPOTS[real ? 'frip' : 'cat'];
+  const fur = real ? null : furSkinMat(sk);
+  root.traverse((o) => { if (o.isMesh) { if (fur) o.material = fur; o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
   g.updateMatrixWorld(true);
   const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
   const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
@@ -225,9 +231,9 @@ function buildModelCat(tpl, sk, name) {
   const pin = (bone, o, pos, look) => { o.position.copy(pos); if (look) o.lookAt(pos.clone().add(look)); g.add(o); o.updateMatrixWorld(true); bones[bone].attach(o); return o; };
   const dark = new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: sk.iris || sk.bigEyes ? 0.15 : 0.4 });
   const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  EYE.forEach((p, i) => {
-    const n = EYE_N[i], c = p.clone().addScaledVector(n, -0.05);
-    const e = new THREE.Group();
+  SP.eye.forEach((p, i) => {
+    const n = SP.eyeN[i].clone().normalize(), c = p.clone().addScaledVector(n, -SP.inset);
+    const e = new THREE.Group(); e.scale.setScalar(SP.eyeR);
     if (sk.bigEyes) {
       e.add(at(mesh(S(0.27), dark), null, new THREE.Vector3(1, 1.1, 0.55)));
       const h1 = mesh(S(0.07, 10, 8), white); h1.position.set(i ? 0.06 : -0.06, 0.1, 0.13); e.add(h1);
@@ -239,7 +245,7 @@ function buildModelCat(tpl, sk, name) {
     } else e.add(at(mesh(S(0.16), dark), null, new THREE.Vector3(1, 1.15, 0.55)));
     pin('head', e, c, n);
   });
-  if (sk.tongue) { const t = mesh(S(0.15), new THREE.MeshStandardMaterial({ color: 0xe8728a, roughness: 0.35 })); t.scale.set(1.0, 0.45, 1.2); t.rotation.x = 0.6; pin('head', t, MOUTH.clone().add(new THREE.Vector3(0, -0.12, 0.02))); }
+  if (sk.tongue) { const t = mesh(S(0.15), new THREE.MeshStandardMaterial({ color: 0xe8728a, roughness: 0.35 })); t.scale.set(1.0, 0.45, 1.2); t.rotation.x = 0.6; pin('head', t, SP.mouth.clone().add(new THREE.Vector3(0, -0.12, 0.02))); }
   if (sk.purse) {
     const pm = new THREE.MeshStandardMaterial({ color: sk.purse, roughness: 0.55 });
     const strap = mesh(new THREE.TorusGeometry(1.0, 0.06, 8, 48), pm); strap.scale.set(0.95, 0.92, 1); strap.rotation.z = 0.45; pin('chest', strap, new THREE.Vector3(0, 2.75, -0.9));
@@ -311,14 +317,14 @@ function buildModelCat(tpl, sk, name) {
     },
     setLight(state, t) { lt += ((state === 1 ? 1 : 0) - lt) * 0.2; torch.intensity = lt * 520; lamp.intensity = (state === 2 ? 900 * (0.92 + 0.08 * Math.sin(t * 13)) : 0); },
     setSit(on) { sit += ((on ? 1 : 0) - sit) * 0.15; this._apply(); },
-    dispose() { fur.dispose(); }
+    dispose() { if (fur) fur.dispose(); }
   };
 }
 
 // the modelled cat when its file has loaded, otherwise the simple one made of spheres
 function buildCat(skin, name) {
   const sk = typeof skin === 'string' ? { color: skin } : (skin || { color: '#999' });
-  const tpl = catModel();
+  const tpl = catModel(sk.model);
   return tpl ? buildModelCat(tpl, sk, name) : buildSimpleCat(sk, name);
 }
 
@@ -357,7 +363,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
   addEventListener('meow:catmodel', (e) => { if (e.detail === wantDetail) { rebuildAll(); redrawSkins(); } });
   addEventListener('meow:gfx', (e) => {
     const d = detailFor(e.detail); if (d === wantDetail) return;
-    wantDetail = d; if (catModels[d]) { rebuildAll(); redrawSkins(); } else loadCatModel(d);
+    wantDetail = d; if (catModels['cat:' + d]) { rebuildAll(); redrawSkins(); } else loadCatModel(d);
   });
   setTimeout(() => loadCatModel(wantDetail), 1200);
   let redrawSkins = () => {};
