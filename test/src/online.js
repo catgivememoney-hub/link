@@ -162,7 +162,7 @@ const loadCatModel = (d, model = 'cat') => {
   catLoading[key] = true;
   new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(CAT_FILES(model, d), (g) => {
     g.scene.traverse((o) => {
-      if (!o.isSkinnedMesh) return;
+      if (!o.isSkinnedMesh || model !== 'cat') return;
       const geo = o.geometry;   // rename so three.js doesn't treat them as ordinary vertex colours / texture coords
       if (geo.getAttribute('color')) { geo.setAttribute('furMask', geo.getAttribute('color')); geo.deleteAttribute('color'); }
       if (geo.getAttribute('uv')) { geo.setAttribute('furT', geo.getAttribute('uv')); geo.deleteAttribute('uv'); }
