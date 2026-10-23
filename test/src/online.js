@@ -484,7 +484,33 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
   });
   setTimeout(() => loadCatModel(wantDetail), 1200);
   let redrawSkins = () => {};
-  const refreshList = () => { if (ui.list) ui.list.textContent = others.size ? 'Here: ' + [...others.values()].map((o) => o.name).join(', ') : ''; };
+  // world settings: the host decides, everyone in the room follows
+  const world = { guestScene: false, tags: true, max: 8 };
+  try { Object.assign(world, JSON.parse(localStorage.getItem('meow.world') || '{}')); } catch { /* ignore */ }
+  const hostWorld = { ...world };   // what you set for rooms you host
+  const applyTags = () => others.forEach((o) => { const tg = o.cat.group.children.find((c) => c.isSprite); if (tg) tg.visible = !!world.tags; });
+  const setWorld = (w, fromHost) => { Object.assign(world, w); applyTags(); if (ui.syncWorld) ui.syncWorld(); if (!fromHost) { try { localStorage.setItem('meow.world', JSON.stringify(hostWorld)); } catch { /* ignore */ } } };
+  // the room box: a tile with a cat icon for you and for everyone who joins
+  const catIcon = (col, real) => `<svg viewBox="0 0 48 48" width="38" height="38" aria-hidden="true"><path d="M9 20 L8 5 L19 13 Q24 11.5 29 13 L40 5 L39 20 Q42 26 40 32 Q36 42 24 43 Q12 42 8 32 Q6 26 9 20Z" fill="${col}" stroke="rgba(0,0,0,.35)" stroke-width="1.2"/><path d="M11 9 L13 16 M37 9 L35 16" stroke="#f0a7b4" stroke-width="2.4" stroke-linecap="round"/>${real ? '<path d="M20 34 Q24 37 28 34" fill="none" stroke="#fff" stroke-width="5" opacity=".85" stroke-linecap="round"/>' : ''}<ellipse cx="17.5" cy="25" rx="3.2" ry="3.6" fill="#1c1712"/><ellipse cx="30.5" cy="25" rx="3.2" ry="3.6" fill="#1c1712"/><circle cx="18.4" cy="23.8" r="1" fill="#fff"/><circle cx="31.4" cy="23.8" r="1" fill="#fff"/><path d="M22.5 30 L25.5 30 L24 31.8Z" fill="#e48ea0"/></svg>`;
+  const refreshList = () => {
+    if (ui.list) ui.list.textContent = '';
+    const box = ui.room; if (!box) return;
+    if (!peer) { box.hidden = true; return; }
+    box.hidden = false;
+    const tile = (o, mine) => {
+      const real = SKINS[o.skin] && SKINS[o.skin].model === 'frip';
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;animation:roomPop .35s cubic-bezier(.3,1.6,.5,1)">
+        <div style="position:relative;width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 2px ${mine ? 'currentColor' : 'rgba(255,255,255,.15)'}">${catIcon(o.color || '#999', real)}${o.host ? '<span title="Host" style="position:absolute;top:-9px;right:-6px;font-size:15px">👑</span>' : ''}</div>
+        <span style="font-size:11px;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(o.name || 'Cat').replace(/[<>&]/g, '')}${mine ? ' (you)' : ''}</span></div>`;
+    };
+    const list = [{ name: me.name, color: me.color, skin: me.skin, host }].map((o) => tile(o, true));
+    others.forEach((o) => list.push(tile({ name: o.name, color: o.color, skin: o.skin, host: !!(o.tgt && o.tgt.host) }, false)));
+    const slots = Math.max(0, (host ? world.max : Math.max(world.max, others.size + 1)) - others.size - 1);
+    for (let i = 0; i < Math.min(slots, 7); i++) list.push('<div style="width:52px;height:52px;margin:0 6px 18px;border-radius:16px;border:2px dashed rgba(255,255,255,.18)"></div>');
+    box.innerHTML = `<style>@keyframes roomPop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}</style>
+      <div style="display:flex;justify-content:space-between;font-size:12px;opacity:.75;margin-bottom:8px"><span>${host ? 'Your room' : 'Room'} ${code || ''}</span><span>${others.size + 1} / ${world.max}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${list.join('')}</div>`;
+  };
 
   const onData = (from, d) => {
     if (!d || typeof d !== 'object') return;
@@ -493,7 +519,9 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
       if (!d.on) { const o = others.get(id); if (o) o.cat.group.visible = false; return; }
       let o = ensure(id, d);
       if ((d.color && o.color && d.color !== o.color) || (d.skin != null && d.skin !== o.skin)) { drop(id, true); o = ensure(id, d, true); }
-      o.color = d.color; o.skin = d.skin; o.tgt = d; o.cat.group.visible = true;
+      const changed = o.name !== d.name || o.color !== d.color || !!(o.tgt && o.tgt.host) !== !!d.host;
+      o.color = d.color; o.skin = d.skin; o.tgt = d; o.name = d.name || o.name; o.cat.group.visible = true; if (!world.tags) applyTags();
+      if (changed) refreshList();
       if (d.boat && handlers.boat) handlers.boat(d.boat, id);
       if (host) conns.forEach((c, cid) => { if (cid !== from && c.open) c.send({ ...d, id }); });   // relay
     } else if (d.t === 'ev' && d.k === 'catpaint') {
@@ -503,12 +531,18 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     } else if (d.t === 'ev') {
       if ((d.id || from) !== myId && handlers[d.k]) handlers[d.k](d.v, d.id || from);
       if (host) conns.forEach((c, cid) => { if (cid !== from && c.open) c.send(d); });
+    } else if (d.t === 'world') {
+      if (!host) { setWorld(d.v || {}, true); refreshList(); }
+    } else if (d.t === 'full') {
+      status('That room is full'); setTimeout(() => leave(), 50);
     } else if (d.t === 'snap') {
       sync.apply(d.v);
     } else if (d.t === 'bye') { drop(d.id || from); if (host) conns.forEach((c, cid) => { if (cid !== from && c.open) c.send(d); }); }
   };
   const wire = (c) => {
-    c.on('open', () => { conns.set(c.peer, c); if (host) { c.send({ t: 'snap', v: sync.snapshot() }); paintsBy.forEach((v, id) => c.send({ t: 'ev', k: 'catpaint', v: { skin: v.skin, d: v.d }, id })); } setTimeout(() => sendPaint(c), 400); onStatusChange(); status(host ? `Hosting · room ${code} · ${conns.size} joined` : `Joined room ${code}`); });
+    c.on('open', () => {
+      if (host && conns.size + 1 >= world.max) { try { c.send({ t: 'full' }); } catch { /* ignore */ } setTimeout(() => c.close(), 300); return; }
+      conns.set(c.peer, c); if (host) { c.send({ t: 'world', v: { ...world } }); c.send({ t: 'snap', v: sync.snapshot() }); paintsBy.forEach((v, id) => c.send({ t: 'ev', k: 'catpaint', v: { skin: v.skin, d: v.d }, id })); } setTimeout(() => sendPaint(c), 400); onStatusChange(); status(host ? `Hosting · room ${code} · ${conns.size} joined` : `Joined room ${code}`); refreshList(); });
     c.on('data', (d) => onData(c.peer, d));
     c.on('close', () => { conns.delete(c.peer); onStatusChange(); drop(c.peer); if (host) { conns.forEach((x) => x.open && x.send({ t: 'bye', id: c.peer })); status(`Hosting · room ${code} · ${conns.size} joined`); } else status('Disconnected from the host'); });
   };
@@ -517,6 +551,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     conns.forEach((c) => { try { c.send({ t: 'bye', id: myId }); c.close(); } catch { /* ignore */ } });
     conns.clear(); others.forEach((_, id) => drop(id));
     if (peer) peer.destroy(); peer = null; host = false; code = null; status('Not connected'); setButtons(false); onStatusChange();
+    Object.assign(world, hostWorld); applyTags(); if (ui.syncWorld) ui.syncWorld(); refreshList();
   };
   const start = async (asHost, joinCode) => {
     if (peer) leave();
@@ -528,7 +563,8 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     peer = asHost ? new Peer(PREFIX + code) : new Peer();
     peer.on('open', (id) => {
       myId = id; setButtons(true);
-      if (asHost) { status(`Hosting · room ${code} · share this code`); if (ui.code) ui.code.value = code; }
+      if (asHost) { Object.assign(world, hostWorld); status(`Hosting · room ${code} · share this code`); if (ui.code) ui.code.value = code; }
+      refreshList(); if (ui.syncWorld) ui.syncWorld();
       else wire(peer.connect(PREFIX + code, { reliable: true }));
     });
     peer.on('connection', (c) => { if (host) wire(c); else c.close(); });
@@ -545,6 +581,38 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
   {
     const $ = (id) => document.getElementById(id);
     ui.status = $('onStatus'); ui.list = $('onList'); ui.code = $('onCode'); ui.host = $('onHost'); ui.join = $('onJoin'); ui.leave = $('onLeave'); ui.name = $('onName');
+    // the room box (who's here) and World settings, under the status line
+    if (ui.status) {
+      ui.room = document.createElement('div'); ui.room.hidden = true;
+      ui.room.style.cssText = 'margin-top:10px;padding:12px;border-radius:16px;background:rgba(127,127,127,.12)';
+      ui.status.after(ui.room);
+      const ws = document.createElement('div'); ws.style.cssText = 'margin-top:12px;padding:12px;border-radius:16px;background:rgba(127,127,127,.1)';
+      const sw = (id, label, sub) => `<div class="set-row" style="margin-top:8px;align-items:center"><div style="display:flex;flex-direction:column"><h3 style="font-size:12px;margin:0">${label}</h3><span style="font-size:11px;opacity:.6">${sub}</span></div><button id="${id}" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div>`;
+      ws.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-size:13px;margin:0">World settings</h3><span id="wsWho" style="font-size:11px;opacity:.65"></span></div>
+        ${sw('wsScene', 'Everyone can change the scene', 'Off: only the host picks rain, snow, night…')}
+        ${sw('wsTags', 'Show name tags', 'Names above the cats')}
+        <div class="set-row" style="margin-top:10px;align-items:center"><div style="display:flex;flex-direction:column"><h3 style="font-size:12px;margin:0">Room size</h3><span style="font-size:11px;opacity:.6">Most cats at once, you included</span></div><output id="wsMaxVal" class="sens-val">8</output></div>
+        <input id="wsMax" type="range" min="2" max="8" step="1" value="8" aria-label="Room size">`;
+      ui.room.after(ws);
+      const $w = (id) => ws.querySelector('#' + id);
+      const canEdit = () => !peer || host;
+      ui.syncWorld = () => {
+        const w = canEdit() ? (peer ? world : hostWorld) : world;
+        $w('wsScene').setAttribute('aria-checked', String(!!w.guestScene)); $w('wsTags').setAttribute('aria-checked', String(!!w.tags));
+        $w('wsMax').value = String(w.max); $w('wsMaxVal').textContent = String(w.max);
+        const ed = canEdit(); ws.querySelectorAll('button,input').forEach((el) => { el.disabled = !ed; el.style.opacity = ed ? '' : '.5'; });
+        $w('wsWho').textContent = !peer ? 'Used when you host' : host ? 'You are the host' : 'Set by the host';
+      };
+      const change = (k, v) => {
+        if (!canEdit()) return;
+        hostWorld[k] = v; if (peer && host) { world[k] = v; conns.forEach((c) => { if (c.open) c.send({ t: 'world', v: { ...world } }); }); }
+        setWorld({}, false); refreshList();
+      };
+      $w('wsScene').addEventListener('click', () => change('guestScene', !(canEdit() && (peer ? world : hostWorld).guestScene)));
+      $w('wsTags').addEventListener('click', () => change('tags', !(peer ? world : hostWorld).tags));
+      $w('wsMax').addEventListener('input', (e) => change('max', +e.target.value));
+      ui.syncWorld();
+    }
     if (ui.name) { ui.name.value = me.name; ui.name.addEventListener('change', () => { me.name = ui.name.value.trim().slice(0, 14) || me.name; try { localStorage.setItem('meow.name', me.name); } catch { /* ignore */ } }); }
     if (ui.host) ui.host.addEventListener('click', () => start(true));
     if (ui.join) ui.join.addEventListener('click', () => start(false, ui.code.value));
@@ -582,7 +650,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
       const commit = () => {
         me.skin = draft.skin; me.color = draft.color; me.paint = { ...draft.paint };
         try { localStorage.setItem('meow.skin', String(me.skin)); localStorage.setItem('meow.catcolor', me.color); localStorage.setItem('meow.catpaint', JSON.stringify(me.paint)); } catch { /* ignore */ }
-        sendPaint(); marks(); toast('🐾 Your cat is saved');
+        sendPaint(); marks(); refreshList(); toast('🐾 Your cat is saved');
       };
       $('onCatSave').addEventListener('click', commit);
       SKINS.forEach((k, i) => {
@@ -672,6 +740,9 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     get count() { return others.size; },
     get inRoom() { return !!peer && (host || conns.size > 0); },
     get isHost() { return host; },
+    get world() { return { ...world }; },
+    // can I change the scene right now? (always alone or as host; as a guest only if the host allows it)
+    get canChangeScene() { return !peer || host || conns.size === 0 || !!world.guestScene; },
     // shared things (doors, lights, the boat, the scene): tell everyone; handlers run when others do it
     emit(k, v) { if (!peer) return; const d = { t: 'ev', k, v, id: myId }; conns.forEach((c) => { if (c.open) c.send(d); }); },
     on(k, fn) { handlers[k] = fn; },
@@ -687,7 +758,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
           sendT = 0;
           const p = player.state, on = !!player.walking;
           const ex = extra ? extra() : {};
-          const msg = { t: 'p', id: myId, on, ...ex, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.feet.toFixed(2), yaw: +p.yaw.toFixed(3), pitch: +(p.pitch || 0).toFixed(3), name: me.name, color: me.color, skin: me.skin, scene: scenes.name };
+          const msg = { t: 'p', id: myId, on, ...ex, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.feet.toFixed(2), yaw: +p.yaw.toFixed(3), pitch: +(p.pitch || 0).toFixed(3), name: me.name, color: me.color, skin: me.skin, host, scene: scenes.name };
           conns.forEach((c) => { if (c.open) c.send(msg); });
         }
       }

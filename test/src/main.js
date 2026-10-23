@@ -134,7 +134,7 @@ import { createAssets } from './assets.js';
     online.on('drawer', (open) => { cabin.setState({ drawer: open }); if (window.MEOW_SFX) window.MEOW_SFX.drawer(!!open); });
     online.on('boat', (st, from) => boat.applyRemote(st, from));
     // only the room's host picks the scene; everyone else follows it
-    online.on('scene', (name) => { if (!online.isHost) applySceneFromHost(name); });
+    online.on('scene', (name) => { if (!online.isHost || online.world.guestScene) applySceneFromHost(name); });
     online.setSync({
       snapshot: () => ({ scene: scenes.name, house: cabin.getState() }),
       apply: (v) => { if (v.house) cabin.setState(v.house); if (v.scene) applySceneFromHost(v.scene); }
@@ -656,13 +656,13 @@ import { createAssets } from './assets.js';
     setScene(name, fromHost) {
       if (!PRESETS[name]) name = 'rain';
       // in a room, only the host changes the scene (for everyone)
-      if (!fromHost && online.inRoom && !online.isHost && name !== scenes.name) {
+      if (!fromHost && online.inRoom && !online.canChangeScene && name !== scenes.name) {
         toastMsg('🐾 Only the room\'s host can change the scene');
         if (window.MEOW_STATE) window.MEOW_STATE.scene = scenes.name;
         markScene(scenes.name);
         return;
       }
-      if (online.inRoom && online.isHost) online.emit('scene', name);
+      if (!fromHost && online.inRoom && online.canChangeScene) online.emit('scene', name);   // tell the room (the host passes it on)
       if (name === scenes.name && started) return;
       if (!started) { scenes.go(name, 1, performance.now()); root.setAttribute('data-scene', name); return; }
       goTo(name, 3200);
