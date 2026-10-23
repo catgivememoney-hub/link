@@ -7,7 +7,19 @@ import * as THREE from 'three';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';   // fast picking (MIT, test/vendor/three-mesh-bvh)
 
 export const MAX_STAMPS = 6000;
-const BRUSH = { soft: 0, hard: 1, spray: 2, erase: 3 };
+const BRUSH = { soft: 0, hard: 1, spray: 2, erase: 3, highlighter: 4, pencil: 5, pen: 6, marker: 7 };
+// the paint tools: which kind of dab each makes, its starting size and strength
+export const TOOLS = {
+  soft:        { k: 0, size: 22, alpha: 85, name: 'Soft brush',  icon: '🖌' },
+  fine:        { k: 0, size: 7,  alpha: 90, name: 'Fine brush',  icon: '✒' },
+  hard:        { k: 1, size: 20, alpha: 95, name: 'Hard brush',  icon: '⬤' },
+  pen:         { k: 6, size: 3,  alpha: 100, name: 'Pen',        icon: '🖊' },
+  pencil:      { k: 5, size: 5,  alpha: 80, name: 'Pencil',      icon: '✏' },
+  marker:      { k: 7, size: 14, alpha: 90, name: 'Marker',      icon: '🖍' },
+  highlighter: { k: 4, size: 24, alpha: 40, name: 'Highlighter', icon: '▮' },
+  spray:       { k: 2, size: 32, alpha: 85, name: 'Spray',       icon: '💨' },
+  erase:       { k: 3, size: 24, alpha: 100, name: 'Eraser',     icon: '⌫' }
+};
 
 /* ---------- pack / unpack ---------- */
 export function encodePaint(stamps) {
@@ -99,12 +111,26 @@ export function applyPaint(g, stamps, from = 0) {
         const facing = nor ? nor[i * 3] * st.n[0] + nor[i * 3 + 1] * st.n[1] + nor[i * 3 + 2] * st.n[2] : 1;
         if (facing < -0.15) continue;
         const t = d / r;
-        let w = st.k === BRUSH.hard ? (t < 0.82 ? 1 : 1 - (t - 0.82) / 0.18) : (1 - t) * (1 - t) * (3 - 2 * (1 - t)) * 1.0;
+        let w;
+        switch (st.k) {
+          case BRUSH.hard: w = t < 0.82 ? 1 : 1 - (t - 0.82) / 0.18; break;
+          case BRUSH.pen: w = t < 0.9 ? 1 : 1 - (t - 0.9) / 0.1; break;                       // crisp ink
+          case BRUSH.marker: w = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4; break;                    // solid with a soft rim
+          case BRUSH.highlighter: w = t < 0.85 ? 1 : 1 - (t - 0.85) / 0.15; break;            // flat
+          case BRUSH.pencil: {                                                                // grainy, like paper tooth
+            w = t < 0.8 ? 1 : 1 - (t - 0.8) / 0.2;
+            const gr = Math.sin(i * 12.9898 + 78.233) * 43758.5453; w *= (gr - Math.floor(gr)) > 0.42 ? 1 : 0.18; break;
+          }
+          default: w = (1 - t) * (1 - t) * (3 - 2 * (1 - t));
+        }
         w *= st.a * Math.min(1, (facing + 0.15) / 0.35);
         if (w <= 0) continue;
         const o = i * 4;
         if (st.k === BRUSH.erase) { F[o + 3] *= 1 - w; }
-        else {
+        else if (st.k === BRUSH.highlighter) {
+          // see-through and never builds up past its strength, however often you go over it
+          if (F[o + 3] < w) { const k2 = (w - F[o + 3]) / Math.max(1e-4, 1 - F[o + 3]); for (let c = 0; c < 3; c++) F[o + c] += (lc[c] - F[o + c]) * k2; F[o + 3] = w; }
+        } else {
           const a0 = F[o + 3], a1 = a0 + w * (1 - a0);
           for (let c = 0; c < 3; c++) F[o + c] = a1 > 0 ? (F[o + c] * a0 * (1 - w) + lc[c] * w) / a1 : lc[c];
           F[o + 3] = a1;
@@ -130,7 +156,7 @@ export const PAINT_FS_BODY = 'diffuseColor.rgb = mix(diffuseColor.rgb, vPaint.rg
 // opts: { build(detail) -> cat (model cat with .mesh, .paintGeo, .setPaint), stamps, color, onSave(stamps), onClose() }
 export function openPaintEditor(opts) {
   const css = `
-  .mp-wrap{position:fixed;inset:0;z-index:2147483000;display:flex;background:#15171b;color:#f3efe8;font:14px/1.3 system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none;user-select:none}
+  .mp-wrap{position:fixed;inset:0;z-index:2147482000;display:flex;background:#15171b;color:#f3efe8;font:14px/1.3 system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none;user-select:none}
   .mp-view{position:relative;flex:1;min-width:0}
   .mp-view canvas{width:100%;height:100%;display:block;cursor:none}
   .mp-side{width:270px;max-width:46vw;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px;background:#1d2026;border-left:1px solid rgba(255,255,255,.08)}
@@ -146,7 +172,25 @@ export function openPaintEditor(opts) {
   .mp-wheel{position:relative;width:44px;height:44px;border-radius:50%;overflow:hidden;cursor:pointer;background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);box-shadow:inset 0 0 0 3px rgba(255,255,255,.6)}
   .mp-wheel input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
   .mp-cur{width:34px;height:34px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.5)}
-  .mp-recent{display:flex;gap:6px;flex-wrap:wrap} .mp-recent button{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,.25);cursor:pointer;padding:0}
+  .mp-recent{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+  .mp-recent button{aspect-ratio:1;border-radius:9px;border:2px solid rgba(255,255,255,.18);cursor:pointer;padding:0;transition:transform .18s cubic-bezier(.3,1.6,.5,1),box-shadow .18s,border-color .18s}
+  .mp-recent button:hover{transform:scale(1.08)}
+  .mp-recent button.on{transform:scale(1.22);border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.35),0 4px 12px rgba(0,0,0,.5);z-index:1;position:relative}
+  .mp-recent .empty{border:2px dashed rgba(255,255,255,.14);background:transparent;cursor:default}
+  .mp-tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .mp-tools .mp-b{padding:8px 4px;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:2px}
+  .mp-tools .mp-b span{font-size:16px;line-height:1}
+  .mp-big{flex:1;font-size:15px!important;font-weight:700;padding:12px 8px!important;letter-spacing:.02em}
+  .mp-big b{font-size:20px;line-height:0;vertical-align:-2px;margin-right:4px}
+  .mp-lock{display:flex;align-items:center;gap:6px}
+  .mp-lock svg{width:18px;height:18px;overflow:visible}
+  .mp-lock .sh{transition:transform .38s cubic-bezier(.3,1.7,.45,1);transform-origin:15px 9px}
+  .mp-lock[aria-pressed=false] .sh{transform:translateY(-4px) rotate(-28deg)}
+  .mp-lock .bd{transition:fill .25s}
+  .mp-lock[aria-pressed=true] .bd{fill:#f3efe8} .mp-lock[aria-pressed=false] .bd{fill:none}
+  .mp-lock[aria-pressed=true]{animation:mpclick .3s}
+  @keyframes mpclick{40%{transform:scale(.9)}100%{transform:scale(1)}}
+  .mp-side, .mp-side *{cursor:default} .mp-side button, .mp-side label, .mp-side input{cursor:pointer}
   .mp-hint{position:absolute;left:14px;bottom:12px;font-size:12px;opacity:.65;pointer-events:none;max-width:70%}
   .mp-count{font-size:11px;opacity:.55}
   .mp-foot{margin-top:auto;display:flex;gap:8px}
@@ -157,20 +201,28 @@ export function openPaintEditor(opts) {
     <div class="mp-view"><canvas></canvas><div class="mp-hint">Paint: left mouse / one finger · Turn: right-drag, or the Turn tool · Zoom: wheel / pinch (zooms toward the pointer) · Move: Shift-drag / two fingers</div></div>
     <div class="mp-side">
       <h2>Paint your cat</h2>
-      <div><h4>Tool</h4><div class="mp-row" data-g="mode"><button class="mp-b" data-v="paint">🖌 Paint</button><button class="mp-b" data-v="turn">✋ Turn</button><button class="mp-b" data-a="view">Reset view</button></div></div>
-      <div><h4>Brush</h4><div class="mp-row" data-g="brush"><button class="mp-b" data-v="soft">Soft</button><button class="mp-b" data-v="hard">Hard</button><button class="mp-b" data-v="spray">Spray</button><button class="mp-b" data-v="erase">Eraser</button></div></div>
+      <div><h4>Tool</h4><div class="mp-row" data-g="mode"><button class="mp-b" data-v="paint">🖌 Paint</button><button class="mp-b" data-v="erase">⌫ Eraser</button><button class="mp-b" data-v="turn">✋ Turn</button></div>
+        <div class="mp-row" style="margin-top:6px"><button class="mp-b mp-lock" data-l="lockX" title="Stop the cat turning left and right"><svg viewBox="0 0 24 24"><path class="sh" d="M7 11V8a5 5 0 0 1 10 0v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect class="bd" x="4.5" y="11" width="15" height="10" rx="2.5" stroke="currentColor" stroke-width="2"/></svg>Lock X</button><button class="mp-b mp-lock" data-l="lockY" title="Stop the cat tipping up and down"><svg viewBox="0 0 24 24"><path class="sh" d="M7 11V8a5 5 0 0 1 10 0v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect class="bd" x="4.5" y="11" width="15" height="10" rx="2.5" stroke="currentColor" stroke-width="2"/></svg>Lock Y</button><button class="mp-b" data-a="view">Reset view</button></div></div>
+      <div><h4>Brush <span data-o="tool" style="text-transform:none;letter-spacing:0;opacity:.8"></span></h4><div class="mp-tools" data-g="brush">${['soft','fine','hard','pen','pencil','marker','highlighter','spray'].map((k) => `<button class="mp-b" data-v="${k}" title="${TOOLS[k].name}"><span>${TOOLS[k].icon}</span>${TOOLS[k].name.replace(' brush', '')}</button>`).join('')}</div></div>
       <div><h4>Brush size <span data-o="size"></span></h4><input type="range" data-i="size" min="1" max="100" value="22"></div>
       <div><h4>Strength <span data-o="alpha"></span></h4><input type="range" data-i="alpha" min="5" max="100" value="85"></div>
       <div><h4>Colour</h4><div class="mp-col"><label class="mp-wheel" title="Pick any colour"><input type="color" data-i="color"></label><div class="mp-cur"></div><span data-o="hex" style="font-size:12px;opacity:.7"></span></div>
-        <div class="mp-recent" style="margin-top:8px"></div></div>
-      <div><h4>Edit</h4><div class="mp-row"><button class="mp-b" data-a="undo">↶ Undo</button><button class="mp-b" data-a="redo">↷ Redo</button><button class="mp-b" data-a="clear">Clear all</button></div><div class="mp-count" style="margin-top:6px"></div></div>
+        <div style="font-size:11px;opacity:.55;margin-top:10px">Last 10 colours</div><div class="mp-recent"></div></div>
+      <div><h4>Edit</h4><div class="mp-row"><button class="mp-b mp-big" data-a="undo"><b>↶</b>Undo</button><button class="mp-b mp-big" data-a="redo"><b>↷</b>Redo</button></div><div class="mp-row" style="margin-top:6px"><button class="mp-b" data-a="clear" style="flex:1">Clear all</button></div><div class="mp-count" style="margin-top:6px"></div></div>
       <div class="mp-foot"><button class="mp-b" data-a="cancel">Cancel</button><button class="mp-b solid" data-a="save">Save</button></div>
     </div>`;
   document.body.appendChild(wrap);
   const q = (s) => wrap.querySelector(s), view = q('.mp-view'), canvas = q('canvas');
-  const st = { mode: 'paint', brush: 'soft', size: 22, alpha: 85, color: opts.color || '#3a2a20', recent: [] };
-  try { Object.assign(st, JSON.parse(localStorage.getItem('meow.paintTools') || '{}')); } catch { /* ignore */ }
-  const saveTools = () => { try { localStorage.setItem('meow.paintTools', JSON.stringify({ brush: st.brush, size: st.size, alpha: st.alpha, color: st.color, recent: st.recent })); } catch { /* ignore */ } };
+  const st = { mode: 'paint', brush: 'soft', color: opts.color || '#3a2a20', recent: [], sizes: {}, alphas: {}, lockX: false, lockY: false };
+  try { const sv = JSON.parse(localStorage.getItem('meow.paintTools2') || '{}'); Object.assign(st, sv); } catch { /* ignore */ }
+  if (!TOOLS[st.brush] || st.brush === 'erase') st.brush = 'soft';
+  st.recent = (st.recent || []).filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(-10);
+  const saveTools = () => { try { localStorage.setItem('meow.paintTools2', JSON.stringify({ brush: st.brush, color: st.color, recent: st.recent, sizes: st.sizes, alphas: st.alphas, lockX: st.lockX, lockY: st.lockY })); } catch { /* ignore */ } };
+  const tool = () => (st.mode === 'erase' ? 'erase' : st.brush);
+  Object.defineProperty(st, 'size', { get: () => st.sizes[tool()] ?? TOOLS[tool()].size, set: (v) => { st.sizes[tool()] = v; } });
+  Object.defineProperty(st, 'alpha', { get: () => st.alphas[tool()] ?? TOOLS[tool()].alpha, set: (v) => { st.alphas[tool()] = v; } });
+  // the last 10 colours used: a new one goes on the end, and the oldest drops off the front
+  const useColor = (c) => { c = c.toLowerCase(); if (st.recent.includes(c)) return; st.recent.push(c); if (st.recent.length > 10) st.recent.shift(); saveTools(); };
   const stamps = (opts.stamps || []).map((s) => ({ ...s, p: s.p.slice(), n: s.n.slice(), c: s.c.slice() }));
   const strokes = [];   // where each stroke starts in stamps (for undo)
   const redo = []; let cleared = null;
@@ -217,21 +269,29 @@ export function openPaintEditor(opts) {
   // UI wiring
   const mark = () => {
     wrap.querySelectorAll('[data-g=mode] [data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.mode)));
-    wrap.querySelectorAll('[data-g=brush] [data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.brush)));
+    wrap.querySelectorAll('[data-g=brush] [data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.brush && st.mode === 'paint')));
+    wrap.querySelectorAll('[data-l]').forEach((b) => b.setAttribute('aria-pressed', String(!!st[b.dataset.l])));
+    q('[data-o=tool]').textContent = '· ' + TOOLS[tool()].name;
     q('[data-o=size]').textContent = st.size; q('[data-o=alpha]').textContent = st.alpha + '%';
     q('[data-i=size]').value = st.size; q('[data-i=alpha]').value = st.alpha; q('[data-i=color]').value = st.color;
     q('.mp-cur').style.background = st.color; q('[data-o=hex]').textContent = st.color.toUpperCase();
     q('[data-a=undo]').disabled = !strokes.length && !cleared; q('[data-a=redo]').disabled = !redo.length;
     q('.mp-count').textContent = `${stamps.length} / ${MAX_STAMPS} dabs` + (stamps.length >= MAX_STAMPS ? ' — full, erase or clear to paint more' : '');
     const rc = q('.mp-recent'); rc.innerHTML = '';
-    st.recent.forEach((c) => { const b = document.createElement('button'); b.style.background = c; b.title = c; b.addEventListener('click', () => { st.color = c; mark(); saveTools(); }); rc.appendChild(b); });
+    for (let i = 0; i < 10; i++) {
+      const c = st.recent[i], b = document.createElement('button');
+      if (!c) { b.className = 'empty'; b.disabled = true; rc.appendChild(b); continue; }
+      b.style.background = c; b.title = c.toUpperCase(); if (c === st.color.toLowerCase()) b.className = 'on';
+      b.addEventListener('click', () => { st.color = c; if (st.mode === 'erase') st.mode = 'paint'; mark(); saveTools(); });
+      rc.appendChild(b);
+    }
   };
   wrap.querySelector('[data-g=mode]').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) { st.mode = b.dataset.v; mark(); } });
   wrap.querySelector('[data-g=brush]').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) { st.brush = b.dataset.v; st.mode = 'paint'; mark(); saveTools(); } });
+  wrap.querySelectorAll('[data-l]').forEach((b) => b.addEventListener('click', () => { st[b.dataset.l] = !st[b.dataset.l]; mark(); saveTools(); }));
   q('[data-i=size]').addEventListener('input', (e) => { st.size = +e.target.value; mark(); saveTools(); });
   q('[data-i=alpha]').addEventListener('input', (e) => { st.alpha = +e.target.value; mark(); saveTools(); });
-  q('[data-i=color]').addEventListener('input', (e) => { st.color = e.target.value; if (st.brush === 'erase') st.brush = 'soft'; mark(); });
-  q('[data-i=color]').addEventListener('change', (e) => { st.recent = [e.target.value, ...st.recent.filter((c) => c !== e.target.value)].slice(0, 10); mark(); saveTools(); });
+  q('[data-i=color]').addEventListener('input', (e) => { st.color = e.target.value; if (st.mode === 'erase') st.mode = 'paint'; mark(); });
   const repaint = () => { cat.setPaint(stamps); mark(); };
   wrap.addEventListener('click', (e) => {
     const a = e.target.closest('[data-a]'); if (!a) return;
@@ -264,10 +324,10 @@ export function openPaintEditor(opts) {
     const rad = radius(), col = new THREE.Color(st.color), c = [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)];
     // the radius in the cat's own units (the cat may be shown scaled)
     const R = rad / cat.root.matrixWorld.getMaxScaleOnAxis();
-    if (!first && last && last.distanceTo(h.local) < R * (st.brush === 'spray' ? 0.6 : 0.28)) return;
+    if (!first && last && last.distanceTo(h.local) < R * (tool() === 'spray' ? 0.6 : 0.28)) return;
     const from = stamps.length;
-    const base = { n: [h.n.x, h.n.y, h.n.z], c, a: st.alpha / 100, k: BRUSH[st.brush] };
-    if (st.brush === 'spray') {
+    const base = { n: [h.n.x, h.n.y, h.n.z], c, a: st.alpha / 100, k: TOOLS[tool()].k };
+    if (tool() === 'spray') {
       // speckles scattered over the brush circle
       const t1 = new THREE.Vector3().crossVectors(h.n, Math.abs(h.n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize(), t2 = new THREE.Vector3().crossVectors(h.n, t1);
       for (let i = 0; i < 9; i++) {
@@ -285,14 +345,15 @@ export function openPaintEditor(opts) {
     }
     last = h.local.clone();
     cat.addPaint(stamps, from);
-    if (st.brush !== 'erase' && first) { st.recent = [st.color, ...st.recent.filter((x) => x !== st.color)].slice(0, 10); saveTools(); }
+    if (tool() !== 'erase' && first) { useColor(st.color); mark(); }
   };
   // pointer handling: paint, turn (360° in every direction), zoom and move
   const ptrs = new Map(); let drag = null, pinch = null;
   const right = new THREE.Vector3(), up = new THREE.Vector3(), qq = new THREE.Quaternion();
   const turn = (dx, dy) => {
     cam.updateMatrixWorld(); right.setFromMatrixColumn(cam.matrixWorld, 0); up.setFromMatrixColumn(cam.matrixWorld, 1);
-    pivot.quaternion.premultiply(qq.setFromAxisAngle(up, dx * 0.009)); pivot.quaternion.premultiply(qq.setFromAxisAngle(right, dy * 0.009));
+    if (!st.lockX) pivot.quaternion.premultiply(qq.setFromAxisAngle(up, dx * 0.009));
+    if (!st.lockY) pivot.quaternion.premultiply(qq.setFromAxisAngle(right, dy * 0.009));
   };
   const pan = (dx, dy) => { cam.updateMatrixWorld(); right.setFromMatrixColumn(cam.matrixWorld, 0); up.setFromMatrixColumn(cam.matrixWorld, 1); const k = dist * 0.0012; target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k); };
   const zoomAt = (factor, x, y) => {
@@ -336,10 +397,11 @@ export function openPaintEditor(opts) {
   };
   addEventListener('keydown', onKey, true);
 
-  let hover = null, pending = null, raf = 0, alive = true;
+  let hover = null, pending = null, raf = 0, alive = true, overCanvas = false;
+  canvas.addEventListener('pointerenter', () => { overCanvas = true; }); canvas.addEventListener('pointerleave', () => { overCanvas = false; });
   const frame = () => {
     if (!alive) return;
-    if (pending && (!drag || drag.how === 'paint') && st.mode === 'paint' || (pending && drag && drag.how === 'paint')) {
+    if (pending && st.mode !== 'turn' && (!drag || drag.how === 'paint') || (pending && drag && drag.how === 'paint')) {
       hover = hitAt(pending.x, pending.y);
       if (drag && drag.how === 'paint' && hover) dab(hover, false);
     }
@@ -347,16 +409,18 @@ export function openPaintEditor(opts) {
     const w = view.clientWidth, h = view.clientHeight;
     if (canvas.width !== Math.round(w * r.getPixelRatio())) { r.setSize(w, h, false); cam.aspect = w / Math.max(1, h); cam.updateProjectionMatrix(); }
     cam.position.copy(target).add(new THREE.Vector3(0, 0, dist)); cam.lookAt(target);
-    if (hover && st.mode === 'paint' && (!drag || drag.how === 'paint')) {
+    if (hover && st.mode !== 'turn' && (!drag || drag.how === 'paint')) {
       ring.visible = true; ring.position.copy(hover.point).addScaledVector(hover.wn, 0.01);
       ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), hover.wn); ring.scale.setScalar(radius());
-      ring.material.color.set(st.brush === 'erase' ? '#ffffff' : st.color); dot.material.color.set(st.brush === 'erase' ? '#ff6b6b' : '#ffffff');
+      ring.material.color.set(tool() === 'erase' ? '#ffffff' : st.color); dot.material.color.set(tool() === 'erase' ? '#ff6b6b' : '#ffffff');
     } else ring.visible = false;
-    canvas.style.cursor = drag && drag.how !== 'paint' ? 'grabbing' : hover && st.mode === 'paint' ? 'none' : 'grab';
+    canvas.style.cursor = drag && drag.how !== 'paint' ? 'grabbing' : hover && st.mode !== 'turn' ? 'none' : 'grab';
+    // the site's own arrow: hidden only while the brush circle stands in for it over the cat
+    const mc = document.querySelector('.mcur'); if (mc) mc.style.visibility = ring.visible && overCanvas ? 'hidden' : '';
     r.render(scn, cam);
     raf = requestAnimationFrame(frame);
   };
-  const close = () => { alive = false; cancelAnimationFrame(raf); removeEventListener('keydown', onKey, true); r.dispose(); r.forceContextLoss(); wrap.remove(); };
+  const close = () => { const mc = document.querySelector('.mcur'); if (mc) mc.style.visibility = ''; alive = false; cancelAnimationFrame(raf); removeEventListener('keydown', onKey, true); r.dispose(); r.forceContextLoss(); wrap.remove(); };
   mark(); frame();
   return { close };
 }

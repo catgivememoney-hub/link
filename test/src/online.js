@@ -249,6 +249,37 @@ function buildModelCat(tpl, sk, name) {
   g.updateMatrixWorld(true);
   if (pmesh) bakeModelSpace(pmesh, root);   // where each vertex sits on the cat (for paint)
   const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  // paw pads (toe beans): find the underside of each paw from the model's own shape and put pads there
+  if (pmesh) {
+    const P = pmesh.geometry.userData.grid.pos, n = P.length / 3;
+    let minY = Infinity; for (let i = 0; i < n; i++) minY = Math.min(minY, P[i * 3 + 1]);
+    let midZ = 0, cnt = 0; for (let i = 0; i < n; i++) if (P[i * 3 + 1] < minY + 0.5) { midZ += P[i * 3 + 2]; cnt++; } midZ /= Math.max(1, cnt);
+    const padM = new THREE.MeshStandardMaterial({ color: sk.pads || (real ? 0xd88f98 : 0xe49aa6), roughness: 0.55 });
+    const bean = new THREE.SphereGeometry(1, 16, 10);
+    [['L', 1, true], ['R', -1, true], ['L', 1, false], ['R', -1, false]].forEach(([side, sx, front]) => {
+      const pts = []; for (let i = 0; i < n; i++) {
+        const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
+        if (y < minY + 0.14 && Math.sign(x) === sx && (z < midZ) === front) pts.push([x, y, z]);
+      }
+      if (pts.length < 4) return;
+      let cx = 0, cz = 0; pts.forEach((q) => { cx += q[0]; cz += q[2]; }); cx /= pts.length; cz /= pts.length;
+      let wx = 0, wz = 0; pts.forEach((q) => { wx = Math.max(wx, Math.abs(q[0] - cx)); wz = Math.max(wz, Math.abs(q[2] - cz)); });
+      const W = Math.max(0.12, Math.min(wx, wz * 0.9)), y0 = minY + 0.012;
+      const pads = new THREE.Group();
+      // the big heel pad, toward the back of the paw
+      const heel = new THREE.Mesh(bean, padM); heel.scale.set(W * 0.5, 0.035, W * 0.42); heel.position.set(cx, y0, cz + wz * 0.18); pads.add(heel);
+      // four toe beans in an arc toward the front (-z is forward)
+      [-1.5, -0.5, 0.5, 1.5].forEach((t) => {
+        const b2 = new THREE.Mesh(bean, padM); const r2 = W * 0.2;
+        b2.scale.set(r2, 0.03, r2 * 1.15); b2.position.set(cx + t * W * 0.3, y0, cz - wz * 0.45 + Math.abs(t) * W * 0.09); pads.add(b2);
+      });
+      pads.children.forEach((m) => { m.castShadow = false; });
+      // model space -> world (the cat is at the origin while it is being built), then hang on the paw bone
+      pads.applyMatrix4(root.matrixWorld);
+      g.add(pads); pads.updateMatrixWorld(true);
+      const bn = bones[(front ? 'hand' : 'foot') + side]; if (bn) bn.attach(pads);
+    });
+  }
   const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
   const mesh = (geo, m) => { const o = new THREE.Mesh(geo, m); o.castShadow = true; return o; };
   const at = (o, p, sc) => { if (p) o.position.copy(p); if (sc) o.scale.copy(sc); return o; };
