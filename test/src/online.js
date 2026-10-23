@@ -266,14 +266,12 @@ function realEye(col) {
 }
 
 // poses for the modelled cats: bone → [pitch, yaw] (radians), body → [drop, forward shift, tilt]
+// poses for the modelled cats (tuned by eye in the game): bone → [pitch, yaw] (radians), body → [drop, forward shift, tilt]
+//   curl: lying down in a ring, head resting on the paws, tail wrapped round · pc: sitting on the chair, paws on the keyboard
+const CURL = { body: [-2.1, 0, 0], chest: [0, 1.5], neck: [0, 1.3], head: [0.3, 1.1], upperarmL: [1.3, 0], upperarmR: [1.3, 0], thighL: [1.3, 0], thighR: [1.3, 0], shinL: [-2, 0], shinR: [-2, 0], tail1: [0, 0.6], tail2: [0, 0.6], tail3: [0, 0.6], tail4: [0, 0.5] };
 const POSE = window.MEOW_POSE = {
-  curl: { body: [-2.05, -0.6, 0], hips: [0, -0.5], chest: [0, 0.75], neck: [-0.25, 0.7], head: [0.35, 0.7],
-    upperarmL: [-1.35, 0.35], upperarmR: [-1.35, -0.35], thighL: [1.45, 0.35], thighR: [1.45, -0.35],
-    forearmL: [2.3, 0], forearmR: [2.3, 0], shinL: [-2.0, 0], shinR: [-2.0, 0],
-    tail1: [-0.05, 0.75], tail2: [-0.05, 0.87], tail3: [-0.05, 0.99], tail4: [-0.05, 1.11] },
-  pc: { body: [-0.6, 1.4, 0], hips: [-0.55, 0], chest: [0.25, 0], neck: [0.2, 0], head: [0.35, 0],
-    upperarmL: [-0.95, 0], upperarmR: [-0.95, 0], thighL: [1.5, 0], thighR: [1.5, 0],
-    forearmL: [1.25, 0], forearmR: [1.25, 0], shinL: [-2.2, 0], shinR: [-2.2, 0] }
+  cat: { curl: CURL, pc: { body: [-2.3, -0.2, 0], hips: [0.5, 0], chest: [0.1, 0], neck: [-0.3, 0], head: [-0.2, 0], upperarmL: [0.7, 0], upperarmR: [0.7, 0], forearmL: [-0.55, 0], forearmR: [-0.55, 0], thighL: [1.2, 0], thighR: [1.2, 0], shinL: [-2.2, 0], shinR: [-2.2, 0] } },
+  cur: { curl: CURL, pc: { body: [-2.9, -0.9, 0], hips: [0.5, 0], chest: [0.1, 0], neck: [-0.3, 0], head: [-0.2, 0], upperarmL: [0.5, 0], upperarmR: [0.5, 0], forearmL: [-0.5, 0], forearmR: [-0.5, 0], thighL: [1.7, 0], thighR: [1.7, 0], shinL: [-2.6, 0], shinR: [-2.6, 0] } }
 };
 function buildModelCat(tpl, sk, name) {
   const g = new THREE.Group();
@@ -423,7 +421,7 @@ function buildModelCat(tpl, sk, name) {
       ['forearmL', 'forearmR'].forEach((n) => { base[n] = [0.9 * sit * w, 0]; });
       ['shinL', 'shinR'].forEach((n) => { base[n] = [-1.2 * sit * w, 0]; });
       base.head = [-look * 0.6 * w, 0];
-      const C = POSE.curl, P = POSE.pc;
+      const PZ = POSE[sk.model === 'cur' ? 'cur' : 'cat'], C = PZ.curl, P = PZ.pc;
       const names = new Set([...Object.keys(base), ...Object.keys(C), ...Object.keys(P)]);
       names.forEach((n) => {
         if (n === 'body' || (n.startsWith('tail') && curlK < 0.01 && !P[n])) return;
