@@ -373,7 +373,7 @@ export function createDeepSnow(scene, TU, ground) {
       float sn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(sh2(i), sh2(i + vec2(1, 0)), f.x), mix(sh2(i + vec2(0, 1)), sh2(i + vec2(1, 1)), f.x), f.y); }
       // snow height above the ground at p: full depth, pressed down in the trail, heaped up beside it
       float snowH(vec2 p, float sk) {
-        float t = (trv(p) * 2.0 + trv(p + vec2(0.45, 0.0)) + trv(p - vec2(0.45, 0.0)) + trv(p + vec2(0.0, 0.45)) + trv(p - vec2(0.0, 0.45))) / 6.0;
+        float t = (trv(p) * 2.0 + trv(p + vec2(0.7, 0.0)) + trv(p - vec2(0.7, 0.0)) + trv(p + vec2(0.0, 0.7)) + trv(p - vec2(0.0, 0.7)) + trv(p + vec2(0.5, 0.5)) + trv(p - vec2(0.5, 0.5)) + trv(p + vec2(0.5, -0.5)) + trv(p - vec2(0.5, -0.5))) / 10.0;   // softened, so the walls slope over several grid squares
         float ring = (trv(p + vec2(1.1, 0.0)) + trv(p - vec2(1.1, 0.0)) + trv(p + vec2(0.0, 1.1)) + trv(p - vec2(0.0, 1.1))) * 0.25;
         float berm = max(0.0, ring - t) * 1.8;
         return uDepth * sk * (0.88 + 0.24 * sn2(p * 0.35) - t * 0.95 + berm * 0.55);
@@ -400,7 +400,7 @@ export function createDeepSnow(scene, TU, ground) {
       float sh2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float sn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(sh2(i), sh2(i + vec2(1, 0)), f.x), mix(sh2(i + vec2(0, 1)), sh2(i + vec2(1, 1)), f.x), f.y); }
       float snowH(vec2 p, float sk) {
-        float t = (trv(p) * 2.0 + trv(p + vec2(0.45, 0.0)) + trv(p - vec2(0.45, 0.0)) + trv(p + vec2(0.0, 0.45)) + trv(p - vec2(0.0, 0.45))) / 6.0;
+        float t = (trv(p) * 2.0 + trv(p + vec2(0.7, 0.0)) + trv(p - vec2(0.7, 0.0)) + trv(p + vec2(0.0, 0.7)) + trv(p - vec2(0.0, 0.7)) + trv(p + vec2(0.5, 0.5)) + trv(p - vec2(0.5, 0.5)) + trv(p + vec2(0.5, -0.5)) + trv(p - vec2(0.5, -0.5))) / 10.0;   // softened, so the walls slope over several grid squares
         float ring = (trv(p + vec2(1.1, 0.0)) + trv(p - vec2(1.1, 0.0)) + trv(p + vec2(0.0, 1.1)) + trv(p - vec2(0.0, 1.1))) * 0.25;
         float berm = max(0.0, ring - t) * 1.8;
         return uDepth * sk * (0.88 + 0.24 * sn2(p * 0.35) - t * 0.95 + berm * 0.55);
