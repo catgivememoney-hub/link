@@ -285,16 +285,8 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
       </section>
       <section class="p-sec" style="--d:2">
         <div class="set-row">
-          <h3>View</h3>
-          <div id="viewSeg" class="seg">
-            <button type="button" data-val="0" title="See through your cat's eyes">Eyes</button>
-            <button type="button" data-val="1" title="The camera follows behind your cat">Behind</button>
-            <button type="button" data-val="2" title="The camera floats just above your cat">Above</button>
-          </div>
-        </div>
-        <div class="set-row" style="margin-top:8px">
-          <h3>Switch view key</h3>
-          <button id="viewKey" type="button" class="btn" title="Click, then press any key" style="min-width:64px">T</button>
+          <h3>Toggle perspective</h3>
+          <button id="viewKey" type="button" class="btn" title="Switches between first and third person. Click, then press any key to change it" style="min-width:64px">T</button>
         </div>
       </section>
       <section class="p-sec" style="--d:2">
@@ -403,7 +395,7 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
     "three-mesh-bvh": "./test/vendor/three-mesh-bvh/index.module.js"
   } }
   </script>
-  <script type="module" src="test/src/main.js?v=t20"></script>
+  <script type="module" src="test/src/main.js?v=t21"></script>
   <div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:rgba(200,60,40,.85);padding:6px 10px;border-radius:999px">TEST COPY · new cabin &amp; sailboat</div>
 </body>
 </html>

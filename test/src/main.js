@@ -128,17 +128,14 @@ import { createAssets } from './assets.js';
   // Settings → Play together: other players, and the doors / lights / boat / scene shared with them
   const curl = { t: 0, k: 0 };
   // camera view (Settings → Controls → View; the switch key is T unless you change it)
-  const VIEW = { mode: 0, shown: 0, t: 1, key: 'KeyT', fromP: new THREE.Vector3(), fromQ: new THREE.Quaternion(), tp: new THREE.Vector3(), tq: new THREE.Quaternion(), v1: new THREE.Vector3(), v2: new THREE.Vector3(), e: new THREE.Euler() };
-  try { VIEW.mode = Math.min(2, Math.max(0, parseInt(localStorage.getItem('meow.view') || '0', 10) || 0)); VIEW.key = localStorage.getItem('meow.key.view') || 'KeyT'; } catch { /* ignore */ }
+  const VIEW = { mode: 0, shown: 0, t: 1, body: 0, key: 'KeyT', fromP: new THREE.Vector3(), fromQ: new THREE.Quaternion(), tp: new THREE.Vector3(), tq: new THREE.Quaternion(), v1: new THREE.Vector3(), v2: new THREE.Vector3(), e: new THREE.Euler() };
+  try { VIEW.mode = Math.min(1, Math.max(0, parseInt(localStorage.getItem('meow.view') || '0', 10) || 0)); VIEW.key = localStorage.getItem('meow.key.view') || 'KeyT'; } catch { /* ignore */ }
   const keyName = (c) => c.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ').replace(/^Arrow/, '').replace(/(Left|Right)$/, ' $1').trim();
   const setView = (m) => {
     VIEW.mode = m; try { localStorage.setItem('meow.view', String(m)); } catch { /* ignore */ }
-    const seg = document.getElementById('viewSeg'); if (seg) seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.val === m)));
   };
   {
-    const seg = document.getElementById('viewSeg'), kb = document.getElementById('viewKey');
-    if (seg) seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(+b.dataset.val); });
-    setView(VIEW.mode);
+    const kb = document.getElementById('viewKey');
     const RESERVED = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'KeyF', 'KeyR', 'Enter', 'Escape', 'Tab'];
     if (kb) {
       kb.textContent = keyName(VIEW.key);
@@ -159,6 +156,7 @@ import { createAssets } from './assets.js';
   const online = createOnline({ scene, player, scenes, toast: (m) => toastMsg(m),
     extra: () => ({ lt: hand.state === 'torch' ? 1 : hand.state === 'lamp' ? 2 : 0, seat: boat.active ? boat.seat : -1, boat: boat.snapshot() || undefined, skin: undefined,
       // 1 = curled up on the bed / sofa, 2 = sitting at the computer (then where the chair is)
+      bodyYaw: VIEW.body,
       pose: computer.active ? 2 : curl.k > 0.5 ? 1 : 0, ...(computer.active && cabin.chairSeat() ? { seatAt: cabin.chairSeat() } : {}) }) });
   window.MEOW_ONLINE = online;
   setTimeout(() => { window.MEOW_DEBUG = { get portal() { return portal; }, trees, player, camera, scenes, cabin }; }, 0);   // (testing)
@@ -350,7 +348,7 @@ import { createAssets } from './assets.js';
       if (player.mode === 'home' && !e.code.startsWith('Shift')) enterWorld();
       return;
     }
-    if (e.code === VIEW.key && !e.repeat && started && player.walking && !busy()) { e.preventDefault(); setView((VIEW.mode + 1) % 3); toastMsg(['👀 Eyes', '🐈 Behind', '⬇️ Above'][VIEW.mode]); return; }
+    if (e.code === VIEW.key && !e.repeat && started && player.walking && !busy()) { e.preventDefault(); setView(VIEW.mode ? 0 : 1); toastMsg(VIEW.mode ? '🐈 Third person' : '👀 First person'); return; }
     if (e.code === 'KeyF' && !e.repeat && started && !root.classList.contains('locked')) { e.preventDefault(); hand.toggle(now); return; }
     if (busy() || !player.walking) return;
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && !boat.active) player.jump(); return; }
@@ -571,42 +569,44 @@ import { createAssets } from './assets.js';
       const still = Math.hypot(ps.vx || 0, ps.vz || 0) < 0.6;
       curl.t = (on === 'bed' || on === 'sofa') && still ? curl.t + dt : 0;
       curl.k += ((curl.t > 1.5 ? 1 : 0) - curl.k) * Math.min(1, dt * 3);
-      if (curl.k > 0.001 && player.walking && VIEW.shown === 0) camOut.pos.y -= curl.k * 1.9;
+      if (curl.k > 0.001 && player.walking && VIEW.shown === 0) camOut.pos.y -= curl.k * 1.2;
     }
-    // the view: 0 your cat's eyes · 1 behind your cat · 2 just above it. Switching glides the camera over.
+    // the perspective: 0 first person (your cat's eyes) · 1 third person. Switching glides the camera over.
+    // In third person the mouse moves the camera freely around your cat; the cat only turns when you walk (WASD).
     {
       const ps = player.state, walk = player.walking && !boat.active && !computer.active && !(portal && portal.active);
       const mode = walk ? VIEW.mode : 0;
       if (mode !== VIEW.shown) { VIEW.fromP.copy(camera.position); VIEW.fromQ.copy(camera.quaternion); VIEW.t = walk ? 0 : 1; VIEW.shown = mode; }
+      const sp = Math.hypot(ps.vx || 0, ps.vz || 0);
+      if (mode === 0) VIEW.body = ps.yaw;
+      else if (sp > 1) {   // face the way you're walking
+        const want = Math.atan2(-ps.vx, -ps.vz); let d = want - VIEW.body; d = Math.atan2(Math.sin(d), Math.cos(d));
+        VIEW.body += d * Math.min(1, dt * 10);
+      }
       const fwd = VIEW.v1.set(0, 0, -1).applyQuaternion(camOut.q);
       const tp = VIEW.tp, tq = VIEW.tq;
       if (mode === 1) {
-        // behind: back off along the way you look, stopping short of walls
-        const hx = ps.x, hy = ps.feet + EYE + 1.2, hz = ps.z;
+        // orbit: back off from the cat along the way you look, stopping short of walls
+        const hx = ps.x, hy = ps.feet + EYE + 0.8, hz = ps.z;
         let d = 0;
-        for (; d < 13; d += 0.5) {
-          const x = hx - fwd.x * (d + 0.5), z = hz - fwd.z * (d + 0.5);
-          if (physics.blocked(x, z, ps.feet, 0.5)) break;
+        for (; d < 9; d += 0.4) {
+          const x = hx - fwd.x * (d + 0.4), z = hz - fwd.z * (d + 0.4);
+          if (physics.blocked(x, z, ps.feet, 0.4)) break;
         }
-        tp.set(hx - fwd.x * d, hy - fwd.y * d + 1.5, hz - fwd.z * d);
+        tp.set(hx - fwd.x * d, hy - fwd.y * d + 1.0, hz - fwd.z * d);
         if (physics.inside(ps.x, ps.z, ps.feet)) tp.y = Math.min(tp.y, ps.feet + 11);
-        tp.y = Math.max(tp.y, physics.floor(tp.x, tp.z, ps.feet).y + 1);
+        tp.y = Math.max(tp.y, physics.floor(tp.x, tp.z, ps.feet).y + 0.8);
         tq.copy(camOut.q);
-      } else if (mode === 2) {
-        // above: high over the cat, looking down, the top of the screen is the way you face
-        const h = physics.inside(ps.x, ps.z, ps.feet) ? 10.5 : 20;
-        tp.set(ps.x + Math.sin(ps.yaw) * 3, ps.feet + h, ps.z + Math.cos(ps.yaw) * 3);
-        tq.setFromEuler(VIEW.e.set(-1.25, ps.yaw, 0, 'YXZ'));
       } else {
-        // eyes: at the front of the head, where a cat's eyes are
-        tp.copy(camOut.pos).addScaledVector(VIEW.v2.set(fwd.x, 0, fwd.z).normalize(), 1.0); tq.copy(camOut.q);
+        // first person: at the front of the head, where a cat's eyes are
+        tp.copy(camOut.pos).addScaledVector(VIEW.v2.set(fwd.x, 0, fwd.z).normalize(), 0.6); tq.copy(camOut.q);
       }
       if (VIEW.t < 1) {
         VIEW.t = Math.min(1, VIEW.t + dt / 0.6); const e = VIEW.t * VIEW.t * (3 - 2 * VIEW.t);
         camOut.pos.lerpVectors(VIEW.fromP, tp, e); camOut.q.copy(VIEW.fromQ).slerp(tq, e);
       } else { camOut.pos.copy(tp); camOut.q.copy(tq); }
       const show = walk && (mode > 0 || VIEW.t < 1);
-      online.updateSelf(show, { x: ps.x, y: ps.feet, z: ps.z, yaw: ps.yaw, pitch: ps.pitch, speed: Math.hypot(ps.vx || 0, ps.vz || 0), dt, time, pose: curl.k > 0.5 ? 1 : 0 });
+      online.updateSelf(show, { x: ps.x, y: ps.feet, z: ps.z, yaw: VIEW.body, pitch: mode ? 0 : ps.pitch, speed: sp, dt, time, pose: curl.k > 0.5 ? 1 : 0 });
     }
     camera.position.copy(camOut.pos);
     camera.quaternion.copy(camOut.q);

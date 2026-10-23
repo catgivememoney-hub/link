@@ -454,10 +454,12 @@ function buildModelCat(tpl, sk, name) {
 }
 
 // the modelled cat when its file has loaded, otherwise the simple one made of spheres
-function buildCat(skin, name) {
+export const CAT_SIZE = 0.62;   // cats in the world are 38% smaller than the models (the preview shows them full size)
+function buildCat(skin, name, size = CAT_SIZE) {
   const sk = typeof skin === 'string' ? { color: skin } : (skin || { color: '#999' });
   const tpl = catModel(sk.model);
-  return tpl ? buildModelCat(tpl, sk, name) : buildSimpleCat(sk, name);
+  const c = tpl ? buildModelCat(tpl, sk, name) : buildSimpleCat(sk, name);
+  c.group.scale.setScalar(size); return c;
 }
 
 export function createOnline({ scene, player, scenes, toast, extra }) {
@@ -801,7 +803,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
         if (!setup()) return;
         if (rebuild || !cat) {
           if (cat) { scn.remove(cat.group); if (cat.dispose) cat.dispose(); }
-          cat = buildCat(skinOf({ skin: draft.skin, color: draft.color }), '');
+          cat = buildCat(skinOf({ skin: draft.skin, color: draft.color }), '', 1);
           if (cat.setPaint) cat.setPaint(decodePaint(draft.paint[modelOf(draft.skin)] || ''));
           scn.add(cat.group);
           const real = !!SKINS[draft.skin].model;
@@ -858,7 +860,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
           sendT = 0;
           const p = player.state, on = !!player.walking;
           const ex = extra ? extra() : {};
-          const msg = { t: 'p', id: myId, on, ...ex, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.feet.toFixed(2), yaw: +p.yaw.toFixed(3), pitch: +(p.pitch || 0).toFixed(3), name: me.name, color: me.color, skin: me.skin, host, scene: scenes.name };
+          const msg = { t: 'p', id: myId, on, ...ex, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.feet.toFixed(2), yaw: +(ex.bodyYaw ?? p.yaw).toFixed(3), pitch: +(p.pitch || 0).toFixed(3), name: me.name, color: me.color, skin: me.skin, host, scene: scenes.name };
           conns.forEach((c) => { if (c.open) c.send(msg); });
         }
       }
