@@ -324,36 +324,59 @@ function createTrail(TU) {
    A thick layer of real 3D snow on a fine grid that follows you. It reads the same trail map as the
    ground: where you walk, the snow is pushed down to the ground and heaped up along both sides, so
    your path is a real furrow through the snow rather than a darker stripe. */
-export function createDeepSnow(scene, TU) {
-  const SIZE = 110, SEG = 330, DEPTH = 1.5;
+export function createDeepSnow(scene, TU, ground) {
+  // The ground's height, read straight from the terrain mesh's own points into a small texture (once),
+  // so the graphics card can place the snow on the land itself. The snow grid never has to be rebuilt:
+  // it just slides along under you, which costs nothing (the old version recomputed ~330,000 heights
+  // on the main thread every ~20 steps, which froze the game for half a second).
+  const gp = ground.geometry.attributes.position, gw = ground.geometry.parameters;
+  const NX = gw.widthSegments + 1, NZ = gw.heightSegments + 1;
+  const hd = new Uint16Array(NX * NZ);
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < gp.count; i++) { const x = gp.getX(i), z = gp.getZ(i); minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); }
+  for (let i = 0; i < gp.count; i++) {
+    const ix = Math.round((gp.getX(i) - minX) / (maxX - minX) * (NX - 1)), iz = Math.round((gp.getZ(i) - minZ) / (maxZ - minZ) * (NZ - 1));
+    hd[iz * NX + ix] = THREE.DataUtils.toHalfFloat(gp.getY(i));
+  }
+  const hTex = new THREE.DataTexture(hd, NX, NZ, THREE.RedFormat, THREE.HalfFloatType);
+  hTex.minFilter = hTex.magFilter = THREE.LinearFilter; hTex.needsUpdate = true;
+  // texel centres sit exactly on the terrain's points, so the snow follows the same surface you see
+  const cell = new THREE.Vector2((maxX - minX) / (NX - 1), (maxZ - minZ) / (NZ - 1));
+  const box = new THREE.Vector4(minX - cell.x / 2, minZ - cell.y / 2, (maxX - minX) + cell.x, (maxZ - minZ) + cell.y);
+
+  const SIZE = 110, SEG = 330, DEPTH = 1.5, STEP = SIZE / SEG;
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
-  const P = geo.attributes.position, base = new Float32Array(P.count * 2);
-  for (let i = 0; i < P.count; i++) { base[i * 2] = P.getX(i); base[i * 2 + 1] = P.getZ(i); }
-  const slope = new THREE.BufferAttribute(new Float32Array(P.count), 1); geo.setAttribute('aSlope', slope);
-  const DU = { uDepth: { value: DEPTH } };
+  const DU = { uDepth: { value: DEPTH }, tGround: { value: hTex }, uGroundBox: { value: box }, uCell: { value: cell } };
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, TU, DU);
-    const H = `uniform sampler2D tTrail; uniform vec4 uTrailBox, uHole; uniform float uSnowLine, uWaterY, uDepth; attribute float aSlope; varying float vSk; varying float vPress; varying vec2 vXZ;
+    const H = `uniform sampler2D tTrail, tGround; uniform vec4 uTrailBox, uGroundBox; uniform vec2 uCell; uniform float uSnowLine, uWaterY, uDepth; varying float vSk; varying float vPress; varying vec2 vXZ;
       float trv(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
+      float gh(vec2 p) { return texture2D(tGround, (p - uGroundBox.xy) / uGroundBox.zw).r; }
       float sh2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float sn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(sh2(i), sh2(i + vec2(1, 0)), f.x), mix(sh2(i + vec2(0, 1)), sh2(i + vec2(1, 1)), f.x), f.y); }
       // snow height above the ground at p: full depth, pressed down in the trail, heaped up beside it
       float snowH(vec2 p, float sk) {
-        float t = (trv(p) * 2.0 + trv(p + vec2(0.45, 0.0)) + trv(p - vec2(0.45, 0.0)) + trv(p + vec2(0.0, 0.45)) + trv(p - vec2(0.0, 0.45))) / 6.0;   // softened
+        float t = (trv(p) * 2.0 + trv(p + vec2(0.45, 0.0)) + trv(p - vec2(0.45, 0.0)) + trv(p + vec2(0.0, 0.45)) + trv(p - vec2(0.0, 0.45))) / 6.0;
         float ring = (trv(p + vec2(1.1, 0.0)) + trv(p - vec2(1.1, 0.0)) + trv(p + vec2(0.0, 1.1)) + trv(p - vec2(0.0, 1.1))) * 0.25;
         float berm = max(0.0, ring - t) * 1.8;
         return uDepth * sk * (0.88 + 0.24 * sn2(p * 0.35) - t * 0.95 + berm * 0.55);
       }`;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\n' + H)
-      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-        float sk = smoothstep(uSnowLine - 12.0, uSnowLine + 12.0, position.y) * (1.0 - smoothstep(0.35, 0.7, aSlope)) * (1.0 - smoothstep(uWaterY + 0.6, uWaterY - 0.4, position.y));
-        { float e = 0.35, hx = snowH(position.xz + vec2(e, 0.0), sk) - snowH(position.xz - vec2(e, 0.0), sk), hz = snowH(position.xz + vec2(0.0, e), sk) - snowH(position.xz - vec2(0.0, e), sk);
-          objectNormal = normalize(objectNormal + vec3(-hx, 0.0, -hz) / (2.0 * e)); }`)
+      .replace('#include <beginnormal_vertex>', `
+        vec2 wxz = (modelMatrix * vec4(position, 1.0)).xz;
+        float g0 = gh(wxz), gx = gh(wxz + vec2(uCell.x, 0.0)) - gh(wxz - vec2(uCell.x, 0.0)), gz = gh(wxz + vec2(0.0, uCell.y)) - gh(wxz - vec2(0.0, uCell.y));
+        vec3 gN = normalize(vec3(-gx / (2.0 * uCell.x), 1.0, -gz / (2.0 * uCell.y)));
+        float sk = smoothstep(uSnowLine - 12.0, uSnowLine + 12.0, g0) * (1.0 - smoothstep(0.35, 0.7, 1.0 - gN.y)) * (1.0 - smoothstep(uWaterY + 0.6, uWaterY - 0.4, g0));
+        float e = 0.35, hx = snowH(wxz + vec2(e, 0.0), sk) - snowH(wxz - vec2(e, 0.0), sk), hz = snowH(wxz + vec2(0.0, e), sk) - snowH(wxz - vec2(0.0, e), sk);
+        vec3 objectNormal = normalize(gN + vec3(-hx, 0.0, -hz) / (2.0 * e));
+        #ifdef USE_TANGENT
+          vec3 objectTangent = vec3(1.0, 0.0, 0.0);
+        #endif`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vSk = sk; vXZ = position.xz; vPress = trv(position.xz);
-        transformed.y += max(0.03, snowH(position.xz, sk));`);
+        vSk = sk; vXZ = wxz; vPress = trv(wxz);
+        transformed.y = g0 + max(0.03, snowH(wxz, sk));`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uSnow; uniform vec4 uHole; varying float vSk; varying float vPress; varying vec2 vXZ;')
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -364,25 +387,14 @@ export function createDeepSnow(scene, TU) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true; mesh.castShadow = false; mesh.frustumCulled = false; mesh.visible = false;
   scene.add(mesh);
-  let cx = 1e9, cz = 1e9, on = false;
-  const rebuild = (x, z) => {
-    cx = Math.round(x / 10) * 10; cz = Math.round(z / 10) * 10;
-    for (let i = 0; i < P.count; i++) {
-      const wx = base[i * 2] + cx, wz = base[i * 2 + 1] + cz, h = heightAt(wx, wz);
-      P.setXYZ(i, wx, h, wz);
-      const gx = heightAt(wx + 0.8, wz) - h, gz = heightAt(wx, wz + 0.8) - h;
-      slope.array[i] = 1 - 1 / Math.sqrt(1 + (gx * gx + gz * gz) / 0.64);
-    }
-    P.needsUpdate = true; slope.needsUpdate = true; geo.computeBoundingSphere();
-  };
+  let on = false;
   return {
     setEnabled(v) { on = !!v; if (!on) mesh.visible = false; },
     get enabled() { return on; },
-    // show it around (x, z) when the scene has snow on the ground near you
+    // show it around (x, z) when the scene has snow on the ground near you (snapped to the grid so it doesn't shimmer)
     update(x, z, snowy) {
       mesh.visible = on && snowy;
-      if (!mesh.visible) return;
-      if (Math.abs(x - cx) > 22 || Math.abs(z - cz) > 22) rebuild(x, z);
+      if (mesh.visible) mesh.position.set(Math.round(x / STEP) * STEP, 0, Math.round(z / STEP) * STEP);
     }
   };
 }

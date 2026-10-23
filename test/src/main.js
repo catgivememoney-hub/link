@@ -77,7 +77,7 @@ import { createAssets } from './assets.js';
   scene.add(hemi, sun, sun.target);
   scene.fog = new THREE.FogExp2(0xcccccc, 0.004);
   const terrain = createTerrain(scene);
-  const deepSnow = createDeepSnow(scene, terrain.TU);   // thick 3D snow you plough through (a graphics option)
+  const deepSnow = createDeepSnow(scene, terrain.TU, terrain.mesh);   // thick 3D snow you plough through (a graphics option)
   const water = createWater(scene, U);
   // the spots the home views look from stay clear of rocks and grass
   const CLEAR = [[0, 105], [0, 140], [-38, 112], [24, 78], [0, 92], [30, 102], [0, 125]].map(([x, z]) => ({ x, z, r: 42 }));
@@ -647,7 +647,8 @@ import { createAssets } from './assets.js';
       if (d > 0.8) {
         const gh = heightAt(ps.x, ps.z), sl = scenes.cur.snowLine;
         const snowy = Math.min(1, Math.max(0, (gh - (sl - 12)) / 24)) > 0.35 && gh > water.mesh.position.y + 0.6 && ps.feet < gh + 1.5;
-        if (snowy) { const n = Math.min(12, Math.ceil(d / 0.8)); for (let i = 1; i <= n; i++) terrain.trail.stamp(trailAt.x + dx * i / n, trailAt.z + dz * i / n, 1.15); }
+        if (snowy && d < 80) { const n = Math.ceil(d / 0.8);   // fill the whole gap, even after a slow frame (a bigger jump is a teleport)
+          for (let i = 1; i <= n; i++) terrain.trail.stamp(trailAt.x + dx * i / n, trailAt.z + dz * i / n, 1.15); }
         trailAt.x = ps.x; trailAt.z = ps.z;
       }
     }
