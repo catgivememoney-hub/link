@@ -22,10 +22,10 @@ export function createFish({ scene, camera, heightAt, water }) {
     const col = (geo, fn) => { const p = geo.attributes.position, c = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) { const v = fn(p.getX(i), p.getY(i), p.getZ(i)); c[i * 3] = v[0]; c[i * 3 + 1] = v[1]; c[i * 3 + 2] = v[2]; } geo.setAttribute('color', new THREE.BufferAttribute(c, 3)); return geo; };
     // body
     const X0 = -0.82, X1 = 1.0, RING = 28, SEG = 48;
-    const prof = (u) => { const k = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.72)), 0.85); return 0.05 + 0.31 * k; };   // u: 0 tail end .. 1 nose
+    const prof = (u) => { const k = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.8)), 0.9); return 0.045 + 0.2 * k; };   // a slim trout   // u: 0 tail end .. 1 nose
     const pos = [], idx = [];
     for (let i = 0; i <= SEG; i++) {
-      const u = i / SEG, x = X0 + (X1 - X0) * u, h = prof(u) * (u > 0.96 ? Math.sqrt(Math.max(0, (1 - u) / 0.04)) : 1), w = h * 0.52;
+      const u = i / SEG, x = X0 + (X1 - X0) * u, h = prof(u) * (u > 0.96 ? Math.sqrt(Math.max(0, (1 - u) / 0.04)) : 1), w = h * 0.6;
       for (let j = 0; j <= RING; j++) {
         const a = (j / RING) * Math.PI * 2, sy = Math.sin(a), cz = Math.cos(a);
         pos.push(x, sy * h * (sy < 0 ? 0.92 : 1) - 0.02 * u, cz * w * (1 - 0.15 * Math.abs(sy)));
@@ -33,7 +33,14 @@ export function createFish({ scene, camera, heightAt, water }) {
     }
     for (let i = 0; i < SEG; i++) for (let j = 0; j < RING; j++) { const a = i * (RING + 1) + j, b = a + RING + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
     const body = new THREE.BufferGeometry(); body.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); body.setIndex(idx); body.computeVertexNormals();
-    const spot = (x, y, z) => { const s = Math.sin(x * 37.0 + z * 11.0) * Math.sin(y * 41.0 - x * 13.0) * Math.sin(z * 29.0 + y * 7.0); return s > 0.55; };
+    const hash = (a, b, c) => { const v = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453; return v - Math.floor(v); };
+    // round black spots scattered over the back and tail: one possible spot per little cell
+    const spot = (x, y, z) => { const k = 11, cx = Math.floor(x * k), cy = Math.floor(y * k), cz = Math.floor(z * k);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+        const X = cx + a, Y = cy + b, Z = cz + c; if (hash(X, Y, Z) > 0.45) continue;
+        const px = (X + hash(Y, Z, X)) / k, py = (Y + hash(Z, X, Y)) / k, pz = (Z + hash(X + 3, Y, Z)) / k;
+        if (Math.hypot(x - px, y - py, z - pz) < 0.022) return true;
+      } return false; };
     col(body, (x, y, z) => {
       const hh = prof(Math.min(1, Math.max(0, (x - X0) / (X1 - X0)))) || 0.05, ty = y / hh;
       let c = ty > 0.25 ? [0.22, 0.27, 0.16] : ty > -0.35 ? [0.72, 0.75, 0.73] : [0.93, 0.92, 0.88];
@@ -51,23 +58,23 @@ export function createFish({ scene, camera, heightAt, water }) {
     };
     const finC = [0.36, 0.38, 0.28];
     // forked tail (moves the most when swimming)
-    parts.push(fin([[-0.78, 0.07], [-1.22, 0.46], [-1.12, 0.05], [-1.06, 0.0], [-1.12, -0.05], [-1.22, -0.44], [-0.78, -0.07]], finC));
+    parts.push(fin([[-0.78, 0.05], [-1.2, 0.34], [-1.1, 0.04], [-1.05, 0.0], [-1.1, -0.04], [-1.2, -0.32], [-0.78, -0.05]], finC));
     // dorsal fin and the little adipose fin, on the back
-    parts.push(fin([[-0.05, 0.3], [0.04, 0.52], [0.22, 0.47], [0.33, 0.3]], finC));
-    parts.push(fin([[-0.52, 0.16], [-0.46, 0.25], [-0.38, 0.15]], finC));
+    parts.push(fin([[-0.02, 0.2], [0.06, 0.38], [0.22, 0.34], [0.32, 0.2]], finC));
+    parts.push(fin([[-0.5, 0.1], [-0.45, 0.17], [-0.38, 0.1]], finC));
     // anal fin and the pelvic fins, underneath
-    parts.push(fin([[-0.48, -0.15], [-0.42, -0.33], [-0.26, -0.3], [-0.22, -0.16]], finC));
+    parts.push(fin([[-0.46, -0.1], [-0.42, -0.25], [-0.27, -0.22], [-0.23, -0.11]], finC));
     [-1, 1].forEach((s2) => {
-      parts.push(fin([[0.02, -0.24], [-0.06, -0.38], [0.12, -0.3]], finC, s2 * 0.1, 0, s2 * 0.4));
-      parts.push(fin([[0.62, -0.1], [0.42, -0.3], [0.5, -0.12]], finC, s2 * 0.15, 0, s2 * 0.6));   // pectoral fins behind the gills
+      parts.push(fin([[0.04, -0.16], [-0.04, -0.28], [0.12, -0.2]], finC, s2 * 0.07, 0, s2 * 0.4));
+      parts.push(fin([[0.6, -0.08], [0.42, -0.22], [0.5, -0.09]], finC, s2 * 0.11, 0, s2 * 0.6));   // pectoral fins behind the gills
     });
     // eyes: gold ring, black pupil
     [-1, 1].forEach((s2) => {
-      const e = new THREE.SphereGeometry(0.058, 12, 10); e.translate(0.78, 0.07, s2 * 0.115); parts.push(col(e, () => [0.85, 0.68, 0.25]));
-      const p2 = new THREE.SphereGeometry(0.034, 10, 8); p2.translate(0.81, 0.072, s2 * 0.14); parts.push(col(p2, () => [0.02, 0.02, 0.02]));
+      const e = new THREE.SphereGeometry(0.042, 12, 10); e.scale(1, 1, 0.55); e.translate(0.8, 0.045, s2 * 0.078); parts.push(col(e, () => [0.85, 0.68, 0.25]));
+      const p2 = new THREE.SphereGeometry(0.024, 10, 8); p2.scale(1, 1, 0.5); p2.translate(0.805, 0.046, s2 * 0.094); parts.push(col(p2, () => [0.02, 0.02, 0.02]));
     });
     // a gill line
-    const gill = new THREE.TorusGeometry(0.2, 0.012, 6, 20, Math.PI * 0.9); gill.rotateY(Math.PI / 2); gill.rotateZ(Math.PI / 2 + 0.25); gill.translate(0.62, -0.01, 0);
+    const gill = new THREE.TorusGeometry(0.15, 0.009, 6, 20, Math.PI * 0.9); gill.rotateY(Math.PI / 2); gill.rotateZ(Math.PI / 2 + 0.25); gill.translate(0.62, -0.01, 0);
     parts.push(col(gill, () => [0.3, 0.22, 0.2]));
     // every part keeps only position + colour so they can be joined into one mesh
     const merged = mergeGeometries(parts.map((g) => { const n = g.index ? g.toNonIndexed() : g; ['uv', 'normal'].forEach((k) => n.deleteAttribute(k)); return n; }), false);
