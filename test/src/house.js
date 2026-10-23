@@ -325,7 +325,8 @@ export function createHouse({ scene }) {
         // a stair's railing only stands along the steps: under the stairs (or past its end post) a cat walks freely
         const st = STAIRS.find((q) => axis === 'X' && at > q.r[2] - 0.2 && at < q.r[3] + 0.2 && Math.min(a, b) >= Math.min(q.xt, q.xb) - 0.01 && Math.max(a, b) <= Math.max(q.xt, q.xb) + 0.01);
         if (st) { const rz = rampZ(st, Math.min(Math.max(X, Math.min(a, b)), Math.max(a, b))); if (f > rz - CAT_H && f < rz + 1.2) return true; continue; }
-        if (f > -0.6 && f < 3) return true;
+        // deck railings stand on the decks: underneath them (the openings round the base of the house) a cat walks through
+        if (f > FL - CAT_H - 0.1 && f < 3) return true;
       }
       return boatBlock ? boatBlock(x, z, feet) : false;
     },

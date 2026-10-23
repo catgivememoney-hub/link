@@ -46,19 +46,19 @@ function furTexture() {
 // A real-looking grey tabby foreleg (from Jeffy's reference photo): one continuous furry limb, the forearm
 // running smoothly into a rounded, fluffy paw with soft toe lumps, covered in real fur drawn as many thin
 // layers ("shells") of strands that stand off the skin, silver-tipped, with soft tabby bands on the arm.
-const SHELLS = 22, FUR_LEN = 0.2, PAW_LEN = 1.9;
+const SHELLS = 36, FUR_LEN = 0.42, PAW_LEN = 1.6;
 function pawGeometry() {
   const AROUND = 56, ARM_RINGS = 64, PAW_RINGS = 70;
   const pos = [], nrm = [], idx = [];
   const ring = (z, rx, ry, rings) => rings;
   const rows = [];
   // arm: z 0..1 (stretched to the real length in the shader); paw: z 1..1+PAW_LEN (fixed size)
-  for (let r = 0; r <= ARM_RINGS; r++) { const t = r / ARM_RINGS; rows.push({ z: t, rx: 1.12 - 0.27 * t + 0.05 * Math.sin(t * 9), ry: 1.05 - 0.27 * t }); }
+  for (let r = 0; r <= ARM_RINGS; r++) { const t = r / ARM_RINGS; rows.push({ z: t, rx: 1.12 - 0.27 * t + 0.05 * Math.sin(t * 9) * (1 - t), ry: 1.05 - 0.27 * t }); }
   for (let r = 1; r <= PAW_RINGS; r++) {
     const t = r / PAW_RINGS, z = 1 + t * PAW_LEN;
     // widens past the wrist into the paw, then rounds off into the toes
-    let w = 0.85 + 0.42 * Math.sin(Math.min(1, t / 0.62) * Math.PI / 2), h = 0.8 - 0.1 * t;
-    if (t > 0.58) { const c = Math.sqrt(Math.max(0, 1 - Math.pow((t - 0.58) / 0.42, 2))); w *= c; h *= c; }
+    let w = 0.85 + 0.2 * Math.sin(Math.min(1, t / 0.55) * Math.PI / 2), h = 0.78 + 0.06 * Math.sin(Math.min(1, t / 0.55) * Math.PI / 2);
+    if (t > 0.5) { const c = Math.pow(Math.max(0, 1 - Math.pow((t - 0.5) / 0.5, 2)), 0.5); w *= c; h *= c; }
     rows.push({ z, rx: w, ry: h, t });
   }
   rows.forEach((row, ri) => {
@@ -66,7 +66,7 @@ function pawGeometry() {
       const th = (k / AROUND) * Math.PI * 2, cx = Math.cos(th), cy = Math.sin(th);
       let rx = row.rx, ry = row.ry;
       // four soft toe lumps across the front of the paw (and a slight dip between them)
-      if (row.t !== undefined) { const tl = Math.exp(-Math.pow((row.t - 0.8) / 0.12, 2)); const k4 = 0.5 - 0.5 * Math.cos(4 * Math.PI * cx); const b = 1 + tl * (k4 - 0.35) * 0.18 * (cy > -0.2 ? 1 : 0.4); rx *= b; ry *= b; }
+      if (row.t !== undefined) { const tl = Math.exp(-Math.pow((row.t - 0.82) / 0.13, 2)); const k4 = 0.5 - 0.5 * Math.cos(4 * Math.PI * cx); const b = 1 + tl * (k4 - 0.4) * 0.34 * (cy > -0.3 ? 1 : 0.5); rx *= b; ry *= b; }
       pos.push(cx * rx, cy * ry, row.z);
     }
   });
@@ -81,9 +81,18 @@ function pawGeometry() {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   return g;
 }
-function buildPaw() {
+export function buildPaw() {
   const paw = new THREE.Group();
   const geo = pawGeometry();
+  // the leg's points are stretched to its real length here (and the lighting directions recomputed),
+  // so the arm runs smoothly into the paw at any length
+  const GP = geo.attributes.position, Z0 = Float32Array.from({ length: GP.count }, (_, i) => GP.getZ(i));
+  let lastLen = -1;
+  const stretch = (len) => {
+    if (Math.abs(len - lastLen) < 0.02) return; lastLen = len;
+    for (let i = 0; i < GP.count; i++) { const z = Z0[i]; GP.setZ(i, z <= 1 ? z * len : len + (z - 1)); }
+    GP.needsUpdate = true; geo.computeVertexNormals();
+  };
   const U = { uLen: { value: 6 }, uCurl: { value: 0 } };
   const mats = [];
   for (let i = 0; i <= SHELLS; i++) {
@@ -97,8 +106,8 @@ function buildPaw() {
           // the arm stretches to the leg's length; the paw keeps its size and curls down to grab
           vec3 shapeP(vec3 p, out float pawK) {
             pawK = 0.0;
-            if (p.z <= 1.0) { p.z *= uLen; return p; }
-            float l = p.z - 1.0; pawK = clamp(l / ${PAW_LEN.toFixed(2)}, 0.0, 1.0);
+            if (p.z <= uLen) return p;
+            float l = p.z - uLen; pawK = clamp(l / ${PAW_LEN.toFixed(2)}, 0.0, 1.0);
             float a = uCurl * 1.1 * smoothstep(0.15, 1.0, pawK);
             float c = cos(a), s = sin(a);
             vec2 yz = vec2(p.y, l);
@@ -106,38 +115,50 @@ function buildPaw() {
             return vec3(p.x, yz.x, uLen + yz.y);
           }`)
         .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-          { float pk; vec3 q0 = shapeP(position, pk); float a = (position.z > 1.0) ? uCurl * 1.1 * smoothstep(0.15, 1.0, pk) : 0.0;
+          { float pk; vec3 q0 = shapeP(position, pk); float a = (position.z > uLen) ? uCurl * 1.1 * smoothstep(0.15, 1.0, pk) : 0.0;
             float c = cos(a), s = sin(a); objectNormal = vec3(objectNormal.x, objectNormal.y * c - objectNormal.z * s, objectNormal.y * s + objectNormal.z * c); }`)
         .replace('#include <begin_vertex>', `
           float pk; vec3 transformed = shapeP(position, pk);
           // each fur layer stands a little further off the skin, combed toward the toes and drooping slightly
           transformed += normalize(objectNormal) * uH * ${FUR_LEN.toFixed(2)} + vec3(0.0, -0.03, 0.05) * uH * uH;
-          vP = position; vZ = (position.z <= 1.0 ? position.z * uLen : uLen + (position.z - 1.0)); vTh = atan(position.y, position.x); vPaw = pk;`);
+          vP = position; vZ = position.z; vTh = atan(position.y, position.x); vPaw = pk;`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
-          uniform float uH; varying vec3 vP; varying float vZ; varying float vTh; varying float vPaw;
+          uniform float uH, uLen; varying vec3 vP; varying float vZ; varying float vTh; varying float vPaw;
+          // pink pads on the underside of the paw: the big heel pad and four toe beans (fur doesn't grow on them)
+          float padMask() {
+            if (vP.y > -0.2 || vZ < uLen) return 0.0;
+            float l = vZ - uLen, m = 0.0;
+            m = max(m, 1.0 - smoothstep(0.75, 1.0, length(vec2(vP.x / 0.36, (l - 0.62) / 0.28))));
+            for (int i = 0; i < 4; i++) { float fx = -0.54 + 0.36 * float(i); float fl = 1.12 + 0.1 * (1.0 - abs(fx) / 0.54);
+              m = max(m, 1.0 - smoothstep(0.7, 1.0, length(vec2((vP.x - fx) / 0.14, (l - fl) / 0.13)))); }
+            return m;
+          }
           float ph(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
           float pn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(ph(i), ph(i + vec2(1, 0)), f.x), mix(ph(i + vec2(0, 1)), ph(i + vec2(1, 1)), f.x), f.y); }`)
         .replace('#include <color_fragment>', `#include <color_fragment>
           {
             // strands: a grid wrapped round the leg; each cell is one hair of random length, thinning to its tip
-            vec2 g = vec2(vTh / 6.2832 * 190.0, vZ * 38.0);
+            vec2 g = vec2(vTh * max(0.25, length(vP.xy)) * 24.0, vZ * 26.0);   // strands keep the same spacing where the paw narrows to its tip
             vec2 cell = floor(g), f = fract(g) - 0.5;
-            float rnd = ph(cell), len = 0.55 + 0.45 * ph(cell + 3.1);
+            float rnd = ph(cell), len = 0.45 + 0.55 * ph(cell + 3.1);
+            f += (vec2(ph(cell + 7.0), ph(cell + 9.0)) - 0.5) * 0.3;   // strands not in neat rows
+            float pad = padMask();
+            if (uH > 0.0 && pad > 0.35) discard;
             if (uH > 0.0) {
-              float r = 0.5 * (1.0 - uH / len);
-              if (uH > len || length(f) > r + 0.08) discard;
+              float r = 0.62 * (1.0 - uH / len);
+              if (uH > len || length(f) > r + 0.05) discard;
             }
             // colours: grey tabby; soft darker bands across the top of the forearm; paler, silvery paw
             float top = smoothstep(-0.4, 0.8, sin(vTh));
-            float band = smoothstep(0.25, 0.85, sin(vZ * 2.4 + sin(vTh * 2.0) * 0.7 + pn(vec2(vTh * 2.0, vZ)) * 1.6)) * top * (1.0 - vPaw * 0.85);
+            float band = smoothstep(0.1, 0.9, sin(vZ * 2.4 + sin(vTh * 2.0) * 0.7 + pn(vec2(vTh * 2.0, vZ)) * 1.6)) * top * (1.0 - vPaw * 0.85);
             vec3 base = mix(vec3(0.43, 0.41, 0.39), vec3(0.2, 0.18, 0.17), band);
             base = mix(base, vec3(0.55, 0.53, 0.51), vPaw * 0.6);
             base *= 0.86 + 0.28 * pn(vec2(vTh * 9.0, vZ * 3.0));
             // undercoat darker at the skin, light silver tips on the outer layers
-            vec3 col = mix(base * 0.55, base, smoothstep(0.0, 0.5, uH));
-            col = mix(col, vec3(0.86, 0.85, 0.83), smoothstep(0.55, 1.0, uH / len) * (0.55 + 0.35 * rnd));
-            diffuseColor.rgb = col;
+            vec3 col = mix(base * 0.4, base, smoothstep(0.0, 0.7, uH));
+            col = mix(col, mix(base, vec3(0.82, 0.81, 0.79), 0.6), smoothstep(0.6, 1.0, uH / len) * (0.4 + 0.4 * rnd));
+            diffuseColor.rgb = mix(col, vec3(0.78, 0.45, 0.5), pad);
           }`);
     };
     m.customProgramCacheKey = () => 'meow-pawfur-' + i;
@@ -145,21 +166,13 @@ function buildPaw() {
     const mesh = new THREE.Mesh(geo, m); mesh.renderOrder = i; mesh.frustumCulled = false; mesh.castShadow = i === 0;
     paw.add(mesh);
   }
-  // pink toe beans and the big pad underneath, peeking out of the fur on the palm side
   const hand = new THREE.Group(); paw.add(hand);
-  const padMat = new THREE.MeshStandardMaterial({ color: 0xd99aa3, roughness: 0.6, fog: false });
-  const pads = new THREE.Group(); hand.add(pads);
-  [[0, -0.62, 0.95, 0.34, 0.26], [-0.62, -0.42, 1.55, 0.17, 0.15], [-0.22, -0.5, 1.72, 0.17, 0.15], [0.22, -0.5, 1.72, 0.17, 0.15], [0.62, -0.42, 1.55, 0.17, 0.15]].forEach(([x, y, z, rx, rz]) => {
-    const b = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), padMat); b.scale.set(rx, 0.07, rz); b.position.set(x, y, z); pads.add(b);
-  });
   return {
     group: paw,
     // len: leg length (world units); open: 1 = toes spread, 0 = curled into a grab; claws 0..1 (hidden in the fur)
     set(len, open) {
-      U.uLen.value = Math.max(0.01, len); U.uCurl.value = 1 - open;
+      U.uLen.value = Math.max(0.01, len); stretch(U.uLen.value); U.uCurl.value = 1 - open;
       hand.position.z = len;
-      // the pads follow the paw's curl (same bend as the shader, applied to their group)
-      const a = U.uCurl.value * 1.1 * 0.75; pads.rotation.x = a; pads.position.set(0, 0, 0);
     }
   };
 }
