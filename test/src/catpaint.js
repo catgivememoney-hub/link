@@ -262,7 +262,14 @@ export function openPaintEditor(opts) {
         const p = h.local.clone().addScaledVector(t1, Math.cos(a) * d).addScaledVector(t2, Math.sin(a) * d);
         stamps.push({ ...base, p: [p.x, p.y, p.z], r: R * (0.1 + Math.random() * 0.12), k: BRUSH.hard });
       }
-    } else stamps.push({ ...base, p: [h.local.x, h.local.y, h.local.z], r: R });
+    } else {
+      // a fast stroke: fill the gap since the last dab so the line stays solid
+      if (!first && last) {
+        const gap = last.distanceTo(h.local), step = R * 0.3, k = Math.min(40, Math.floor(gap / step));
+        if (gap < R * 8) for (let j = 1; j < k; j++) { const p = last.clone().lerp(h.local, j / k); stamps.push({ ...base, p: [p.x, p.y, p.z], r: R }); }
+      }
+      stamps.push({ ...base, p: [h.local.x, h.local.y, h.local.z], r: R });
+    }
     last = h.local.clone();
     cat.addPaint(stamps, from);
     if (st.brush !== 'erase' && first) { st.recent = [st.color, ...st.recent.filter((x) => x !== st.color)].slice(0, 10); saveTools(); }
