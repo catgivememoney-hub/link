@@ -43,6 +43,14 @@ Update 4:
 Update 6:
 - Five new cats in Settings → Play together → Your cat, modelled on Jeffy's cat photos: Smokey (grey kitten with a dark cap), Silver tabby (bold stripes), November (felt kitten: tabby head, fluffy white body, pink bag, little boots), Blep (brown tabby, tongue out), El Gato (ginger with huge pleading eyes). Each button now shows a picture of the cat; the chosen one is what other players see.
 
+Update 9:
+- Paint board: 9th brush is a Fill bucket (fills all connected fur of the same colour; stops at painted edges like the paw pads).
+- Fripouille: new realistic eyes (painted iris with fibres, rounded pupil, glossy, dark eyelid rim). El Gato unchanged.
+- Play together: a room box shows a cat icon for you and everyone in the room (crown = host, empty slots up to the room size) and World settings for the host: everyone can change the scene, show name tags, room size (2–8).
+- Graphics: Clouds (Off / Simple / Realistic). Simple on Fast–Fancy, realistic ray-marched 3D clouds on Best and Extreme (src/clouds.js). Thicker when it rains or snows.
+- Fish rebuilt from scratch in code (src/fish.js): a slim trout, head first, forked tail, fins, round spots, a swim wave that grows toward the tail. The downloaded Barramundi model is no longer used.
+- three-mesh-bvh (MIT, test/vendor/three-mesh-bvh) for fast picking in the paint board.
+
 Update 8:
 - Only two cats now: El Gato (the Blender cat) and Fripouille, a realistic cat with real fur textures (test/assets/frip_low|mid|high.glb: 2,600 / 6,300 / 152,000 triangles; textures 512 / 1024 / 2048 px).
 - Fripouille: "3d modelling my cat: Fripouille" by guillaume bolis, https://sketchfab.com/3d-models/0ab14bf98e754f8d90fe1bf1c84ca66c, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changed for MEOW: turned upright, scaled, new 22-bone skeleton and weights, eyes and whiskers replaced, detail levels and texture sizes made.

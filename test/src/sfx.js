@@ -69,6 +69,7 @@ export function installSfx() {
   };
   // level 0..1 (how close you are and whether the fire burns)
   const fireAt = (level) => {
+    if (!Number.isFinite(level)) level = 0;   // never hand the audio a broken number
     if (level <= 0.001 && !fire) return;
     if (!ok()) return;   // (also refreshes the volumes each frame)
     if (!fire) startFire();
