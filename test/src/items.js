@@ -13,7 +13,7 @@ const S = 4.5;                               // house metres → world units
 const FIRE = new THREE.Vector3(108.9, 9.35, -105.1);   // the hearth (where the flames sit)
 const FIRE_OUT = new THREE.Vector3(108.9, 8.88, -110.4); // where the tea lands, on the floor in front of it
 const TABLE = new THREE.Vector3(108.95, 11.13, -109.75); // the coffee table, beside the laptop
-const STILT = { x: 108.4, z: -113.8, half: 0.405 };     // a stilt in the middle under the house
+const STILT = { x: 108.4, z: -113.8, half: 0.945 };     // a stilt in the middle under the house (its concrete footing is 1.9 wide)
 
 const tex = (url) => { const t = new THREE.TextureLoader().load(url); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
 
