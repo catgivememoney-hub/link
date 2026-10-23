@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three-addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three-addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three-addons/utils/SkeletonUtils.js';
-import { encodePaint, decodePaint, paintableGeometry, applyPaint, openPaintEditor, PAINT_VS_HEAD, PAINT_VS_BODY, PAINT_FS_HEAD, PAINT_FS_BODY } from './catpaint.js';
+import { encodePaint, decodePaint, paintableGeometry, applyPaint, bakeModelSpace, openPaintEditor, PAINT_VS_HEAD, PAINT_VS_BODY, PAINT_FS_HEAD, PAINT_FS_BODY } from './catpaint.js';
 
 const PEERJS = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
 const PREFIX = 'meow-cabin-';
@@ -247,7 +247,7 @@ function buildModelCat(tpl, sk, name) {
   let pmesh = null;
   root.traverse((o) => { if (o.isSkinnedMesh) { o.geometry = paintableGeometry(o.geometry); pmesh = o; } if (o.isMesh) { if (fur) o.material = fur; else if (real) { o.material = tintMat(o.material); fur = o.material; } o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
   g.updateMatrixWorld(true);
-  if (pmesh) pmesh.geometry.userData.toModel = root.matrixWorld.clone().invert().multiply(pmesh.matrixWorld);   // file units -> cat model units
+  if (pmesh) bakeModelSpace(pmesh, root);   // where each vertex sits on the cat (for paint)
   const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
   const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
   const mesh = (geo, m) => { const o = new THREE.Mesh(geo, m); o.castShadow = true; return o; };

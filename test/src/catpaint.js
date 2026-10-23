@@ -49,26 +49,40 @@ export function paintableGeometry(geo) {
   g.userData.paintRGBA = new Float32Array(n * 4);   // full precision while painting
   return g;
 }
-// vertex positions and normals in the cat's model space (the files store them squashed for size; userData.toModel undoes that)
-const gridOf = (g) => {
-  if (g.userData.grid) return g.userData.grid;
-  const p = g.attributes.position, nr = g.attributes.normal, M = g.userData.toModel || new THREE.Matrix4(), NM = new THREE.Matrix3().getNormalMatrix(M);
-  const n = p.count, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), v = new THREE.Vector3(), cell = 0.2, map = new Map();
+// vertex positions and normals in the cat's model space, measured on the cat in its rest pose
+// (the files store positions squashed for size and undo that in the skeleton, so we ask three.js where each vertex really is)
+export function bakeModelSpace(mesh, root) {
+  const g = mesh.geometry, p = g.attributes.position, nr = g.attributes.normal, n = p.count;
+  mesh.updateMatrixWorld(true); root.updateMatrixWorld(true); if (mesh.skeleton) mesh.skeleton.update();
+  const M = root.matrixWorld.clone().invert().multiply(mesh.matrixWorld);
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), v = new THREE.Vector3(), w = new THREE.Vector3(), cell = 0.2, map = new Map();
   for (let i = 0; i < n; i++) {
-    v.fromBufferAttribute(p, i).applyMatrix4(M); pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
-    if (nr) { v.fromBufferAttribute(nr, i).applyMatrix3(NM).normalize(); nor[i * 3] = v.x; nor[i * 3 + 1] = v.y; nor[i * 3 + 2] = v.z; }
-    const k = Math.floor(pos[i * 3] / cell) + ',' + Math.floor(pos[i * 3 + 1] / cell) + ',' + Math.floor(pos[i * 3 + 2] / cell);
+    v.fromBufferAttribute(p, i); if (mesh.isSkinnedMesh) mesh.applyBoneTransform(i, v); v.applyMatrix4(M);
+    pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+    const k = Math.floor(v.x / cell) + ',' + Math.floor(v.y / cell) + ',' + Math.floor(v.z / cell);
     let a = map.get(k); if (!a) map.set(k, (a = [])); a.push(i);
   }
-  return (g.userData.grid = { cell, map, pos, nor: nr ? nor : null });
-};
+  if (nr) {
+    // normals: skin a point a tiny step along the stored normal and see which way it went
+    const e = 1e-3;
+    for (let i = 0; i < n; i++) {
+      w.fromBufferAttribute(nr, i).normalize().multiplyScalar(e).add(v.fromBufferAttribute(p, i));
+      if (mesh.isSkinnedMesh) mesh.applyBoneTransform(i, w); w.applyMatrix4(M);
+      w.x -= pos[i * 3]; w.y -= pos[i * 3 + 1]; w.z -= pos[i * 3 + 2]; w.normalize();
+      nor[i * 3] = w.x; nor[i * 3 + 1] = w.y; nor[i * 3 + 2] = w.z;
+    }
+  }
+  g.userData.grid = { cell, map, pos, nor: nr ? nor : null };
+}
+const gridOf = (g) => g.userData.grid;
 const tmpC = new THREE.Color();
 const linear = (c) => { tmpC.setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace); return [tmpC.r, tmpC.g, tmpC.b]; };
 // apply stamps[from..] on top of what is there; from = 0 starts clean
 export function applyPaint(g, stamps, from = 0) {
   const A = g.attributes.paint, F = g.userData.paintRGBA; if (!A || !F) return;
   if (from === 0) F.fill(0);
-  const { cell, map, pos, nor } = gridOf(g), count = pos.length / 3;
+  const grid = gridOf(g); if (!grid) return;
+  const { cell, map, pos, nor } = grid, count = pos.length / 3;
   let lo = Infinity, hi = -1;
   for (let s = from; s < stamps.length; s++) {
     const st = stamps[s], r = Math.max(0.005, st.r), lc = linear(st.c);
