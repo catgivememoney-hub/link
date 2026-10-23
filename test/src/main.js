@@ -154,10 +154,30 @@ import { createAssets } from './assets.js';
     if (seg) seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; REACH.mode = b.dataset.val; try { localStorage.setItem('meow.reach', REACH.mode); } catch { /* ignore */ } mark(); });
     mark();
   }
-  // sound mix (Settings → Sound): footsteps and world sounds, 0..1.5 each
-  window.MEOW_MIX = { steps: 1, world: 1 };
-  try { Object.assign(window.MEOW_MIX, JSON.parse(localStorage.getItem('meow.mix') || '{}')); } catch { /* ignore */ }
-  [['volSteps', 'steps'], ['volWorld', 'world']].forEach(([id, k]) => {
+  // sound mix (Settings → Sound), 0..1.5 each: your cat, objects, fireplace, boat, nature & link trees
+  window.MEOW_MIX = { player: 1, objects: 1, fire: 1, boat: 1, nature: 1 };
+  try {
+    const old = JSON.parse(localStorage.getItem('meow.mix') || '{}');
+    if (old.steps !== undefined && old.player === undefined) old.player = old.steps;   // older saved mix
+    if (old.world !== undefined && old.objects === undefined) old.objects = old.fire = old.boat = old.world;
+    ['player', 'objects', 'fire', 'boat', 'nature'].forEach((k) => { if (typeof old[k] === 'number') window.MEOW_MIX[k] = old[k]; });
+  } catch { /* ignore */ }
+  // the shared sound file (sound.js) has one volume; scale each of its sounds by its kind here
+  {
+    const KIND = { step: 'player', click: 'player', ignite: 'player', puff: 'player', fire: 'player', whoosh: 'player', cast: 'player', reel: 'player',
+      page: 'objects', chime: 'nature', plop: 'nature', splash: 'nature' };
+    let base = 0.7, wrapped = false;
+    const wrap = () => {
+      const S = window.MEOW_SOUND; if (!S || wrapped) return; wrapped = true;
+      const setV = S.setVolume.bind(S); S.setVolume = (v) => { base = Math.max(0, Math.min(1, Number(v) || 0)); setV(base); };
+      Object.entries(KIND).forEach(([fn, k]) => {
+        const orig = S[fn]; if (typeof orig !== 'function') return;
+        S[fn] = (...a) => { const m = window.MEOW_MIX[k] ?? 1; if (m === 1) return orig(...a); const v0 = (window.MEOW_STATE && typeof window.MEOW_STATE.volume === 'number') ? window.MEOW_STATE.volume : base; setV(Math.min(1, v0 * m)); try { return orig(...a); } finally { setV(v0); } };
+      });
+    };
+    wrap(); setTimeout(wrap, 600);
+  }
+  [['volPlayer', 'player'], ['volObjects', 'objects'], ['volFire', 'fire'], ['volBoat', 'boat'], ['volNature', 'nature']].forEach(([id, k]) => {
     const el = document.getElementById(id), out = document.getElementById(id + 'Val'); if (!el) return;
     const show = () => { out.textContent = Math.round(window.MEOW_MIX[k] * 100) + '%'; };
     el.value = String(Math.round(window.MEOW_MIX[k] * 100)); show();
@@ -772,6 +792,20 @@ import { createAssets } from './assets.js';
     }
   }
   { const r = document.getElementById('gfxRange'); if (r) r.addEventListener('input', () => applyGfx(GFX_ORDER[+r.value])); }
+  // Settings → Graphics → Custom…: open the advanced panel; Save keeps the changes, Cancel restores how it was when opened
+  {
+    const $ = (id) => document.getElementById(id), btn = $('gfxCustomBtn'), panel = $('gfxCustom'), note = $('gfxSaved');
+    let snap = null;
+    const open = (on) => { panel.hidden = !on; btn.setAttribute('aria-expanded', String(on)); btn.textContent = on ? 'Custom ▾' : 'Custom…'; };
+    if (btn && panel) {
+      btn.addEventListener('click', () => { if (panel.hidden) { snap = { adv: JSON.parse(JSON.stringify(ADV)), level: GFX.level }; if (note) note.textContent = ''; open(true); } else open(false); });
+      $('gfxSave').addEventListener('click', () => { saveAdv(); try { localStorage.setItem('meow.gfx', GFX.level); } catch { /* ignore */ } snap = null; open(false); if (note) note.textContent = 'Saved ✓'; toastMsg('Graphics saved'); });
+      $('gfxCancel').addEventListener('click', () => {
+        if (snap) { ADV.res = snap.adv.res; ADV.sharp = snap.adv.sharp; ADV.custom = snap.adv.custom; saveAdv(); applyGfx(snap.level); }
+        snap = null; open(false); if (note) note.textContent = 'Not changed';
+      });
+    }
+  }
   applyGfx(GFX.level);
 
   /* ---------- coming back from a link with the browser's Back button ---------- */

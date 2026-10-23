@@ -4,14 +4,14 @@
    · the boat engine: a low putter whose pitch and loudness follow the throttle
    It replaces window.MEOW_SOUND.door and adds MEOW_SFX.{fireAt, engine}. */
 export function installSfx() {
-  let ac = null, out = null;
+  let ac = null, out = null, master = null; const bus = {};   // one volume per kind of sound (Settings → Sound)
   const S = () => window.MEOW_STATE || {};
   const vol = () => (S().sound === false ? 0 : Math.pow(S().volume === undefined ? 0.7 : S().volume, 1.5));
   const ok = () => {
     if (!ac && navigator.userActivation && !navigator.userActivation.hasBeenActive) return false;   // browsers only allow sound after a click / key
-    if (!ac) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false; ac = new AC(); out = ac.createGain(); out.connect(ac.destination); }
+    if (!ac) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false; ac = new AC(); master = ac.createGain(); master.connect(ac.destination); ['objects', 'fire', 'boat'].forEach((k) => { bus[k] = ac.createGain(); bus[k].connect(master); }); out = bus.objects; }
     if (ac.state === 'suspended') ac.resume();
-    out.gain.value = vol() * ((window.MEOW_MIX && window.MEOW_MIX.world) ?? 1);
+    const M = window.MEOW_MIX || {}; master.gain.value = vol(); Object.keys(bus).forEach((k) => { bus[k].gain.value = M[k] ?? 1; });
     return ac.state === 'running';
   };
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -52,7 +52,7 @@ export function installSfx() {
   /* ---------- the fireplace ---------- */
   let fire = null;
   const startFire = () => {
-    const g = ac.createGain(); g.gain.value = 0; g.connect(out);
+    const g = ac.createGain(); g.gain.value = 0; g.connect(bus.fire);
     const roar = ac.createBufferSource(); roar.buffer = noise(); roar.loop = true;
     const rg = ac.createGain(); rg.gain.value = 0.18;
     chain(roar, [['lowpass', 420], ['highpass', 60]], rg); rg.connect(g); roar.start();
@@ -70,7 +70,7 @@ export function installSfx() {
   // level 0..1 (how close you are and whether the fire burns)
   const fireAt = (level) => {
     if (level <= 0.001 && !fire) return;
-    if (!ok()) return;
+    if (!ok()) return;   // (also refreshes the volumes each frame)
     if (!fire) startFire();
     fire.g.gain.setTargetAtTime(Math.max(0, Math.min(1, level)) * 0.9, ac.currentTime, 0.25);
   };
@@ -78,7 +78,7 @@ export function installSfx() {
   /* ---------- the boat engine ---------- */
   let eng = null;
   const startEngine = () => {
-    const g = ac.createGain(); g.gain.value = 0; g.connect(out);
+    const g = ac.createGain(); g.gain.value = 0; g.connect(bus.boat);
     const o = ac.createOscillator(); o.type = 'sawtooth';
     const sub = ac.createOscillator(); sub.type = 'square';
     // the putter: the tone is chopped by a pulse at the firing rate
@@ -88,7 +88,7 @@ export function installSfx() {
     o.connect(mix); sub.connect(sg); sg.connect(mix); mix.connect(am);
     chain(am, [['lowpass', 520, 1.2], ['highpass', 35]], g);
     const wash = ac.createBufferSource(); wash.buffer = noise(); wash.loop = true; const wg = ac.createGain(); wg.gain.value = 0;
-    chain(wash, [['bandpass', 600, 0.6]], wg); wg.connect(out);
+    chain(wash, [['bandpass', 600, 0.6]], wg); wg.connect(bus.boat);
     [o, sub, pulse, wash].forEach((n) => n.start());
     eng = { g, o, sub, pulse, wg, lp: 0 };
   };

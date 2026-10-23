@@ -225,10 +225,16 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
         </div>
         <input id="volume" type="range" min="0" max="100" step="1" aria-label="Volume" data-i18n-aria="sVolume">
         <p class="hint small" data-i18n="sSoundHint">Starts on first click</p>
-        <div class="set-row" style="margin-top:12px"><h3 style="font-size:12px">Footsteps</h3><output id="volStepsVal" class="sens-val">100%</output></div>
-        <input id="volSteps" type="range" min="0" max="150" step="5" value="100" aria-label="Footsteps volume">
-        <div class="set-row" style="margin-top:10px"><h3 style="font-size:12px">World (doors, fire, boat)</h3><output id="volWorldVal" class="sens-val">100%</output></div>
-        <input id="volWorld" type="range" min="0" max="150" step="5" value="100" aria-label="World sounds volume">
+        <div class="set-row" style="margin-top:12px"><h3 style="font-size:12px">Your cat <span style="font-weight:400;opacity:.6">· footsteps, flashlight, lantern, fishing</span></h3><output id="volPlayerVal" class="sens-val">100%</output></div>
+        <input id="volPlayer" type="range" min="0" max="150" step="5" value="100" aria-label="Your cat volume">
+        <div class="set-row" style="margin-top:10px"><h3 style="font-size:12px">Objects <span style="font-weight:400;opacity:.6">· doors, light switch, drawer, books</span></h3><output id="volObjectsVal" class="sens-val">100%</output></div>
+        <input id="volObjects" type="range" min="0" max="150" step="5" value="100" aria-label="Objects volume">
+        <div class="set-row" style="margin-top:10px"><h3 style="font-size:12px">Fireplace <span style="font-weight:400;opacity:.6">· crackle and roar</span></h3><output id="volFireVal" class="sens-val">100%</output></div>
+        <input id="volFire" type="range" min="0" max="150" step="5" value="100" aria-label="Fireplace volume">
+        <div class="set-row" style="margin-top:10px"><h3 style="font-size:12px">Boat <span style="font-weight:400;opacity:.6">· engine and water wash</span></h3><output id="volBoatVal" class="sens-val">100%</output></div>
+        <input id="volBoat" type="range" min="0" max="150" step="5" value="100" aria-label="Boat volume">
+        <div class="set-row" style="margin-top:10px"><h3 style="font-size:12px">Nature &amp; link trees <span style="font-weight:400;opacity:.6">· tree chimes, fish splashes</span></h3><output id="volNatureVal" class="sens-val">100%</output></div>
+        <input id="volNature" type="range" min="0" max="150" step="5" value="100" aria-label="Nature &amp; link trees volume">
       </section>
       </div>
       <div class="set-tab" data-tab="graphics" hidden>
@@ -240,13 +246,16 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
         <input id="gfxRange" type="range" min="0" max="6" step="1" value="3" aria-label="Graphics" list="gfxTicks">
         <div style="display:flex;justify-content:space-between;font-size:10px;letter-spacing:.04em;opacity:.55;margin-top:4px"><span>None</span><span>Fast</span><span>Default</span><span>Balanced</span><span>Fancy</span><span>Best</span><span>Extreme</span></div>
         <p id="gfxMem" style="margin:8px 0 0;font-size:11px;opacity:.6"></p>
-        <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;letter-spacing:.06em;opacity:.8">Advanced (Custom)</summary>
+        <div style="display:flex;gap:8px;margin-top:10px"><button id="gfxCustomBtn" type="button" class="btn" aria-expanded="false">Custom…</button><span id="gfxSaved" style="font-size:11px;opacity:.6;align-self:center"></span></div>
+        <div id="gfxCustom" hidden style="margin-top:8px;padding:10px 12px;border-radius:14px;background:rgba(127,127,127,.12)">
+          <p style="margin:0 0 4px;font-size:12px;opacity:.75">Turn any setting on or off. You see each change right away; <b>Save</b> keeps them, <b>Cancel</b> puts everything back.</p>
           <div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Resolution</h3><select id="advRes" style="font:inherit;font-size:12px;padding:4px 8px;border-radius:9px;border:1px solid var(--glass-line,rgba(0,0,0,.15));background:var(--glass-strong,#fff);color:inherit"><option value="0">Auto (by level)</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></div>
           <div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Sharpness</h3><output id="advSharpVal" class="sens-val">0%</output></div>
           <input id="advSharp" type="range" min="0" max="100" step="5" value="0" aria-label="Sharpness">
           <div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Shadows</h3><button id="advShadows" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Sun shadows</h3><select id="advSun" style="font:inherit;font-size:12px;padding:4px 8px;border-radius:9px;border:1px solid var(--glass-line,rgba(0,0,0,.15));background:var(--glass-strong,#fff);color:inherit"><option value="0">Off</option><option value="1024">Low</option><option value="2048">High</option><option value="3072">Ultra</option></select></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Lamp & fire shadows</h3><select id="advLamps" style="font:inherit;font-size:12px;padding:4px 8px;border-radius:9px;border:1px solid var(--glass-line,rgba(0,0,0,.15));background:var(--glass-strong,#fff);color:inherit"><option value="0">Off</option><option value="512">On</option><option value="1024">High</option></select></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Textures (bark, rock, ground)</h3><button id="advTex" class="switch" type="button" role="switch" aria-checked="true"><b></b></button></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Grass & flowers</h3><button id="advPlants" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Ambient occlusion</h3><button id="advAO" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Contact shadows</h3><button id="advContact" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Reflections</h3><button id="advSSR" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Bounce light</h3><button id="advGI" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div><div class="set-row" style="margin-top:8px"><h3 style="font-size:12px">Sun shafts</h3><button id="advRays" class="switch" type="button" role="switch" aria-checked="false"><b></b></button></div>
           <p style="margin:6px 0 0;font-size:11px;opacity:.6">Changing any of these switches the level to Custom. Resolution and sharpness apply to every level.</p>
-        </details>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button id="gfxCancel" type="button" class="btn">Cancel</button><button id="gfxSave" type="button" class="btn solid">Save</button></div>
+        </div>
         <p style="margin:4px 0 0;font-size:11px;opacity:.6">Fancy+: sun shadows near and far, soft creases (ambient occlusion). Best+: contact shadows, shadows from the fire and lamps. Extreme: reflections on the lake, bounce light, sun shafts.</p>
       </section>
       <section class="p-sec" style="--d:2">
@@ -379,7 +388,7 @@ document.addEventListener('click',function(e){if(e.target.closest&&e.target.clos
     "three-addons/": "./test/vendor/three/examples/jsm/"
   } }
   </script>
-  <script type="module" src="test/src/main.js?v=t14"></script>
+  <script type="module" src="test/src/main.js?v=t15"></script>
   <div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:rgba(200,60,40,.85);padding:6px 10px;border-radius:999px">TEST COPY · new cabin &amp; sailboat</div>
 </body>
 </html>

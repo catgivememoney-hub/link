@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three-addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three-addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three-addons/utils/SkeletonUtils.js';
+import { encodePaint, decodePaint, paintableGeometry, applyPaint, openPaintEditor, PAINT_VS_HEAD, PAINT_VS_BODY, PAINT_FS_HEAD, PAINT_FS_BODY } from './catpaint.js';
 
 const PEERJS = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
 const PREFIX = 'meow-cabin-';
@@ -188,12 +189,12 @@ function furSkinMat(sk) {
   };
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
-    sh.vertexShader = 'attribute vec4 furMask;\nattribute vec2 furT;\nuniform float uInflate;\nvarying vec4 vMask;\nvarying float vT;\nvarying vec3 vFurP;\n' +
+    sh.vertexShader = PAINT_VS_HEAD + 'attribute vec4 furMask;\nattribute vec2 furT;\nuniform float uInflate;\nvarying vec4 vMask;\nvarying float vT;\nvarying vec3 vFurP;\n' +
       sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-        vMask = furMask; vT = furT.x * 100.0 - 50.0; vFurP = position;
+        vMask = furMask; vT = furT.x * 100.0 - 50.0; vFurP = position; ` + PAINT_VS_BODY + `
         float headK = 1.0 - smoothstep(1.2, 1.6, length((position - vec3(0.0, 4.02, -2.2)) / vec3(1.3, 1.2, 1.25)));
         transformed += normal * uInflate * (1.0 - headK) * smoothstep(0.7, 1.4, position.y);`);
-    sh.fragmentShader = 'uniform vec3 uFur, uBody, uPale, uStripe, uBack, uPink;\nuniform float uBodyOn, uAmt, uBackAmt;\nvarying vec4 vMask;\nvarying float vT;\nvarying vec3 vFurP;\n' +
+    sh.fragmentShader = PAINT_FS_HEAD + 'uniform vec3 uFur, uBody, uPale, uStripe, uBack, uPink;\nuniform float uBodyOn, uAmt, uBackAmt;\nvarying vec4 vMask;\nvarying float vT;\nvarying vec3 vFurP;\n' +
       sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       {
         vec3 p = vFurP;
@@ -206,6 +207,7 @@ function furSkinMat(sk) {
         c = mix(c, uPale, clamp(vMask.r, 0.0, 1.0));
         c = mix(c, uPink, vMask.a);
         diffuseColor.rgb *= c;
+        ` + PAINT_FS_BODY + `
       }`);
   };
   m.customProgramCacheKey = () => 'meow-catskin';
@@ -229,18 +231,21 @@ function buildModelCat(tpl, sk, name) {
     const m = base.clone(); tintU = { uTint: { value: new THREE.Color(sk.color) }, uTintOn: { value: sk.color.toLowerCase() === '#c47a3f' ? 0 : 1 } };
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, tintU);
-      sh.fragmentShader = 'uniform vec3 uTint;\nuniform float uTintOn;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      sh.vertexShader = PAINT_VS_HEAD + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + PAINT_VS_BODY);
+      sh.fragmentShader = PAINT_FS_HEAD + 'uniform vec3 uTint;\nuniform float uTintOn;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 c = diffuseColor.rgb; float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
           float sat = (mx - mn) / max(mx, 1e-4), lum = dot(c, vec3(0.299, 0.587, 0.114));
           vec3 orig = vec3(0.77, 0.48, 0.25);   // the model's own fur colour (linear-ish)
           vec3 re = uTint * lum / dot(orig, vec3(0.299, 0.587, 0.114));
           diffuseColor.rgb = mix(c, re, smoothstep(0.18, 0.45, sat) * uTintOn);
+          ` + PAINT_FS_BODY + `
         }`);
     };
     m.customProgramCacheKey = () => 'meow-catrealtint'; return m;
   };
-  root.traverse((o) => { if (o.isMesh) { if (fur) o.material = fur; else if (real) { o.material = tintMat(o.material); fur = o.material; } o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  let pmesh = null;
+  root.traverse((o) => { if (o.isSkinnedMesh) { o.geometry = paintableGeometry(o.geometry); pmesh = o; } if (o.isMesh) { if (fur) o.material = fur; else if (real) { o.material = tintMat(o.material); fur = o.material; } o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
   g.updateMatrixWorld(true);
   const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
   const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
@@ -314,7 +319,9 @@ function buildModelCat(tpl, sk, name) {
   let phase = 0, lt = 0, sit = 0, look = 0, bob = 0;
   const legA = [0, 0, 0, 0];
   return {
-    group: g, model: true,
+    group: g, model: true, mesh: pmesh,
+    setPaint(st) { if (pmesh) applyPaint(pmesh.geometry, st || [], 0); },
+    addPaint(st, from) { if (pmesh) applyPaint(pmesh.geometry, st, from); },
     animate(dt, speed, time) {
       const k = Math.min(1, speed / 25);
       phase += dt * (2 + speed * 0.28);
@@ -358,6 +365,20 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
   const others = new Map();   // id -> { cat, cur, tgt, name, scene }
   const me = { name: (() => { try { return localStorage.getItem('meow.name') || ''; } catch { return ''; } })() || 'Cat ' + Math.floor(100 + Math.random() * 900), skin: (() => { try { return Math.min(SKINS.length - 1, Math.max(0, +(localStorage.getItem('meow.skin') || 0) | 0)); } catch { return 0; } })() };
   me.color = (() => { try { return localStorage.getItem('meow.catcolor') || ''; } catch { return ''; } })() || SKINS[me.skin].color;
+  // painted fur, one per model ('cat' = El Gato, 'frip' = Fripouille), packed as text
+  const modelOf = (i) => (SKINS[i] && SKINS[i].model) || 'cat';
+  me.paint = (() => { try { return JSON.parse(localStorage.getItem('meow.catpaint') || '{}'); } catch { return {}; } })();
+  const myPaint = () => me.paint[modelOf(me.skin)] || '';
+  const paintsBy = new Map();   // other players' paint: id -> { skin, d }
+  const applyRemotePaint = (id) => {
+    const o = others.get(id), v = paintsBy.get(id); if (!o || !o.cat.setPaint) return;
+    o.cat.setPaint(v && v.skin === o.tgt.skin ? (v.st || (v.st = decodePaint(v.d))) : []);
+  };
+  const sendPaint = (to) => {
+    const msg = { t: 'ev', k: 'catpaint', v: { skin: me.skin, d: myPaint() }, id: myId };
+    if (to) { if (to.open) to.send(msg); return; }
+    conns.forEach((c) => { if (c.open) c.send(msg); });
+  };
   const handlers = {}; let sync = { snapshot: () => ({}), apply: () => {} };
   const ui = {};
 
@@ -369,6 +390,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     if (!o) {
       const cat = buildCat(skinOf(info), info.name || 'Cat');
       scene.add(cat.group);
+      setTimeout(() => applyRemotePaint(id), 0);
       o = { cat, cur: { x: info.x, z: info.z, y: info.y, yaw: info.yaw }, tgt: { ...info }, name: info.name, color: info.color, skin: info.skin };
       others.set(id, o);
       if (!quiet) toast('🐾 ' + (info.name || 'A cat') + ' joined');
@@ -384,6 +406,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
       o.cat = buildCat(skinOf(o.tgt), o.name || 'Cat'); scene.add(o.cat.group);
       o.cat.group.position.copy(old.group.position); o.cat.group.rotation.copy(old.group.rotation); o.cat.group.visible = old.group.visible;
     });
+    others.forEach((_, id) => applyRemotePaint(id));
   };
   addEventListener('meow:catmodel', (e) => { if (e.detail === wantDetail) { rebuildAll(); redrawSkins(); } });
   addEventListener('meow:gfx', (e) => {
@@ -404,6 +427,10 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
       o.color = d.color; o.skin = d.skin; o.tgt = d; o.cat.group.visible = true;
       if (d.boat && handlers.boat) handlers.boat(d.boat, id);
       if (host) conns.forEach((c, cid) => { if (cid !== from && c.open) c.send({ ...d, id }); });   // relay
+    } else if (d.t === 'ev' && d.k === 'catpaint') {
+      const id = d.id || from; if (id === myId || !d.v) return;
+      paintsBy.set(id, { skin: d.v.skin, d: String(d.v.d || '').slice(0, 140000) }); applyRemotePaint(id);
+      if (host) conns.forEach((c, cid) => { if (cid !== from && c.open) c.send(d); });
     } else if (d.t === 'ev') {
       if ((d.id || from) !== myId && handlers[d.k]) handlers[d.k](d.v, d.id || from);
       if (host) conns.forEach((c, cid) => { if (cid !== from && c.open) c.send(d); });
@@ -412,7 +439,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     } else if (d.t === 'bye') { drop(d.id || from); if (host) conns.forEach((c, cid) => { if (cid !== from && c.open) c.send(d); }); }
   };
   const wire = (c) => {
-    c.on('open', () => { conns.set(c.peer, c); if (host) c.send({ t: 'snap', v: sync.snapshot() }); onStatusChange(); status(host ? `Hosting · room ${code} · ${conns.size} joined` : `Joined room ${code}`); });
+    c.on('open', () => { conns.set(c.peer, c); if (host) { c.send({ t: 'snap', v: sync.snapshot() }); paintsBy.forEach((v, id) => c.send({ t: 'ev', k: 'catpaint', v: { skin: v.skin, d: v.d }, id })); } setTimeout(() => sendPaint(c), 400); onStatusChange(); status(host ? `Hosting · room ${code} · ${conns.size} joined` : `Joined room ${code}`); });
     c.on('data', (d) => onData(c.peer, d));
     c.on('close', () => { conns.delete(c.peer); onStatusChange(); drop(c.peer); if (host) { conns.forEach((x) => x.open && x.send({ t: 'bye', id: c.peer })); status(`Hosting · room ${code} · ${conns.size} joined`); } else status('Disconnected from the host'); });
   };
@@ -455,46 +482,72 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     if (ui.leave) ui.leave.addEventListener('click', leave);
     const sk = $('onSkins');
     if (sk) {
-      sk.innerHTML = '';   // built once, from scratch
-      sk.style.cssText = 'display:flex;flex-direction:column;gap:10px;margin-top:6px';
-      const PRESETS = ['#e29b56', '#c47a3f', '#8a8580', '#2a2624', '#ece6dc', '#e2c9a0', '#7a5638', '#6f7c88'];
+      // the old heading above this box moves into the box's own title row
+      const oldH = sk.previousElementSibling; if (oldH && /your cat/i.test(oldH.textContent)) oldH.remove();
+      sk.innerHTML = '';
+      sk.style.cssText = 'display:flex;flex-direction:column;gap:10px;margin-top:14px';
       sk.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px">
+          <h3 style="font-size:13px;margin:0;flex:1">Your cat</h3>
+          <span id="onCatState" style="font-size:11px;opacity:.65"></span>
+          <button id="onCatSave" type="button" class="btn solid" style="padding:5px 14px">Save</button>
+        </div>
         <div style="position:relative;border-radius:16px;overflow:hidden;background:radial-gradient(circle at 50% 40%,rgba(255,255,255,.25),rgba(0,0,0,.18));height:220px;cursor:grab;touch-action:none" id="onPrevBox">
           <canvas id="onPrev" style="width:100%;height:100%;display:block"></canvas>
           <div id="onPrevName" style="position:absolute;left:12px;bottom:10px;font-size:12px;font-weight:600;opacity:.85"></div>
           <div style="position:absolute;right:12px;bottom:10px;font-size:11px;opacity:.6">drag to turn</div>
         </div>
         <div id="onModels" style="display:flex;gap:8px"></div>
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:12px;opacity:.75;margin-right:4px">Colour</span>
-          <span id="onSw" style="display:flex;gap:6px;flex-wrap:wrap"></span>
-          <label style="position:relative;width:30px;height:30px;border-radius:50%;overflow:hidden;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.5);background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)" title="Any colour">
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="position:relative;width:40px;height:40px;flex:none;border-radius:50%;overflow:hidden;cursor:pointer;box-shadow:inset 0 0 0 3px rgba(255,255,255,.55);background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)" title="Choose the fur colour">
             <input id="onColor" type="color" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%">
           </label>
-          <button id="onColorReset" type="button" class="btn" style="padding:4px 10px;font-size:12px">Original</button>
-        </div>`;
-      const canvas = $('onPrev'), box = $('onPrevBox'), nameEl = $('onPrevName'), models = $('onModels'), sw = $('onSw'), pick = $('onColor');
-      const save = () => { try { localStorage.setItem('meow.skin', String(me.skin)); localStorage.setItem('meow.catcolor', me.color); } catch { /* ignore */ } };
+          <div style="display:flex;flex-direction:column;flex:1;min-width:0"><span style="font-size:12px;font-weight:600">Fur colour</span><span id="onColorHex" style="font-size:11px;opacity:.65"></span></div>
+          <span id="onColorNow" style="width:26px;height:26px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.4)"></span>
+        </div>
+        <button id="onPaint" type="button" class="btn" style="padding:9px 12px">🖌 Paint your cat…</button>`;
+      const canvas = $('onPrev'), box = $('onPrevBox'), nameEl = $('onPrevName'), models = $('onModels'), pick = $('onColor'), stateEl = $('onCatState');
+      // changes here are a draft until Save
+      const draft = { skin: me.skin, color: me.color, paint: { ...me.paint } };
+      const dirty = () => draft.skin !== me.skin || draft.color.toLowerCase() !== me.color.toLowerCase() || ['cat', 'frip'].some((k) => (draft.paint[k] || '') !== (me.paint[k] || ''));
+      const commit = () => {
+        me.skin = draft.skin; me.color = draft.color; me.paint = { ...draft.paint };
+        try { localStorage.setItem('meow.skin', String(me.skin)); localStorage.setItem('meow.catcolor', me.color); localStorage.setItem('meow.catpaint', JSON.stringify(me.paint)); } catch { /* ignore */ }
+        sendPaint(); marks(); toast('🐾 Your cat is saved');
+      };
+      $('onCatSave').addEventListener('click', commit);
       SKINS.forEach((k, i) => {
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.dataset.i = i; b.textContent = k.name + (k.model === 'frip' ? ' · realistic' : '');
-        b.style.cssText = 'flex:1;padding:8px 10px;border-radius:12px;border:2px solid transparent';
-        b.addEventListener('click', () => { if (me.skin === i) return; me.skin = i; me.color = k.color; save(); refresh(true); });
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.dataset.i = i; b.textContent = k.name;
+        b.style.cssText = 'flex:1;padding:8px 10px;border-radius:12px;border:2px solid transparent;background-image:none';
+        b.addEventListener('click', () => { if (draft.skin === i) return; draft.skin = i; draft.color = k.color; refresh(true); });
         models.appendChild(b);
       });
-      PRESETS.forEach((c) => {
-        const b = document.createElement('button'); b.type = 'button'; b.dataset.c = c; b.title = c;
-        b.style.cssText = `width:26px;height:26px;border-radius:50%;border:2px solid transparent;background:${c};cursor:pointer;padding:0;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)`;
-        b.addEventListener('click', () => setCol(c)); sw.appendChild(b);
-      });
-      const setCol = (c) => { me.color = c; save(); if (cat && cat.setColor) cat.setColor(c); else refresh(true); marks(); };
-      pick.addEventListener('input', () => setCol(pick.value));
-      $('onColorReset').addEventListener('click', () => setCol(SKINS[me.skin].color));
+      pick.addEventListener('input', () => { draft.color = pick.value; if (cat && cat.setColor) cat.setColor(pick.value); else refresh(true); marks(); });
       const marks = () => {
-        [...models.children].forEach((b) => { b.style.borderColor = +b.dataset.i === me.skin ? 'currentColor' : 'transparent'; });
-        [...sw.children].forEach((b) => { b.style.borderColor = b.dataset.c.toLowerCase() === me.color.toLowerCase() ? 'currentColor' : 'transparent'; });
-        pick.value = me.color; nameEl.textContent = SKINS[me.skin].name;
+        [...models.children].forEach((b) => { b.style.borderColor = +b.dataset.i === draft.skin ? 'currentColor' : 'transparent'; });
+        pick.value = draft.color; $('onColorHex').textContent = draft.color.toUpperCase(); $('onColorNow').style.background = draft.color;
+        nameEl.textContent = SKINS[draft.skin].name;
+        const d = dirty(); stateEl.textContent = d ? 'Not saved yet' : 'Saved ✓'; $('onCatSave').disabled = !d; $('onCatSave').style.opacity = d ? '1' : '.45';
       };
-      // the live 3D preview
+      // the paint board opens on the very-high model of your cat
+      const modelReady = (model, d) => new Promise((res) => {
+        if (catModels[model + ':' + d]) return res(catModels[model + ':' + d]);
+        const on = () => { if (catModels[model + ':' + d]) { removeEventListener('meow:catmodel', on); res(catModels[model + ':' + d]); } };
+        addEventListener('meow:catmodel', on); loadCatModel(d, model); setTimeout(() => res(catModels[model + ':' + d] || null), 20000);
+      });
+      $('onPaint').addEventListener('click', async () => {
+        const model = modelOf(draft.skin), sk2 = skinOf({ skin: draft.skin, color: draft.color });
+        const first = catModels[model + ':high'] || catModels[model + ':' + wantDetail] || await modelReady(model, wantDetail);
+        if (!first) { toast('The cat model is still loading, try again in a moment'); return; }
+        openPaintEditor({
+          color: '#3b2a1e',
+          stamps: decodePaint(draft.paint[model] || ''),
+          build: () => buildModelCat(first, sk2, ''),
+          buildHigh: catModels[model + ':high'] ? null : () => modelReady(model, 'high').then((t) => t && buildModelCat(t, sk2, '')),
+          onSave: (st) => { draft.paint[model] = st.length ? encodePaint(st) : ''; if (cat && cat.setPaint) cat.setPaint(st); marks(); }
+        });
+      });
+      // the live 3D preview (shows the draft)
       let r = null, scn = null, cam = null, cat = null, spin = 0.6, drag = null, raf = 0, last = 0;
       const setup = () => {
         if (r) return true;
@@ -512,10 +565,11 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
         if (!setup()) return;
         if (rebuild || !cat) {
           if (cat) { scn.remove(cat.group); if (cat.dispose) cat.dispose(); }
-          cat = buildCat(skinOf({ skin: me.skin, color: me.color }), '');
+          cat = buildCat(skinOf({ skin: draft.skin, color: draft.color }), '');
+          if (cat.setPaint) cat.setPaint(decodePaint(draft.paint[modelOf(draft.skin)] || ''));
           scn.add(cat.group);
-          const real = SKINS[me.skin].model === 'frip';
-          cam.position.set(0, real ? 5.2 : 4.6, real ? -17 : -14); cam.lookAt(0, real ? 2.6 : 2.6, 0);
+          const real = SKINS[draft.skin].model === 'frip';
+          cam.position.set(0, real ? 5.2 : 4.6, real ? -17 : -14); cam.lookAt(0, 2.6, 0);
         }
       };
       const loop = (t) => {
@@ -523,7 +577,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
         if (!sk.offsetParent) return;   // Settings closed: stop drawing
         const dt = Math.min(0.05, (t - (last || t)) / 1000); last = t;
         const w = canvas.clientWidth, h = canvas.clientHeight;
-        if (r && (canvas.width !== Math.round(w * devicePixelRatio) || canvas.height !== Math.round(h * devicePixelRatio))) { r.setPixelRatio(Math.min(2, devicePixelRatio)); r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
+        if (r && (canvas.width !== Math.round(w * Math.min(2, devicePixelRatio)) || canvas.height !== Math.round(h * Math.min(2, devicePixelRatio)))) { r.setPixelRatio(Math.min(2, devicePixelRatio)); r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
         if (cat) { if (!drag) spin += dt * 0.5; cat.group.rotation.y = spin; cat.animate(dt, 0, t / 1000); cat.setLook(Math.sin(t / 1400) * 0.25); }
         if (r) r.render(scn, cam);
         raf = requestAnimationFrame(loop);
