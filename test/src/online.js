@@ -522,7 +522,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     }
     if (!selfCat) return;
     selfCat.group.visible = show; if (!show) return;
-    selfCat.group.position.set(s.x, s.y, s.z); selfCat.group.rotation.y = s.yaw;
+    selfCat.group.position.set(s.x, s.y, s.z); selfCat.group.rotation.order = 'YXZ'; selfCat.group.rotation.y = s.yaw; selfCat.group.rotation.x = s.tilt || 0;
     selfCat.animate(s.dt, s.pose ? 0 : s.speed, s.time); selfCat.setLook(s.pitch || 0); selfCat.setSit(!!s.sit);
     if (selfCat.setPose) selfCat.setPose(s.pose || 0, s.time);
   };
@@ -860,7 +860,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
           sendT = 0;
           const p = player.state, on = !!player.walking;
           const ex = extra ? extra() : {};
-          const msg = { t: 'p', id: myId, on, ...ex, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.feet.toFixed(2), yaw: +(ex.bodyYaw ?? p.yaw).toFixed(3), pitch: +(p.pitch || 0).toFixed(3), name: me.name, color: me.color, skin: me.skin, host, scene: scenes.name };
+          const msg = { t: 'p', id: myId, on, ...ex, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +(ex.visY ?? p.feet).toFixed(2), tl: +(ex.tilt || 0).toFixed(3), yaw: +(ex.bodyYaw ?? p.yaw).toFixed(3), pitch: +(p.pitch || 0).toFixed(3), name: me.name, color: me.color, skin: me.skin, host, scene: scenes.name };
           conns.forEach((c) => { if (c.open) c.send(msg); });
         }
       }
@@ -872,7 +872,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
         c.x += (t.x - c.x) * a; c.z += (t.z - c.z) * a; c.y += (t.y - c.y) * a;
         let dy = t.yaw - c.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); c.yaw += dy * a;
         const speed = Math.hypot(c.x - px, c.z - pz) / Math.max(dt, 1e-3);
-        o.cat.group.position.set(c.x, c.y, c.z); o.cat.group.rotation.y = c.yaw;
+        o.cat.group.position.set(c.x, c.y, c.z); o.cat.group.rotation.order = 'YXZ'; o.cat.group.rotation.y = c.yaw; o.cat.group.rotation.x = t.tl || 0;
         // at the computer: on the chair, facing the desk
         if (t.pose === 2 && t.seatAt) { o.cat.group.position.set(t.seatAt.x, t.seatAt.y, t.seatAt.z); o.cat.group.rotation.y = 0; }
         o.cat.animate(dt, (t.seat >= 0 || t.pose) ? 0 : speed, time); o.cat.setLook(t.pitch || 0); o.cat.setLight(t.lt || 0, time); o.cat.setSit(t.seat >= 0);

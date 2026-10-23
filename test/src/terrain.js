@@ -170,7 +170,16 @@ export function createTerrain(scene) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   scene.add(mesh);
-  return { mesh, TU, trail };
+  // the ground's height exactly as drawn (the mesh's own triangles, not the smooth formula): cats stand on this
+  const GX = 300, GZ = 245, SX = 2200 / GX, SZ = 1800 / GZ, X0 = -1100, Z0 = -1300, PY = geo.attributes.position;
+  const surfaceAt = (x, z) => {
+    const gx = (x - X0) / SX, gz = (z - Z0) / SZ;
+    if (gx < 0 || gz < 0 || gx >= GX || gz >= GZ) return heightAt(x, z);
+    const ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz, W = GX + 1;
+    const ha = PY.getY(iz * W + ix), hb = PY.getY((iz + 1) * W + ix), hc = PY.getY((iz + 1) * W + ix + 1), hd = PY.getY(iz * W + ix + 1);
+    return fx + fz < 1 ? ha + (hd - ha) * fx + (hb - ha) * fz : hc + (hb - hc) * (1 - fx) + (hd - hc) * (1 - fz);
+  };
+  return { mesh, TU, trail, surfaceAt };
 }
 
 /* ---------- water with a moving ripple texture ---------- */

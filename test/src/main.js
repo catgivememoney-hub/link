@@ -170,7 +170,7 @@ import { createAssets } from './assets.js';
   const online = createOnline({ scene, player, scenes, toast: (m) => toastMsg(m),
     extra: () => ({ lt: hand.state === 'torch' ? 1 : hand.state === 'lamp' ? 2 : 0, seat: boat.active ? boat.seat : -1, boat: boat.snapshot() || undefined, skin: undefined,
       // 1 = curled up on the bed / sofa, 2 = sitting at the computer (then where the chair is)
-      bodyYaw: VIEW.body,
+      bodyYaw: VIEW.body, visY: VIEW.visY, tilt: VIEW.tilt,
       pose: computer.active ? 2 : curl.k > 0.5 ? 1 : 0, ...(computer.active && cabin.chairSeat() ? { seatAt: cabin.chairSeat() } : {}) }) });
   window.MEOW_ONLINE = online;
   setTimeout(() => { window.MEOW_DEBUG = { get portal() { return portal; }, trees, player, camera, scenes, cabin }; }, 0);   // (testing)
@@ -587,6 +587,17 @@ import { createAssets } from './assets.js';
       curl.k += ((curl.t > 1.5 ? 1 : 0) - curl.k) * Math.min(1, dt * 3);
       if (curl.k > 0.001 && player.walking && VIEW.shown === 0) camOut.pos.y -= curl.k * 1.2;
     }
+    // where your cat's paws really are: on the ground exactly as it's drawn (the walking height uses a
+    // smoothed ground, which on a slope sits a little above the visible hillside), tipped to follow the slope
+    {
+      const ps = player.state, g = physics.groundAt(ps.x, ps.z);
+      VIEW.visY = ps.feet; VIEW.tilt = 0;
+      if (player.walking && !ps.air && Math.abs(ps.feet - g) < 0.05 && ps.feet > water.mesh.position.y + 0.05) {
+        const sAt = terrain.surfaceAt, fx = -Math.sin(VIEW.body), fz = -Math.cos(VIEW.body);
+        VIEW.visY = Math.max(water.mesh.position.y, sAt(ps.x, ps.z));
+        VIEW.tilt = Math.max(-0.5, Math.min(0.5, Math.atan2(sAt(ps.x + fx * 1.6, ps.z + fz * 1.6) - sAt(ps.x - fx * 1.6, ps.z - fz * 1.6), 3.2)));
+      }
+    }
     // the perspective: 0 first person (your cat's eyes) · 1 third person. Switching glides the camera over.
     // In third person the mouse moves the camera freely around your cat; the cat only turns when you walk (WASD).
     {
@@ -623,7 +634,7 @@ import { createAssets } from './assets.js';
         camOut.pos.lerpVectors(VIEW.fromP, tp, e); camOut.q.copy(VIEW.fromQ).slerp(tq, e);
       } else { camOut.pos.copy(tp); camOut.q.copy(tq); }
       const show = walk && (mode > 0 || VIEW.t < 1);
-      online.updateSelf(show, { x: ps.x, y: ps.feet, z: ps.z, yaw: VIEW.body, pitch: mode ? 0 : ps.pitch, speed: sp, dt, time, pose: curl.k > 0.5 ? 1 : 0 });
+      online.updateSelf(show, { x: ps.x, y: VIEW.visY ?? ps.feet, tilt: VIEW.tilt || 0, z: ps.z, yaw: VIEW.body, pitch: mode ? 0 : ps.pitch, speed: sp, dt, time, pose: curl.k > 0.5 ? 1 : 0 });
     }
     camera.position.copy(camOut.pos);
     camera.quaternion.copy(camOut.q);
