@@ -361,7 +361,14 @@ export function createDeepSnow(scene, TU, ground) {
     Object.assign(sh.uniforms, TU, DU);
     const H = `uniform sampler2D tTrail, tGround; uniform vec4 uTrailBox, uGroundBox; uniform vec2 uCell; uniform float uSnowLine, uWaterY, uDepth; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ;
       float trv(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
-      float gh(vec2 p) { return texture2D(tGround, (p - uGroundBox.xy) / uGroundBox.zw).r; }
+      // the ground height exactly as the terrain mesh draws it: the same two triangles per square (not a smooth blend),
+      // so the snow never dips under the visible ground and lets it poke through as jagged teeth
+      float gh(vec2 p) {
+        vec2 g = (p - uGroundBox.xy) / uCell - 0.5; ivec2 sz = textureSize(tGround, 0);
+        vec2 i0 = clamp(floor(g), vec2(0.0), vec2(sz) - 2.0); vec2 f = clamp(g - i0, 0.0, 1.0); ivec2 i = ivec2(i0);
+        float ha = texelFetch(tGround, i, 0).r, hb = texelFetch(tGround, i + ivec2(0, 1), 0).r, hc = texelFetch(tGround, i + ivec2(1, 1), 0).r, hd = texelFetch(tGround, i + ivec2(1, 0), 0).r;
+        return (f.x + f.y < 1.0) ? ha + (hd - ha) * f.x + (hb - ha) * f.y : hc + (hb - hc) * (1.0 - f.x) + (hd - hc) * (1.0 - f.y);
+      }
       float sh2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float sn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(sh2(i), sh2(i + vec2(1, 0)), f.x), mix(sh2(i + vec2(0, 1)), sh2(i + vec2(1, 1)), f.x), f.y); }
       // snow height above the ground at p: full depth, pressed down in the trail, heaped up beside it
@@ -385,7 +392,7 @@ export function createDeepSnow(scene, TU, ground) {
         #endif`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vSk = sk; vXZ = wxz; vPress = trv(wxz); vWall = length(vec2(hx, hz)) / (2.0 * e);
-        transformed.y = g0 + max(0.03, snowH(wxz, sk));`);
+        transformed.y = g0 + max(0.1, snowH(wxz, sk));`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uSnow; uniform vec4 uHole; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ;')
       .replace('#include <color_fragment>', `#include <color_fragment>
