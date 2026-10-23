@@ -8,6 +8,8 @@
 import * as THREE from 'three';
 
 const HOUSE = { x: 106, z: -119 };
+// the link grove: behind the house (the dock and the lake are in front, toward -x), so +x of the house
+const GROVE = { x: 160, z: -119 };
 const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
 const clamp = (x) => Math.min(1, Math.max(0, x)), ease = (x) => x * x * (3 - 2 * x);
 const easeIn = (x) => x * x * x, easeOut = (x) => 1 - Math.pow(1 - x, 3);
@@ -109,8 +111,8 @@ export function createPortal({ scene, trees, camera, isClearing }) {
   /* ---------- which tree holds which link ---------- */
   {
     const ok = trees.base.map((b, i) => ({ i, b }))
-      .filter(({ b }) => { const d = Math.hypot(b.p.x - HOUSE.x, b.p.z - HOUSE.z); return d > 50 && d < 600 && b.p.y > 3 && b.p.y < 55 && !isClearing(b.p.x, b.p.z); });
-    const taken = new Set(), MIN = 10;
+      .filter(({ b }) => { const d = Math.hypot(b.p.x - HOUSE.x, b.p.z - HOUSE.z); return d > 28 && d < 600 && b.p.x > HOUSE.x + 14 && b.p.y > 3 && b.p.y < 55 && !isClearing(b.p.x, b.p.z); });
+    const taken = new Set(), MIN = 7;
     const nearest = (x, z) => {
       let best = null, bd = Infinity;
       for (const c of ok) {
@@ -120,7 +122,7 @@ export function createPortal({ scene, trees, camera, isClearing }) {
       }
       return best;
     };
-    let from = HOUSE;
+    let from = GROVE;   // the first link takes the tree nearest the grove; each next one the free tree nearest the last
     for (const link of links) {
       const c = nearest(from.x, from.z); if (!c) break;
       taken.add(c.i);
@@ -128,6 +130,8 @@ export function createPortal({ scene, trees, camera, isClearing }) {
       from = { x: c.b.p.x, z: c.b.p.z };
     }
   }
+
+  if (trees.keep) trees.keep([...byTree.keys()]);
 
   /* ---------- the hover card ---------- */
   const tip = document.createElement('div');

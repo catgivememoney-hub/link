@@ -160,7 +160,7 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
         attribute float aTip; attribute float aMat;
         varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj; varying float vMat; varying vec3 vObjN;
         ${TX ? 'varying vec3 vWP; varying vec3 vWN;' : ''}
-        ${tree ? 'attribute float aHash; uniform float uBare; varying float vHash; varying float vLeaf;' : ''}`)
+        ${tree ? 'attribute float aHash; attribute float aKeep; uniform float uBare; varying float vHash; varying float vLeaf;' : ''}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vObj = position; vMat = aMat; vObjN = objectNormal;
         mat4 cIM = mat4(1.0);
@@ -186,10 +186,10 @@ export const coverMaterial = (shared, show, { sway = 0, side = THREE.FrontSide, 
                  * ${sway.toFixed(4)} * ${tree ? '1.15' : '2.3'} * uWind * (0.35 + gust) * position.y * position.y;
         transformed.x += sw; transformed.z += sw * 0.6;` : ''}
         ${tree ? `vHash = aHash; vLeaf = step(12.5, aMat);
-        // autumn: some trees drop all their needles (only trunk and branches stay)
-        float bare = step(aHash, uBare) * vLeaf;
+        // autumn: some trees drop all their needles (only trunk and branches stay); link trees always keep theirs
+        float bare = step(aHash, uBare) * vLeaf * (1.0 - aKeep);
         transformed.xz *= 1.0 - bare * 0.985;` : ''}
-        ${sink ? `transformed.y -= (1.0 - uShow) * ${sink.toFixed(1)};` : 'transformed *= uShow;'}`);
+        ${sink ? `transformed.y -= (1.0 - uShow) * ${sink.toFixed(1)};` : tree ? 'transformed *= mix(uShow, 1.0, aKeep);   // link trees stay full size in every scene' : 'transformed *= uShow;'}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform vec3 uSnowC, uMossC; varying float vSnowA; varying float vMossA; varying float vTipA; varying vec3 vObj;

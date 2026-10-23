@@ -95,6 +95,7 @@ export function createTrees({ scene, shared, isClearing }) {
     trees.count = n;
     const hs = new Float32Array(N_MAX); for (let i = 0; i < N_MAX; i++) hs[i] = hash2(i * 1.37, 9.1);
     pineGeo.setAttribute('aHash', new THREE.InstancedBufferAttribute(hs, 1));
+    pineGeo.setAttribute('aKeep', new THREE.InstancedBufferAttribute(new Float32Array(N_MAX), 1));   // 1 = a link tree: always shown, full size
   }
   trees.castShadow = true; trees.receiveShadow = true;
   scene.add(trees);
@@ -183,10 +184,13 @@ export function createTrees({ scene, shared, isClearing }) {
   let hovered = -1;
   const shakes = new Map();
   const sq = new THREE.Quaternion(), se = new THREE.Euler(), sm = new THREE.Matrix4();
+  let keepCount = 0;
   const solid = () => trees.visible && show.value > 0.5;
 
   return {
     mesh: trees, fruits, base, geo: pineGeo, mat,
+    // link trees: always visible and full size, whatever the scene
+    keep(ids) { const a = pineGeo.attributes.aKeep; a.array.fill(0); ids.forEach((i) => { a.array[i] = 1; }); a.needsUpdate = true; keepCount = ids.length; },
     get solid() { return solid(); },
     // a trunk within reach of (x, z)? pad = extra room (world units)
     blocks(x, z, pad = 0) {
@@ -220,7 +224,7 @@ export function createTrees({ scene, shared, isClearing }) {
     // s = current scene values
     update(s, now) {
       mat.color.copy(s.treeC);
-      show.value = s.trees; trees.visible = s.trees > 0.01; fruits.visible = false;
+      show.value = s.trees; trees.visible = s.trees > 0.01 || keepCount > 0; fruits.visible = false;
       SEASON.uFall.value = s.fall; SEASON.uBloom.value = s.bloom; SEASON.uLush.value = s.lush; SEASON.uBare.value = s.bare;
       FRUIT.uFruitCol.value = s.fruitCol;
       branchShow.value = Math.min(1, s.bare * 2.5) * s.trees; branches.visible = branchShow.value > 0.01;

@@ -72,7 +72,7 @@ const BASE = {
     cam: V(-20, 12, 100), look: V(0, 12, -20), bloom: 1, flowers: 1, hives: 1, creek: 1, fishy: 0.3
   },
   summer: {
-    sat: 0.92, skyTop: '#3f86cf', skyHorizon: '#cde6f4', skyBottom: '#93c4d6', fog: '#cbe2ec', fogDensity: 0.0021,
+    sat: 0.98, skyTop: '#3a82cf', skyHorizon: '#b4d6ee', skyBottom: '#8fc0d6', fog: '#a9cfe6', fogDensity: 0.0011,
     low: '#5a8e42', high: '#7ba158', snowC: '#f2f4f4', snowLine: 210, water: 0, waterC: '#21b2b4', waterRough: 0.05,
     sunC: '#fff5d8', sunDir: V(0.2, 0.62, -1), sunSize: 0.0026, lightC: '#fff6e4', light: 1.35, lightDir: V(0.3, 0.85, -0.3),
     hemiSky: '#cbe6ff', hemiGround: '#4a6a38', hemi: 0.95, treeC: '#3d8a38', trees: 1,
@@ -80,11 +80,11 @@ const BASE = {
     cam: V(10, 11, 110), look: V(0, 10, -10), lush: 1, fruitCol: 1, sand: 1, creek: 0.7, flowers: 0.45, fishy: 0.4
   },
   fall: {
-    sat: 0.82, skyTop: '#7a93ab', skyHorizon: '#ead7bd', skyBottom: '#b8a38c', fog: '#d8c6ad', fogDensity: 0.0036,
+    sat: 0.9, skyTop: '#6f8fb0', skyHorizon: '#e2cdb0', skyBottom: '#b39f86', fog: '#c8b79c', fogDensity: 0.0017,
     low: '#7d6b44', high: '#92805b', snowC: '#efece6', snowLine: 175, water: 0, waterC: '#5c7380', waterRough: 0.2,
     sunC: '#ffd7a4', sunDir: V(-0.5, 0.24, -1), sunSize: 0.002, lightC: '#ffdaa8', light: 0.95, lightDir: V(-0.5, 0.5, -0.4),
     hemiSky: '#e5d4bd', hemiGround: '#5a4a34', hemi: 0.85, treeC: '#4c5a3a', trees: 1,
-    rain: 0, snow: 0, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.3,
+    rain: 0, snow: 0, fire: 0, stars: 0, aurora: 0, aur1: '#000000', aur2: '#000000', mist: 0.1,
     cam: V(-30, 14, 105), look: V(0, 12, -30), fall: 1, bare: 0.4, leaves: 1, creek: 0.5
   }
 };
