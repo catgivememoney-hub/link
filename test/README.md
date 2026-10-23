@@ -30,7 +30,7 @@ Update 3:
 | File | Source | License |
 | --- | --- | --- |
 | Monitor (inside `test/assets/house.glb`) | [Monitor](https://poly.pizza/m/3CNCR-m-KGH) by TheFlyingPotato Youtube, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| Cat "Fripouille" (`test/assets/frip_*.glb`, changed: re-rigged, scaled, detail levels) | [3d modelling my cat: Fripouille](https://sketchfab.com/3d-models/0ab14bf98e754f8d90fe1bf1c84ca66c) by guillaume bolis, via Sketchfab | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Cat "Curious" (`test/assets/cur_*.glb`, changed: turned, scaled, new 22-bone skeleton and weights, detail levels, smaller textures) | [Curious Cat 3d model free](https://sketchfab.com/3d-models/c1465490a7c74d48b599e1d68ff990ef) by iRahulRajput, via Sketchfab | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Dock lamp (inside `test/assets/house.glb`) | [Garden Lamp](https://poly.pizza/m/cCiFRJLsuI) by Zsky, via Poly Pizza | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 Update 4:
@@ -42,6 +42,13 @@ Update 4:
 
 Update 6:
 - Five new cats in Settings → Play together → Your cat, modelled on Jeffy's cat photos: Smokey (grey kitten with a dark cap), Silver tabby (bold stripes), November (felt kitten: tabby head, fluffy white body, pink bag, little boots), Blep (brown tabby, tongue out), El Gato (ginger with huge pleading eyes). Each button now shows a picture of the cat; the chosen one is what other players see.
+
+Update 10:
+- The realistic cat is now "Curious" (a calico, with its own real eyes) instead of Fripouille. Model: "Curious Cat 3d model free" by iRahulRajput, https://sketchfab.com/3d-models/c1465490a7c74d48b599e1d68ff990ef, CC BY 4.0. Changed for MEOW: turned, scaled, rigged, three detail levels (2,600 / 16,000 / 120,000 triangles).
+- Link trees: grouped behind the house (the dock side is the front) and always shown full size in every scene; new links take the free tree nearest the last one.
+- Summer and autumn: much less haze. In-game chat (Enter) when someone else is in your world.
+- High graphics (Best/Extreme or Custom → "Realistic fire, rain & fish"): shader fire with embers, heavy rain with splash rings, fish with scales. Thicker chimney smoke at every level.
+- Fixed flicker (z-fighting) on the roof, gables, office chair and boat seats in house.glb.
 
 Update 9:
 - Paint board: 9th brush is a Fill bucket (fills all connected fur of the same colour; stops at painted edges like the paw pads).

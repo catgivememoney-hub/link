@@ -15,8 +15,8 @@ const PREFIX = 'meow-cabin-';
 // stripe = tabby stripes, back = darker back/cap, belly = chest/belly/muzzle/paws, iris = eye colour, extras = tongue, big eyes, boots, purse
 export const SKINS = [
   { name: 'El Gato', color: '#e29b56', stripe: '#bb6529', stripeAmt: 0.6, belly: '#f8f0e5', bigEyes: true },
-  // realistic cat: "3d modelling my cat: Fripouille" by guillaume bolis (Sketchfab, CC BY 4.0), re-rigged for MEOW
-  { name: 'Fripouille', color: '#c47a3f', model: 'frip', iris: '#8d9443' }
+  // realistic cat: "Curious Cat 3d model free" by iRahulRajput (Sketchfab, CC BY 4.0), rigged for MEOW
+  { name: 'Curious', color: '#c47a3f', model: 'cur' }
 ];
 
 const loadPeer = () => new Promise((res, rej) => {
@@ -152,7 +152,7 @@ function buildSimpleCat(skin, name) {
    One skinned mesh + 23 bones. The fur pattern is painted from per-vertex masks baked in Blender:
    colour R = pale (belly, chest, muzzle, paws, tail tip), G = where stripes may go, B = darker back / ears, A = pink (nose, inner ears);
    uv.x = stripe position along each body part. So every skin works on every detail level with no textures. */
-const CAT_FILES = (m, d) => `test/assets/${m === 'frip' ? 'frip' : 'cat'}_${d}.glb`;
+const CAT_FILES = (m, d) => `test/assets/${m === 'cur' ? 'cur' : 'cat'}_${d}.glb`;
 // graphics level → model detail: None/Fast/Default = low (2.6k triangles), Balanced/Fancy = mid (16k), Best/Extreme = very high (110k)
 const detailFor = (lv) => (lv === 'best' || lv === 'extreme') ? 'high' : (lv === 'balanced' || lv === 'fancy' || lv === 'custom') ? 'mid' : 'low';
 const catModels = {}, catLoading = {};
@@ -218,6 +218,7 @@ function furSkinMat(sk) {
 // bind-pose points on the model (three.js coords: x right, y up, -z forward)
 const SPOTS = {
   cat: { eye: [new THREE.Vector3(0.576, 4.276, -2.644), new THREE.Vector3(-0.576, 4.276, -2.644)], eyeN: [new THREE.Vector3(0.62, 0.35, -0.70), new THREE.Vector3(-0.62, 0.35, -0.70)], mouth: new THREE.Vector3(0, 3.62, -2.96), eyeR: 1, inset: 0.05 },
+  cur: { eye: [], eyeN: [], mouth: new THREE.Vector3(0, 3.2, -4.3), eyeR: 1, inset: 0 },   // has its own eyes
   frip: { eye: [new THREE.Vector3(0.262, 4.49, -4.6), new THREE.Vector3(-0.262, 4.49, -4.6)], eyeN: [new THREE.Vector3(0.4, 0.08, -0.91), new THREE.Vector3(-0.4, 0.08, -0.91)], mouth: new THREE.Vector3(0, 4.26, -4.97), eyeR: 1, inset: 0.035 }
 };
 
@@ -267,10 +268,11 @@ function buildModelCat(tpl, sk, name) {
   const g = new THREE.Group();
   const body = new THREE.Group(); g.add(body);
   const root = SkeletonUtils.clone(tpl); body.add(root);
-  const real = sk.model === 'frip', SP = SPOTS[real ? 'frip' : 'cat'];
+  const real = sk.model === 'frip' || sk.model === 'cur', SP = SPOTS[sk.model || 'cat'] || SPOTS.cat;
   let fur = real ? null : furSkinMat(sk), tintU = null;
   const tintMat = (base) => {   // recolour the orange fur of the realistic cat, keep its white parts white
-    const m = base.clone(); tintU = { uTint: { value: new THREE.Color(sk.color) }, uTintOn: { value: sk.color.toLowerCase() === '#c47a3f' ? 0 : 1 } };
+    const m = base.clone(); const def = (SKINS.find((k) => k.model === sk.model) || {}).color || '';
+    tintU = { uTint: { value: new THREE.Color(sk.color) }, uTintOn: { value: sk.color.toLowerCase() === def.toLowerCase() ? 0 : 1 } };
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, tintU);
       sh.vertexShader = PAINT_VS_HEAD + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + PAINT_VS_BODY);
@@ -414,7 +416,7 @@ function buildModelCat(tpl, sk, name) {
     setSit(on) { sit += ((on ? 1 : 0) - sit) * 0.15; this._apply(); },
     setColor(col) {
       const c = new THREE.Color(col);
-      if (tintU) { tintU.uTint.value.copy(c); tintU.uTintOn.value = col.toLowerCase() === SKINS.find((k) => k.model === 'frip').color ? 0 : 1; return; }
+      if (tintU) { tintU.uTint.value.copy(c); tintU.uTintOn.value = col.toLowerCase() === ((SKINS.find((k) => k.model === sk.model) || {}).color || '').toLowerCase() ? 0 : 1; return; }
       const u = fur && fur.userData.u; if (!u) return;
       u.uFur.value.copy(c); u.uBody.value.copy(c); if (sk.stripe) u.uStripe.value.copy(c).multiplyScalar(0.62);
     },
@@ -434,7 +436,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
   const others = new Map();   // id -> { cat, cur, tgt, name, scene }
   const me = { name: (() => { try { return localStorage.getItem('meow.name') || ''; } catch { return ''; } })() || 'Cat ' + Math.floor(100 + Math.random() * 900), skin: (() => { try { return Math.min(SKINS.length - 1, Math.max(0, +(localStorage.getItem('meow.skin') || 0) | 0)); } catch { return 0; } })() };
   me.color = (() => { try { return localStorage.getItem('meow.catcolor') || ''; } catch { return ''; } })() || SKINS[me.skin].color;
-  // painted fur, one per model ('cat' = El Gato, 'frip' = Fripouille), packed as text
+  // painted fur, one per model ('cat' = El Gato, 'cur' = Curious), packed as text
   const modelOf = (i) => (SKINS[i] && SKINS[i].model) || 'cat';
   me.paint = (() => { try { return JSON.parse(localStorage.getItem('meow.catpaint') || '{}'); } catch { return {}; } })();
   const myPaint = () => me.paint[modelOf(me.skin)] || '';
@@ -498,7 +500,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     if (!peer) { box.hidden = true; return; }
     box.hidden = false;
     const tile = (o, mine) => {
-      const real = SKINS[o.skin] && SKINS[o.skin].model === 'frip';
+      const real = SKINS[o.skin] && !!SKINS[o.skin].model;
       return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;animation:roomPop .35s cubic-bezier(.3,1.6,.5,1)">
         <div style="position:relative;width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 2px ${mine ? 'currentColor' : 'rgba(255,255,255,.15)'}">${catIcon(o.color || '#999', real)}${o.host ? '<span title="Host" style="position:absolute;top:-9px;right:-6px;font-size:15px">👑</span>' : ''}</div>
         <span style="font-size:11px;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(o.name || 'Cat').replace(/[<>&]/g, '')}${mine ? ' (you)' : ''}</span></div>`;
@@ -699,7 +701,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
       const canvas = $('onPrev'), box = $('onPrevBox'), nameEl = $('onPrevName'), models = $('onModels'), pick = $('onColor'), stateEl = $('onCatState');
       // changes here are a draft until Save
       const draft = { skin: me.skin, color: me.color, paint: { ...me.paint } };
-      const dirty = () => draft.skin !== me.skin || draft.color.toLowerCase() !== me.color.toLowerCase() || ['cat', 'frip'].some((k) => (draft.paint[k] || '') !== (me.paint[k] || ''));
+      const dirty = () => draft.skin !== me.skin || draft.color.toLowerCase() !== me.color.toLowerCase() || ['cat', 'cur'].some((k) => (draft.paint[k] || '') !== (me.paint[k] || ''));
       const commit = () => {
         me.skin = draft.skin; me.color = draft.color; me.paint = { ...draft.paint };
         try { localStorage.setItem('meow.skin', String(me.skin)); localStorage.setItem('meow.catcolor', me.color); localStorage.setItem('meow.catpaint', JSON.stringify(me.paint)); } catch { /* ignore */ }
@@ -758,7 +760,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
           cat = buildCat(skinOf({ skin: draft.skin, color: draft.color }), '');
           if (cat.setPaint) cat.setPaint(decodePaint(draft.paint[modelOf(draft.skin)] || ''));
           scn.add(cat.group);
-          const real = SKINS[draft.skin].model === 'frip';
+          const real = !!SKINS[draft.skin].model;
           cam.position.set(0, real ? 5.2 : 4.6, real ? -17 : -14); cam.lookAt(0, 2.6, 0);
         }
       };
