@@ -202,14 +202,19 @@ export function createWater(scene, U) {
       .replace('#include <common>', `#include <common>
         varying vec2 vWXZ; uniform vec4 uStudy, uShore; uniform sampler2D tShore, tN2; uniform float uLevel, uTime, uIce;
         float wh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-        float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh(i), wh(i + vec2(1, 0)), f.x), mix(wh(i + vec2(0, 1)), wh(i + vec2(1, 1)), f.x), f.y); }`)
+        float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh(i), wh(i + vec2(1, 0)), f.x), mix(wh(i + vec2(0, 1)), wh(i + vec2(1, 1)), f.x), f.y); }
+        // distance to the nearest edge between cells (for the ice's crack network)
+        float ivor(vec2 q) { vec2 i = floor(q), f = fract(q); float d1 = 8.0, d2 = 8.0;
+          for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) { vec2 g = vec2(float(x), float(y)); vec2 o = vec2(wh(i + g), wh(i + g + 19.1));
+            float d = length(g + o - f); if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
+          return d2 - d1; }`)
       .replace('vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;', `vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
         {
           vec3 m2 = texture2D(tN2, vWXZ * 0.021 + uTime * vec2(-0.0021, 0.0014)).xyz * 2.0 - 1.0;
           vec3 m3 = texture2D(tN2, vWXZ * 0.0047 + uTime * vec2(0.0009, 0.0011)).xyz * 2.0 - 1.0;
           float far = smoothstep(60.0, 600.0, length(vec3(vWXZ.x, 0.0, vWXZ.y) - vec3(cameraPosition.x, 0.0, cameraPosition.z)));
           mapN = vec3((mapN.xy + m2.xy) * (1.0 - far * 0.7) + m3.xy * 0.7, mapN.z * m2.z);
-          mapN.xy *= 1.0 - 0.92 * uIce;
+          mapN.xy *= 1.0 - 0.8 * uIce;   // ice keeps a faint uneven surface
         }`)
       .replace('#include <clipping_planes_fragment>', 'if (vWXZ.x > uStudy.x && vWXZ.x < uStudy.y && vWXZ.y > uStudy.z && vWXZ.y < uStudy.w) discard;\n#include <clipping_planes_fragment>')
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -228,11 +233,24 @@ export function createWater(scene, U) {
           diffuseColor.a *= smoothstep(-0.1, 3.2, depth) * (1.0 - 0.3 * shallow) + clamp(foam, 0.0, 0.4) * smoothstep(0.0, 1.2, depth) * 0.5;
           // frozen (snow scene): pale blue-white ice with cracks and drifts of snow; solid, no shine of open water
           if (uIce > 0.001) {
-            float c1 = smoothstep(0.035, 0.0, abs(wn(vWXZ * 0.045) - 0.5)), c2 = smoothstep(0.025, 0.0, abs(wn(vWXZ * 0.13 + 7.0) - 0.5));
-            float drift = smoothstep(0.45, 0.8, wn(vWXZ * 0.02 + 3.0) * 0.7 + wn(vWXZ * 0.09) * 0.3);
-            vec3 ice = mix(vec3(0.74, 0.84, 0.9), vec3(0.86, 0.92, 0.95), wn(vWXZ * 0.03));
-            ice *= 1.0 - c1 * 0.22 - c2 * 0.12;
-            ice = mix(ice, vec3(0.97, 0.98, 0.99), drift * 0.85);
+            // frozen (snow scene): clear blue ice, darker where the lake is deep, cloudy and white in patches,
+            // a web of white cracks (big plates and fine ones), frozen bubbles, skate scratches and drifts of frost
+            vec2 p = vWXZ;
+            float deepK = smoothstep(0.5, 10.0, depth);
+            vec3 ice = mix(vec3(0.52, 0.77, 0.9), vec3(0.13, 0.38, 0.58), deepK);
+            float cloud = wn(p * 0.05) * 0.6 + wn(p * 0.21) * 0.4;
+            ice = mix(ice, vec3(0.74, 0.88, 0.95), smoothstep(0.55, 0.9, cloud) * 0.6);
+            ice *= 0.92 + 0.12 * wn(p * 0.7);
+            float cr1 = smoothstep(0.07, 0.0, ivor(p * 0.03 + wn(p * 0.05) * 0.7));
+            float cr2 = smoothstep(0.05, 0.0, ivor(p * 0.12 + 3.0 + wn(p * 0.3) * 0.4)) * (0.4 + 0.6 * wn(p * 0.04 + 5.0));
+            ice = mix(ice, vec3(0.9, 0.96, 1.0), clamp(cr1 * 0.9 + cr2 * 0.55, 0.0, 1.0));
+            ice = mix(ice, ice * 0.8, smoothstep(0.2, 0.0, ivor(p * 0.03 + wn(p * 0.05) * 0.7)) * 0.25);   // the crack edges go a little darker underneath
+            vec2 bc = floor(p * 2.5); float bub = step(0.975, wh(bc)) * smoothstep(0.3, 0.05, length(fract(p * 2.5) - 0.5 - (wh(bc + 3.0) - 0.5) * 0.3));
+            ice = mix(ice, vec3(0.95, 0.98, 1.0), bub * 0.75 * (1.0 - deepK * 0.5));
+            float sc = smoothstep(0.02, 0.0, abs(fract(dot(p, vec2(0.8, 0.6)) * 0.7 + wn(p * 0.15) * 1.6) - 0.5)) * smoothstep(0.62, 0.8, wn(p * 0.035 + 9.0));
+            ice = mix(ice, vec3(0.86, 0.94, 0.99), sc * 0.35);
+            float frost = smoothstep(0.5, 0.85, wn(p * 0.02 + 3.0) * 0.7 + wn(p * 0.09) * 0.3);
+            ice = mix(ice, vec3(0.95, 0.97, 0.99), frost * 0.75);
             diffuseColor.rgb = mix(diffuseColor.rgb, ice, uIce);
             diffuseColor.a = mix(diffuseColor.a, smoothstep(-0.4, 0.6, depth), uIce);
           }
@@ -298,5 +316,73 @@ function createTrail(TU) {
       if (dirty) { tex.needsUpdate = true; dirty = false; }
     },
     clear() { data.fill(0); any = false; tex.needsUpdate = true; }
+  };
+}
+
+
+/* ---------- deep snow (Settings → Graphics → Custom → "Deep snow"; off by default) ----------
+   A thick layer of real 3D snow on a fine grid that follows you. It reads the same trail map as the
+   ground: where you walk, the snow is pushed down to the ground and heaped up along both sides, so
+   your path is a real furrow through the snow rather than a darker stripe. */
+export function createDeepSnow(scene, TU) {
+  const SIZE = 150, SEG = 220, DEPTH = 1.5;
+  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
+  const P = geo.attributes.position, base = new Float32Array(P.count * 2);
+  for (let i = 0; i < P.count; i++) { base[i * 2] = P.getX(i); base[i * 2 + 1] = P.getZ(i); }
+  const slope = new THREE.BufferAttribute(new Float32Array(P.count), 1); geo.setAttribute('aSlope', slope);
+  const DU = { uDepth: { value: DEPTH } };
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, TU, DU);
+    const H = `uniform sampler2D tTrail; uniform vec4 uTrailBox, uHole; uniform float uSnowLine, uWaterY, uDepth; attribute float aSlope; varying float vSk; varying float vPress; varying vec2 vXZ;
+      float trv(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
+      float sh2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float sn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(sh2(i), sh2(i + vec2(1, 0)), f.x), mix(sh2(i + vec2(0, 1)), sh2(i + vec2(1, 1)), f.x), f.y); }
+      // snow height above the ground at p: full depth, pressed down in the trail, heaped up beside it
+      float snowH(vec2 p, float sk) {
+        float t = trv(p);
+        float ring = (trv(p + vec2(1.1, 0.0)) + trv(p - vec2(1.1, 0.0)) + trv(p + vec2(0.0, 1.1)) + trv(p - vec2(0.0, 1.1))) * 0.25;
+        float berm = max(0.0, ring - t) * 1.8;
+        return uDepth * sk * (0.88 + 0.24 * sn2(p * 0.35) - t * 0.95 + berm * 0.55);
+      }`;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n' + H)
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+        float sk = smoothstep(uSnowLine - 12.0, uSnowLine + 12.0, position.y) * (1.0 - smoothstep(0.35, 0.7, aSlope)) * (1.0 - smoothstep(uWaterY + 0.6, uWaterY - 0.4, position.y));
+        { float e = 0.35, hx = snowH(position.xz + vec2(e, 0.0), sk) - snowH(position.xz - vec2(e, 0.0), sk), hz = snowH(position.xz + vec2(0.0, e), sk) - snowH(position.xz - vec2(0.0, e), sk);
+          objectNormal = normalize(objectNormal + vec3(-hx, 0.0, -hz) / (2.0 * e)); }`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vSk = sk; vXZ = position.xz; vPress = trv(position.xz);
+        transformed.y += max(0.03, snowH(position.xz, sk));`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSnow; uniform vec4 uHole; varying float vSk; varying float vPress; varying vec2 vXZ;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        if (vSk < 0.08) discard;
+        if (vXZ.x > uHole.x && vXZ.x < uHole.y && vXZ.y > uHole.z && vXZ.y < uHole.w) discard;
+        diffuseColor.rgb = uSnow * mix(vec3(1.0), vec3(0.8, 0.86, 0.95), smoothstep(0.2, 0.9, vPress));`);
+  };
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true; mesh.castShadow = false; mesh.frustumCulled = false; mesh.visible = false;
+  scene.add(mesh);
+  let cx = 1e9, cz = 1e9, on = false;
+  const rebuild = (x, z) => {
+    cx = Math.round(x / 10) * 10; cz = Math.round(z / 10) * 10;
+    for (let i = 0; i < P.count; i++) {
+      const wx = base[i * 2] + cx, wz = base[i * 2 + 1] + cz, h = heightAt(wx, wz);
+      P.setXYZ(i, wx, h, wz);
+      const gx = heightAt(wx + 0.8, wz) - h, gz = heightAt(wx, wz + 0.8) - h;
+      slope.array[i] = 1 - 1 / Math.sqrt(1 + (gx * gx + gz * gz) / 0.64);
+    }
+    P.needsUpdate = true; slope.needsUpdate = true; geo.computeBoundingSphere();
+  };
+  return {
+    setEnabled(v) { on = !!v; if (!on) mesh.visible = false; },
+    get enabled() { return on; },
+    // show it around (x, z) when the scene has snow on the ground near you
+    update(x, z, snowy) {
+      mesh.visible = on && snowy;
+      if (!mesh.visible) return;
+      if (Math.abs(x - cx) > 30 || Math.abs(z - cz) > 30) rebuild(x, z);
+    }
   };
 }

@@ -13,7 +13,7 @@
    Used by the page:  window.MEOW_BG.start(), setScene(name), setMotion('full'|'reduced'),
    home(), enter(), focus(on), pan(x), pulse(), toggleLight() */
 import * as THREE from 'three';
-import { heightAt, createTerrain, createWater } from './terrain.js';
+import { heightAt, createTerrain, createWater, createDeepSnow } from './terrain.js';
 import { createSky } from './sky.js';
 import { createClouds } from './clouds.js';
 import { createRainFX } from './highfx.js';
@@ -77,6 +77,7 @@ import { createAssets } from './assets.js';
   scene.add(hemi, sun, sun.target);
   scene.fog = new THREE.FogExp2(0xcccccc, 0.004);
   const terrain = createTerrain(scene);
+  const deepSnow = createDeepSnow(scene, terrain.TU);   // thick 3D snow you plough through (a graphics option)
   const water = createWater(scene, U);
   // the spots the home views look from stay clear of rocks and grass
   const CLEAR = [[0, 105], [0, 140], [-38, 112], [24, 78], [0, 92], [30, 102], [0, 125]].map(([x, z]) => ({ x, z, r: 42 }));
@@ -268,7 +269,7 @@ import { createAssets } from './assets.js';
     terrain.TU.uHole.value.copy(FAR); water.WU.uStudy.value.copy(FAR);   // no hole in the ground: the new house stands on stilts
     terrain.TU.uLow.value.copy(s.low); terrain.TU.uHigh.value.copy(s.high); terrain.TU.uSnow.value.copy(s.snowC);
     terrain.TU.uSnowLine.value = s.snowLine; terrain.TU.uSand.value = s.sand;
-    water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = Math.max(0.3, s.waterRough) + (0.38 - s.waterRough) * (s.ice || 0);
+    water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = Math.max(0.3, s.waterRough) + (0.1 - Math.max(0.3, s.waterRough)) * (s.ice || 0); water.mat.envMapIntensity = 0.35 + 0.5 * (s.ice || 0);
     water.WU.uIce.value = s.ice || 0; water.mat.metalness = 0.1 * (1 - (s.ice || 0));
     water.WU.uLevel.value = s.water; terrain.TU.uWaterY.value = s.water; terrain.TU.uWaterC.value.copy(s.waterC);
     water.tex.offset.set(time * 0.004, time * 0.006);
@@ -358,7 +359,7 @@ import { createAssets } from './assets.js';
       const wy = water.mesh.position.y;
       if (boat.active) { const drv = boat.seat === 0; if (boat.leave(player, wy) && drv) online.emit('boat', { on: 0, home: boat.moored ? 1 : 0 }); return; }
       if ((scenes.cur.ice || 0) < 0.5 && boat.canBoard(player.state, wy)) { boat.board(player); return; }
-      { const [cx, cy] = aimPoint(); if (cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; } if (computer.pick(rayAt(cx, cy))) { openComputer(); return; } }
+      { const [cx, cy] = aimPoint(); if (cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; } if ((nearPC() && computer.pick(rayAt(cx, cy)))) { openComputer(); return; } }
       if (scenes.cur.pCabin > 0.5) {
         const [cx, cy] = aimPoint();
         const d = cabin.pickDoor(rayAt(cx, cy)) || cabin.nearestDoor(camera.position.x, camera.position.z, 14);
@@ -393,6 +394,8 @@ import { createAssets } from './assets.js';
   };
   // sit down at the computer (the pointer comes back so you can use the screen)
   const flipLight = () => { online.emit('light', cabin.toggleLight()); if (window.MEOW_SOUND && window.MEOW_SOUND.door) window.MEOW_SOUND.door(false); hover.pending = true; };
+  // the computer only works when you're at the desk (not from across the room)
+  const nearPC = () => { const s2 = cabin.chairSeat(), ps = player.state; return !!s2 && Math.hypot(ps.x - s2.x, ps.z - s2.z) < 7.5 && Math.abs(ps.feet - (s2.y - 2.25)) < 3; };
   const openComputer = () => { unlockPointer(); keys.clear(); actHint.classList.remove('show'); doorShown = false; computer.open(camera.position, camera.quaternion); };
   const toggleDoor = (d) => {
     if (!d) return false;
@@ -416,7 +419,7 @@ import { createAssets } from './assets.js';
     const [cx, cy] = aimPoint();
     const active = player.walking && !busy();
     const doorHit = active ? aimAtDoor(cx, cy) : null;
-    const pc = active && !doorHit && !boat.active && computer.pick(rayAt(cx, cy));
+    const pc = active && !doorHit && !boat.active && (nearPC() && computer.pick(rayAt(cx, cy)));
     const sw = active && !doorHit && !pc && !boat.active && cabin.pickSwitch(rayAt(cx, cy));
     const lmp = active && !doorHit && !pc && !sw && !boat.active && cabin.pickLamp(rayAt(cx, cy));
     const drw = active && !doorHit && !pc && !sw && !lmp && !boat.active && cabin.pickDrawer(rayAt(cx, cy));
@@ -487,7 +490,7 @@ import { createAssets } from './assets.js';
     if (player.walking && !boat.active && cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; }
     if (player.walking && !boat.active && cabin.pickLamp(rayAt(cx, cy))) { online.emit('lamp', cabin.toggleLamp()); if (window.MEOW_SOUND && window.MEOW_SOUND.click) window.MEOW_SOUND.click(); hover.pending = true; return; }
     if (player.walking && !boat.active && cabin.pickDrawer(rayAt(cx, cy))) { const o = cabin.toggleDrawer(); online.emit('drawer', o); if (window.MEOW_SFX) window.MEOW_SFX.drawer(o); hover.pending = true; return; }
-    if (player.walking && !boat.active && computer.pick(rayAt(cx, cy))) { openComputer(); return; }
+    if (player.walking && !boat.active && (nearPC() && computer.pick(rayAt(cx, cy)))) { openComputer(); return; }
     { const d = aimAtDoor(cx, cy); if (d) { toggleDoor(d); return; } }
     if (!player.walking) { dispatchEvent(new CustomEvent('meow:tree', { detail: { type: 'miss' } })); return; }   // the trees aren't links on the home page
     const id = trees.hovered >= 0 ? trees.hovered : (indoorK < 0.5 ? trees.pick(rayAt(cx, cy)) : -1);
@@ -638,12 +641,13 @@ import { createAssets } from './assets.js';
     prints.update(Math.min(1, Math.max(0, (100 - scenes.cur.snowLine) / 80)) * out);
     // snow trails: every bit of ground you cross on snow gets pressed down (refills while it snows)
     terrain.trail.update(dt, scenes.cur.snow || 0);
+    deepSnow.update(ps.x, ps.z, scenes.cur.snowLine < heightAt(ps.x, ps.z) + 60);
     if (player.walking && !inside && !ps.air) {
       const dx = ps.x - trailAt.x, dz = ps.z - trailAt.z, d = Math.hypot(dx, dz);
       if (d > 0.8) {
         const gh = heightAt(ps.x, ps.z), sl = scenes.cur.snowLine;
         const snowy = Math.min(1, Math.max(0, (gh - (sl - 12)) / 24)) > 0.35 && gh > water.mesh.position.y + 0.6 && ps.feet < gh + 1.5;
-        if (snowy) { const n = Math.min(12, Math.ceil(d / 0.8)); for (let i = 1; i <= n; i++) terrain.trail.stamp(trailAt.x + dx * i / n, trailAt.z + dz * i / n, 1.7); }
+        if (snowy) { const n = Math.min(12, Math.ceil(d / 0.8)); for (let i = 1; i <= n; i++) terrain.trail.stamp(trailAt.x + dx * i / n, trailAt.z + dz * i / n, 1.15); }
         trailAt.x = ps.x; trailAt.z = ps.z;
       }
     }
@@ -795,13 +799,13 @@ import { createAssets } from './assets.js';
   //   box: how far around you sun shadows reach, plants: grass/ferns/flowers drawn, soft: soft shadow edges
   const GFX_LEVELS = {
     //          pixels         sun shadows: cascade map size, distance, softness   lamp/fire shadows   screen-space effects
-    none:     { tex: false, name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, clouds: 0, hifx: 0, fx: {} },
-    fast:     { tex: false, name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: {} },
-    default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: {} },
-    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: {} },
-    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
-    best:     { name: 'Best',     pr: 2.0,  shadows: true,  csm: 2048, far: 260, soft: 1.6, lamps: 512,  plants: true,  clouds: 2, hifx: 1, fx: { ao: 1, aoSamples: 12, contact: 0.6, scale: 0.75 } },
-    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  csm: 3072, far: 400, soft: 1.8, lamps: 1024, plants: true,  clouds: 2, hifx: 1, fx: { ao: 1, aoSamples: 16, contact: 0.7, gi: 0.45, ssr: 1, rays: 1, scale: 1 } }
+    none:     { tex: false, name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, clouds: 0, hifx: 0, deep: 0, fx: {} },
+    fast:     { tex: false, name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, deep: 0, fx: {} },
+    default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, deep: 0, fx: {} },
+    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, deep: 0, fx: {} },
+    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  clouds: 1, hifx: 0, deep: 0, fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
+    best:     { name: 'Best',     pr: 2.0,  shadows: true,  csm: 2048, far: 260, soft: 1.6, lamps: 512,  plants: true,  clouds: 2, hifx: 1, deep: 0, fx: { ao: 1, aoSamples: 12, contact: 0.6, scale: 0.75 } },
+    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  csm: 3072, far: 400, soft: 1.8, lamps: 1024, plants: true,  clouds: 2, hifx: 1, deep: 0, fx: { ao: 1, aoSamples: 16, contact: 0.7, gi: 0.45, ssr: 1, rays: 1, scale: 1 } }
   };
   const GFX_ORDER = Object.keys(GFX_LEVELS);
   const OLD = { low: 'fast', mid: 'balanced', high: 'best' };
@@ -810,7 +814,7 @@ import { createAssets } from './assets.js';
   const ADV = { res: 0, sharp: 0, custom: null };
   try { Object.assign(ADV, JSON.parse(localStorage.getItem('meow.gfxadv') || '{}')); } catch { /* ignore */ }
   const saveAdv = () => { try { localStorage.setItem('meow.gfxadv', JSON.stringify(ADV)); } catch { /* ignore */ } };
-  const customFrom = (base) => ({ name: 'Custom', clouds: base.clouds ?? 1, hifx: base.hifx ?? 0, pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants, tex: base.tex !== false,
+  const customFrom = (base) => ({ name: 'Custom', clouds: base.clouds ?? 1, hifx: base.hifx ?? 0, deep: base.deep ?? 0, pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants, tex: base.tex !== false,
     fx: Object.assign({ ao: 0, aoSamples: 12, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.75 }, base.fx) });
   const applyGfx = (lv) => {
     lv = OLD[lv] || lv; if (lv !== 'custom' && !GFX_LEVELS[lv]) lv = 'balanced';
@@ -833,7 +837,7 @@ import { createAssets } from './assets.js';
     }
     cabin.setLightShadows(G.lamps);
     clouds.setMode(G.clouds ?? 1);
-    cabin.setFireQuality(!!G.hifx); rainFx.setEnabled(!!G.hifx); fishing.setDetail(!!G.hifx);   // realistic fire, heavy rain, detailed fish
+    cabin.setFireQuality(!!G.hifx); deepSnow.setEnabled(!!G.deep); rainFx.setEnabled(!!G.hifx); fishing.setDetail(!!G.hifx);   // realistic fire, heavy rain, detailed fish
     dispatchEvent(new CustomEvent('meow:gfx', { detail: lv }));   // other players' cats pick their detail level from this
     lens.fx.configure(Object.assign({ ao: 0, aoSamples: 8, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.5 }, G.fx));
     scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
@@ -857,7 +861,7 @@ import { createAssets } from './assets.js';
     const sw = (id, on) => $(id).setAttribute('aria-checked', String(!!on));
     sw('advShadows', G.shadows); sw('advPlants', G.plants); sw('advAO', G.fx.ao > 0); sw('advContact', G.fx.contact > 0);
     if ($('advClouds')) $('advClouds').value = String(G.clouds ?? 1);
-    sw('advHiFx', !!G.hifx);
+    sw('advHiFx', !!G.hifx); if ($('advDeep')) sw('advDeep', !!G.deep);
     sw('advTex', G.tex !== false); sw('advSSR', G.fx.ssr > 0); sw('advGI', G.fx.gi > 0); sw('advRays', G.fx.rays > 0);
   }
   {
@@ -873,6 +877,7 @@ import { createAssets } from './assets.js';
       flip('advShadows', (c, on) => { c.shadows = on; if (!on) { c.csm = 0; c.lamps = 0; } });
       flip('advPlants', (c, on) => { c.plants = on; });
       if ($('advHiFx')) flip('advHiFx', (c, on) => { c.hifx = on ? 1 : 0; });
+      if ($('advDeep')) flip('advDeep', (c, on) => { c.deep = on ? 1 : 0; });
       flip('advTex', (c, on) => { c.tex = on; });
       flip('advAO', (c, on) => { c.fx.ao = on ? 1 : 0; });
       flip('advContact', (c, on) => { c.fx.contact = on ? 0.65 : 0; });

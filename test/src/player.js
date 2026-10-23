@@ -106,7 +106,9 @@ export function createPlayer({ physics, trees }) {
     let wx = fwdX * f - fwdZ * r, wz = fwdZ * f + fwdX * r;
     const wl = Math.hypot(wx, wz), sp = SPEED * (running ? RUN : 1);
     if (wl > 0) { wx = (wx / wl) * sp; wz = (wz / wl) * sp; }
-    const acc = 1 - Math.pow(1 - (wl > 0 ? 0.08 : 0.12), dt * 60);
+    // on ice your paws barely grip: you speed up slowly and slide on when you stop or turn
+    const icy = !p.air && surface(scenes, water) === 'ice';
+    const acc = 1 - Math.pow(1 - (icy ? (wl > 0 ? 0.012 : 0.006) : (wl > 0 ? 0.08 : 0.12)), dt * 60);
     p.vx += (wx - p.vx) * acc; p.vz += (wz - p.vz) * acc;
     // move in small steps; slide along walls instead of stopping dead
     const dist = Math.hypot(p.vx, p.vz) * dt, n = Math.max(1, Math.ceil(dist / SUB));

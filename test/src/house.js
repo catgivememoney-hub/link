@@ -26,7 +26,7 @@ export const HOUSE_ZONES = [
   { x: 53, z: -101, r: 16 }
 ];
 
-const FL = 1.0, STEP = 0.6;                      // floor top; highest step (house metres)
+const FL = 1.0, STEP = 0.6, CAT_H = 0.66;   // CAT_H: how tall a cat is (house metres) — it fits under things higher than this                      // floor top; highest step (house metres)
 const inR = (X, Y, r, p = 0) => X > r[0] - p && X < r[1] + p && Y > r[2] - p && Y < r[3] + p;
 // [x0, x1, y0, y1]
 const ROOMS = [[-2.5, 2.5, -3.5, 3.5], [2.5, 4.5, -3.5, -0.3]];
@@ -58,7 +58,7 @@ const RAILS = [
 const FURN = [
   // (the sofa, the coffee table and the bed are measured from the model instead: see SURF)
   [0.0, 1.4, 2.9, 3.5],        // fireplace
-  [-2.25, -0.75, -3.5, -2.65], // desk
+  // (the desk is measured from the model too: you can walk under it)
   [-1.7, -1.1, -2.45, -1.85],  // office chair
   [0.8, 2.05, -3.5, -3.0],     // bookshelf
   [2.7, 3.2, -3.5, -2.88]      // nightstand
@@ -173,7 +173,7 @@ export function createHouse({ scene }) {
     // low furniture you can jump onto: a height map of each piece's real top (rays shot straight down at it)
     {
       const rc = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), bb = new THREE.Box3();
-      for (const [nm, key] of [['Bed', 'bed'], ['Sofa', 'sofa'], ['Coffee table', 'table'], ['Office chair', 'chair']]) {
+      for (const [nm, key] of [['Bed', 'bed'], ['Sofa', 'sofa'], ['Coffee table', 'table'], ['Office chair', 'chair'], ['Desk', 'desk']]) {
         const node = root.getObjectByName(nm) || root.getObjectByName(nm.replace(/ /g, '_')); if (!node) continue;
         bb.setFromObject(node);
         const [ax, ay] = toLocal(bb.max.x, bb.min.z), [bx, by] = toLocal(bb.min.x, bb.max.z);
@@ -208,6 +208,31 @@ export function createHouse({ scene }) {
       H.flame = createFlame(Math.max(sz.x, sz.z) * 1.05, Math.max(sz.y, 0.5) * 1.7);
       const base = new THREE.Vector3(c.x, bb.min.y, c.z); group.worldToLocal(base);
       H.flame.group.position.copy(base); H.flame.group.visible = H.hiFx; group.add(H.flame.group);
+      // firewood: split logs stacked in a little teepee on a bed of ash, charred black where the flames lick them
+      {
+        const W = Math.max(sz.x, sz.z), logs = new THREE.Group();
+        const bark = new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 0.95 });
+        const char = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, emissive: 0xff4a10, emissiveIntensity: 0.35 });
+        const end = new THREE.MeshStandardMaterial({ color: 0x9a7650, roughness: 0.9 });
+        const log = (len, r, mat) => {
+          const g2 = new THREE.Group();
+          const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.08, len, 9, 1), mat); body.rotation.z = Math.PI / 2; g2.add(body);
+          [-1, 1].forEach((sd) => { const cap = new THREE.Mesh(new THREE.CircleGeometry(r * 0.96, 9), end); cap.position.x = sd * len / 2 + sd * 0.002; cap.rotation.y = sd * Math.PI / 2; g2.add(cap); });
+          g2.traverse((m) => { if (m.isMesh) m.castShadow = m.receiveShadow = true; }); return g2;
+        };
+        const r = W * 0.075, L = W * 0.9;
+        // two along the bottom, one across them, two leaning in from the sides
+        [[-r * 1.1, r, -r * 0.4, 0, 0, bark], [r * 1.1, r, r * 0.5, 0, 0.12, bark], [0, r * 2.9, 0, Math.PI / 2, -0.06, char],
+         [-W * 0.22, r * 2.4, 0, 0.35, 0.75, char], [W * 0.22, r * 2.4, 0.05, -0.3, -0.75, char]].forEach(([x, y, z, ry, rz, m], i) => {
+          const l = log(i > 2 ? L * 0.7 : L, i === 2 ? r * 0.85 : r, m); l.position.set(x, y, z); l.rotation.set(0, ry, rz); logs.add(l);
+        });
+        const ash = new THREE.Mesh(new THREE.CircleGeometry(W * 0.55, 20).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3a3532, roughness: 1, emissive: 0x5a1a05, emissiveIntensity: 0.4 }));
+        ash.scale.z = 0.6; ash.position.y = 0.004; logs.add(ash);
+        logs.position.copy(base); group.add(logs); H.logs = logs;
+        // the flames start on top of the wood
+        H.flame.group.position.y += r * 1.6;
+        H.fireLift = r * 1.6 / S;   // the simple flames too (their units are house metres)
+      }
       H.fire.visible = !H.hiFx;
     }
     { const lamp = root.getObjectByName('Bedside_lamp') || root.getObjectByName('Bedside lamp'); if (lamp) lamp.traverse((m) => { if (m.isMesh) L.lampMeshes.push(m); }); }
@@ -272,8 +297,9 @@ export function createHouse({ scene }) {
       if (X < -6.5 || X > 21.5 || Y < -5 || Y > 5.5) return boatBlock ? boatBlock(x, z, feet) : false;
       const f = lz(feet), r = 0.2 + (pad || 0) / S;
       // no crawling under the house, decks, stairs or dock
-      if (f < FL - STEP - 0.05 && (ROOMS.some((q) => inR(X, Y, q, r)) || DECKS.some((q) => inR(X, Y, q, r)))) return true;
-      for (const s of STAIRS) if (inR(X, Y, s.r, r * 0.5) && f < rampZ(s, X) - STEP - 0.05) return true;
+      // under the house, the decks and the stairs: a cat fits wherever there's head room
+      if (f < FL - STEP - 0.05 && f + CAT_H > FL - 0.15 && (ROOMS.some((q) => inR(X, Y, q, r)) || DECKS.some((q) => inR(X, Y, q, r)))) return true;
+      for (const s of STAIRS) if (inR(X, Y, s.r, r * 0.5) && f < rampZ(s, X) - STEP - 0.05 && f + CAT_H > rampZ(s, X) - 0.2) return true;
       if (f < DOCK_Z - STEP && DOCK.some((q) => inR(X, Y, q, r))) return true;
       if (f < FL - STEP && X > -3.25 && X < -2.65 && Y > 2.1 && Y < 3.2) return true;          // the AC outdoor unit
       if (f > FL - STEP - 0.05 && f < 4.2) {
@@ -288,7 +314,10 @@ export function createHouse({ scene }) {
           if (FURN.some((q) => inR(X, Y, q, r))) return true;
           // the bed, sofa and table: solid only if their top is higher than a small step from your feet (jump onto them)
           const rr = r * 0.75;
-          for (const [dx, dy] of [[0, 0], [rr, 0], [-rr, 0], [0, rr], [0, -rr]]) if (surfAt(X + dx, Y + dy) > f + 0.15) return true;
+          for (const [dx, dy] of [[0, 0], [rr, 0], [-rr, 0], [0, rr], [0, -rr]]) {
+            const t = surfAt(X + dx, Y + dy);
+            if (t > f + 0.15 && !(surfAt(X + dx, Y + dy, 'desk') === t && t - 0.08 > f + CAT_H)) return true;   // the desk: walk under it
+          }
         }
       }
       if (f > -0.6 && f < 3) for (const [axis, at, a, b] of RAILS) if (nearSeg(axis, at, a, b, X, Y, 0.05 + r)) return true;
@@ -390,7 +419,7 @@ export function createHouse({ scene }) {
       }
       smoke.update(dt, time, on, 1);
       if (H.flame && H.hiFx) H.flame.update(dt, time, on);
-      if (H.fire) { const k = 0.9 + 0.12 * flick; H.fire.scale.y = k; H.fire.position.y = (FL + 0.2) * (1 - k); }   // flames lick up from their base
+      if (H.fire) { const k = 0.9 + 0.12 * flick; H.fire.scale.y = k; H.fire.position.y = (FL + 0.2) * (1 - k) + (H.fireLift || 0); }   // flames lick up from their base
     }
   };
   return api;

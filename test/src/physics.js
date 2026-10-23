@@ -26,7 +26,7 @@ export function createPhysics({ trees, props, cabin, scenes, water }) {
     floor(x, z, feet) {
       cand.length = 0; built.length = 0;
       if (cabinOn()) cabin.floors(x, z, built);
-      const under = built.some((c) => c.under);
+      const under = built.some((c) => c.under && c.y <= feet + STEP_UP);   // below the house you're on the ground, not its floor
       // inside the house or down in the library the built floors are all there is
       if (!under) {
         cand.push(groundAt(x, z));
