@@ -672,7 +672,6 @@ import { createAssets } from './assets.js';
         }
       }
     }
-    }
     if (stepped && !inside) {
       const gh = heightAt(ps.x, ps.z);
       if (gh > water.mesh.position.y + 0.6 && (scenes.name === 'snow' || gh > scenes.cur.snowLine + 4) && !physics.floor(ps.x, ps.z, ps.feet).built) {
