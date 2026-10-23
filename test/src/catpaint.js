@@ -91,9 +91,9 @@ const gridOf = (g) => g.userData.grid;
 const tmpC = new THREE.Color();
 const linear = (c) => { tmpC.setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace); return [tmpC.r, tmpC.g, tmpC.b]; };
 // apply stamps[from..] on top of what is there; from = 0 starts clean
-export function applyPaint(g, stamps, from = 0) {
+export function applyPaint(g, stamps, from = 0, keep = false) {   // keep: paint on top without starting clean
   const A = g.attributes.paint, F = g.userData.paintRGBA; if (!A || !F) return;
-  if (from === 0) F.fill(0);
+  const clean = from === 0 && !keep; if (clean) F.fill(0);
   const grid = gridOf(g); if (!grid) return;
   const { cell, map, pos, nor } = grid, count = pos.length / 3;
   let lo = Infinity, hi = -1;
@@ -139,7 +139,7 @@ export function applyPaint(g, stamps, from = 0) {
       }
     }
   }
-  if (from === 0) { lo = 0; hi = count - 1; }
+  if (clean) { lo = 0; hi = count - 1; }
   if (hi < lo) return;
   const arr = A.array;
   for (let i = lo * 4; i <= hi * 4 + 3; i++) arr[i] = Math.max(0, Math.min(255, Math.round(F[i] * 255)));
