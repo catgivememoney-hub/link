@@ -56,15 +56,23 @@ const RAILS = [
 ];
 // furniture you bump into (on the house floor)
 const FURN = [
-  [-0.55, 1.25, 0.55, 1.4],    // sofa
-  [-0.15, 0.85, 1.75, 2.3],    // coffee table
+  // (the sofa, the coffee table and the bed are measured from the model instead: see SURF)
   [0.0, 1.4, 2.9, 3.5],        // fireplace
   [-2.25, -0.75, -3.5, -2.65], // desk
   [-1.7, -1.1, -2.45, -1.85],  // office chair
   [0.8, 2.05, -3.5, -3.0],     // bookshelf
-  [3.35, 4.5, -3.5, -1.35],    // bed
   [2.7, 3.2, -3.5, -2.88]      // nightstand
 ];
+const SURF = [];   // filled when the model loads: { key, x0, y0, nx, ny, C, h[] } (h = top in house metres, -1 = none)
+const surfAt = (X, Y, only) => {
+  let top = -1;
+  for (const q of SURF) {
+    if (only ? q.key !== only : q.key === 'chair') continue;
+    const i = Math.round((X - q.x0) / q.C), j = Math.round((Y - q.y0) / q.C);
+    if (i >= 0 && j >= 0 && i < q.nx && j < q.ny) top = Math.max(top, q.h[j * q.nx + i]);
+  }
+  return top;
+};
 const DOORS = [['Front door', -Math.PI / 2], ['Bedroom door', Math.PI / 2], ['Back door', -Math.PI / 2]];
 // is anything built at (x, z)? (the boat can't sail through the dock, the decks or the stairs)
 export const builtAt = (x, z, pad = 0.15) => {
@@ -162,6 +170,23 @@ export function createHouse({ scene }) {
     });
     group.add(root);
     root.updateMatrixWorld(true);
+    // low furniture you can jump onto: a height map of each piece's real top (rays shot straight down at it)
+    {
+      const rc = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), bb = new THREE.Box3();
+      for (const [nm, key] of [['Bed', 'bed'], ['Sofa', 'sofa'], ['Coffee table', 'table'], ['Office chair', 'chair']]) {
+        const node = root.getObjectByName(nm) || root.getObjectByName(nm.replace(/ /g, '_')); if (!node) continue;
+        bb.setFromObject(node);
+        const [ax, ay] = toLocal(bb.max.x, bb.min.z), [bx, by] = toLocal(bb.min.x, bb.max.z);
+        const C = 0.05, x0 = Math.min(ax, bx), y0 = Math.min(ay, by), nx = Math.ceil(Math.abs(bx - ax) / C) + 1, ny = Math.ceil(Math.abs(by - ay) / C) + 1;
+        const h = new Float32Array(nx * ny).fill(-1);
+        for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+          rc.set(toWorld(x0 + i * C, y0 + j * C, (bb.max.y - OY) / S + 0.5), down);
+          const hit = rc.intersectObject(node, true)[0];
+          if (hit) { const z = lz(hit.point.y); if (z > FL + 0.04) h[j * nx + i] = z; }
+        }
+        SURF.push({ key, x0, y0, nx, ny, C, h });
+      }
+    }
     // doors hinge on the face of the wall they swing toward, just inside the opening, so an open door
     // clears the frame posts (Blender local x, y → node x, −z); the back deck stops at the wall's face
     const FIX = { 'Front door': [-0.17, -0.03, 0.937], 'Bedroom door': [0.17, -0.03, 0.924], 'Back door': [0.17, 0.03, 0.937] };
@@ -235,7 +260,7 @@ export function createHouse({ scene }) {
     floors(x, z, out) {
       const [X, Y] = toLocal(x, z);
       if (X < -6 || X > 21 || Y < -4 || Y > 4.5) return out;
-      if (ROOMS.some((r) => inR(X, Y, r))) out.push({ y: wy(FL), under: true });
+      if (ROOMS.some((r) => inR(X, Y, r))) { out.push({ y: wy(FL), under: true }); const t = surfAt(X, Y); if (t > 0) out.push({ y: wy(t), under: false }); }
       else if (DECKS.some((r) => inR(X, Y, r))) out.push({ y: wy(FL), under: false });
       for (const s of STAIRS) if (inR(X, Y, s.r)) out.push({ y: wy(rampZ(s, X)), under: false });
       if (DOCK.some((r) => inR(X, Y, r))) out.push({ y: wy(DOCK_Z), under: false });
@@ -259,10 +284,28 @@ export function createHouse({ scene }) {
           if (gap && doorOpen(gap[2])) continue;
           return true;
         }
-        if (ROOMS.some((q) => inR(X, Y, q)) && FURN.some((q) => inR(X, Y, q, r))) return true;
+        if (ROOMS.some((q) => inR(X, Y, q))) {
+          if (FURN.some((q) => inR(X, Y, q, r))) return true;
+          // the bed, sofa and table: solid only if their top is higher than a small step from your feet (jump onto them)
+          const rr = r * 0.75;
+          for (const [dx, dy] of [[0, 0], [rr, 0], [-rr, 0], [0, rr], [0, -rr]]) if (surfAt(X + dx, Y + dy) > f + 0.15) return true;
+        }
       }
       if (f > -0.6 && f < 3) for (const [axis, at, a, b] of RAILS) if (nearSeg(axis, at, a, b, X, Y, 0.05 + r)) return true;
       return boatBlock ? boatBlock(x, z, feet) : false;
+    },
+    // where a cat sits at the computer: the chair seat (world position) and which way it faces
+    chairSeat() {
+      const q = SURF.find((k) => k.key === 'chair'); if (!q) return null;
+      const X = q.x0 + q.nx * q.C / 2, Y = q.y0 + q.ny * q.C / 2;
+      let seat = FL; for (let d = -0.12; d <= 0.001; d += 0.04) seat = Math.max(seat, surfAt(X, Y + d, 'chair'));
+      const p = toWorld(X, Y - 0.04, seat); return { x: p.x, y: p.y, z: p.z };
+    },
+    // what you're standing on: 'bed', 'sofa', 'table' or null
+    surfaceUnder(x, z, feet) {
+      const [X, Y] = toLocal(x, z), f = lz(feet);
+      for (const q of SURF) { if (q.key === 'chair') continue; const t = surfAt(X, Y, q.key); if (t > 0 && Math.abs(t - f) < 0.08) return q.key; }
+      return null;
     },
     // indoors? (no rain or mist in here, warmer colour)
     inside(x, z, feet) {

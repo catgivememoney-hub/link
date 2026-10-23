@@ -144,7 +144,8 @@ function buildSimpleCat(skin, name) {
       torch.target.position.set(0.6, 6.4 + Math.sin(pitch) * 50, -1.2 - Math.cos(pitch) * 50);
     },
     setLight(state, t) { lt += ((state === 1 ? 1 : 0) - lt) * 0.2; torch.intensity = lt * 520; lamp.intensity = (state === 2 ? 900 * (0.92 + 0.08 * Math.sin(t * 13)) : 0); },
-    setSit(on) { sit += ((on ? 1 : 0) - sit) * 0.15; legs.forEach((l, i) => { l.rotation.x = (i < 2 ? -1.2 : 1.1) * sit + l.rotation.x * (1 - sit); }); body.position.y -= sit * 1.6; }
+    setSit(on) { sit += ((on ? 1 : 0) - sit) * 0.15; legs.forEach((l, i) => { l.rotation.x = (i < 2 ? -1.2 : 1.1) * sit + l.rotation.x * (1 - sit); }); body.position.y -= sit * 1.6; },
+    setPose(p) { if (p === 1) { body.position.y -= 1.8; legs.forEach((l) => { l.rotation.x = 0; l.rotation.z = 1.4; }); } else legs.forEach((l) => { l.rotation.z = 0; }); if (p === 2) this.setSit(true); }
   };
 }
 
@@ -389,7 +390,7 @@ function buildModelCat(tpl, sk, name) {
   const LEG = ['upperarmL', 'upperarmR', 'thighL', 'thighR'];
   const tailB = Object.keys(J).filter((k) => k.startsWith('tail')).sort();
   if (pmesh) applyPaint(pmesh.geometry, padStamps, 0);
-  let phase = 0, lt = 0, sit = 0, look = 0, bob = 0;
+  let phase = 0, lt = 0, sit = 0, look = 0, bob = 0, curlK = 0, pcK = 0;
   const legA = [0, 0, 0, 0];
   return {
     group: g, model: true, mesh: pmesh, root,
@@ -405,10 +406,25 @@ function buildModelCat(tpl, sk, name) {
       turn('neck', 0); turn('head', -look * 0.6 + Math.sin(time * 0.7) * 0.05);
       this._apply();
     },
-    _apply() {
-      LEG.forEach((n, i) => turn(n, legA[i] * (1 - sit) + (i < 2 ? -1.2 : 1.1) * sit));
-      ['forearmL', 'forearmR'].forEach((n) => turn(n, 0.9 * sit)); ['shinL', 'shinR'].forEach((n) => turn(n, -1.2 * sit));
-      body.position.y = bob - sit * 1.6;
+    _apply(time = 0) {
+      const w = 1 - curlK - pcK;   // how much of the normal walk / boat-sit pose is left
+      const breathe = Math.sin(time * 1.6) * 0.02 * curlK;
+      // legs: walking swing · boat sit · curled (all four tucked in) · on the chair (hind legs folded, front paws on the desk)
+      LEG.forEach((n, i) => turn(n, (legA[i] * (1 - sit) + (i < 2 ? -1.2 : 1.1) * sit) * w + (i < 2 ? -1.35 : 1.45) * curlK + (i < 2 ? -0.95 : 1.5) * pcK, (i % 2 ? -0.35 : 0.35) * curlK));
+      ['forearmL', 'forearmR'].forEach((n) => turn(n, 0.9 * sit * w + 2.3 * curlK + 1.25 * pcK));
+      ['shinL', 'shinR'].forEach((n) => turn(n, -1.2 * sit * w - 2.0 * curlK - 2.2 * pcK));
+      // the body: curled into a ring (spine bent to one side, head resting back on the hind legs) or sitting up straight
+      turn('hips', -0.55 * pcK, -0.5 * curlK);
+      turn('chest', 0.25 * pcK + breathe, 0.75 * curlK);
+      turn('neck', 0.2 * pcK - 0.25 * curlK, 0.7 * curlK);
+      turn('head', (-look * 0.6) * w + 0.35 * curlK + 0.35 * pcK, 0.7 * curlK);
+      body.position.y = bob * w - sit * 1.6 * w - 2.05 * curlK - 0.6 * pcK;
+      body.position.z = -0.6 * curlK + 1.4 * pcK;
+    },
+    setPose(p, time) {
+      curlK += ((p === 1 ? 1 : 0) - curlK) * 0.12; pcK += ((p === 2 ? 1 : 0) - pcK) * 0.12;
+      if (curlK > 0.01) tailB.forEach((n, i) => turn(n, -0.05 * curlK, (0.75 + i * 0.12) * curlK + Math.sin(time * 0.8 - i) * 0.03));
+      this._apply(time);
     },
     setLook(pitch) {
       look = pitch;
@@ -828,7 +844,10 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
         let dy = t.yaw - c.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); c.yaw += dy * a;
         const speed = Math.hypot(c.x - px, c.z - pz) / Math.max(dt, 1e-3);
         o.cat.group.position.set(c.x, c.y, c.z); o.cat.group.rotation.y = c.yaw;
-        o.cat.animate(dt, (t.seat >= 0) ? 0 : speed, time); o.cat.setLook(t.pitch || 0); o.cat.setLight(t.lt || 0, time); o.cat.setSit(t.seat >= 0);
+        // at the computer: on the chair, facing the desk
+        if (t.pose === 2 && t.seatAt) { o.cat.group.position.set(t.seatAt.x, t.seatAt.y, t.seatAt.z); o.cat.group.rotation.y = 0; }
+        o.cat.animate(dt, (t.seat >= 0 || t.pose) ? 0 : speed, time); o.cat.setLook(t.pitch || 0); o.cat.setLight(t.lt || 0, time); o.cat.setSit(t.seat >= 0);
+        if (o.cat.setPose) o.cat.setPose(t.pose || 0, time);
       });
     }
   };

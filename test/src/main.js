@@ -126,8 +126,11 @@ import { createAssets } from './assets.js';
   const player = createPlayer({ physics, trees });
   const boat = createBoat({ scene, house: cabin, physics });
   // Settings → Play together: other players, and the doors / lights / boat / scene shared with them
+  const curl = { t: 0, k: 0 };
   const online = createOnline({ scene, player, scenes, toast: (m) => toastMsg(m),
-    extra: () => ({ lt: hand.state === 'torch' ? 1 : hand.state === 'lamp' ? 2 : 0, seat: boat.active ? boat.seat : -1, boat: boat.snapshot() || undefined, skin: undefined }) });
+    extra: () => ({ lt: hand.state === 'torch' ? 1 : hand.state === 'lamp' ? 2 : 0, seat: boat.active ? boat.seat : -1, boat: boat.snapshot() || undefined, skin: undefined,
+      // 1 = curled up on the bed / sofa, 2 = sitting at the computer (then where the chair is)
+      pose: computer.active ? 2 : curl.k > 0.5 ? 1 : 0, ...(computer.active && cabin.chairSeat() ? { seatAt: cabin.chairSeat() } : {}) }) });
   window.MEOW_ONLINE = online;
   setTimeout(() => { window.MEOW_DEBUG = { get portal() { return portal; }, trees, player, camera, scenes, cabin }; }, 0);   // (testing)
   boat.takenSeats = () => online.takenSeats();
@@ -532,6 +535,14 @@ import { createAssets } from './assets.js';
     portal.update(now, camOut, scenes.cur);   // while the paw has you, it moves the camera
     if (player.justLanded) { player.justLanded = false; lockPointer(); }
     if (player.mode === 'home') setExploring(false);
+    // stand still on the bed or the sofa for a moment and your cat curls up (others see it; your view sinks low)
+    {
+      const ps = player.state, on = player.walking && !boat.active && !computer.active && !ps.air ? cabin.surfaceUnder(ps.x, ps.z, ps.feet) : null;
+      const still = Math.hypot(ps.vx || 0, ps.vz || 0) < 0.6;
+      curl.t = (on === 'bed' || on === 'sofa') && still ? curl.t + dt : 0;
+      curl.k += ((curl.t > 1.5 ? 1 : 0) - curl.k) * Math.min(1, dt * 3);
+      if (curl.k > 0.001 && player.walking) camOut.pos.y -= curl.k * 3.6;
+    }
     camera.position.copy(camOut.pos);
     camera.quaternion.copy(camOut.q);
     const fov = (innerWidth < 700 ? 62 : 50) - (player.mode === 'home' ? gal.focus * 6 - gal.pulse * 1.5 : 0);
