@@ -359,7 +359,7 @@ export function createDeepSnow(scene, TU, ground) {
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, TU, DU);
-    const H = `uniform sampler2D tTrail, tGround; uniform vec4 uTrailBox, uGroundBox; uniform vec2 uCell; uniform float uSnowLine, uWaterY, uDepth; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ;
+    const H = `uniform sampler2D tTrail, tGround; uniform vec4 uTrailBox, uGroundBox; uniform vec2 uCell; uniform float uSnowLine, uWaterY, uDepth; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ; varying vec3 vGN;
       float trv(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
       // the ground height exactly as the terrain mesh draws it: the same two triangles per square (not a smooth blend),
       // so the snow never dips under the visible ground and lets it poke through as jagged teeth
@@ -391,10 +391,26 @@ export function createDeepSnow(scene, TU, ground) {
           vec3 objectTangent = vec3(1.0, 0.0, 0.0);
         #endif`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vSk = sk; vXZ = wxz; vPress = trv(wxz); vWall = length(vec2(hx, hz)) / (2.0 * e);
+        vSk = sk; vXZ = wxz; vPress = trv(wxz); vWall = length(vec2(hx, hz)) / (2.0 * e); vGN = gN;
         transformed.y = g0 + max(0.1, snowH(wxz, sk));`);
+    // the snow's surface direction is worked out for every pixel (not just at the grid's corners), so the
+    // trail walls shade smoothly with no triangle pattern
+    const FH = `uniform sampler2D tTrail; uniform vec4 uTrailBox; uniform float uDepth; varying vec3 vGN;
+      float trv(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
+      float sh2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float sn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(sh2(i), sh2(i + vec2(1, 0)), f.x), mix(sh2(i + vec2(0, 1)), sh2(i + vec2(1, 1)), f.x), f.y); }
+      float snowH(vec2 p, float sk) {
+        float t = (trv(p) * 2.0 + trv(p + vec2(0.45, 0.0)) + trv(p - vec2(0.45, 0.0)) + trv(p + vec2(0.0, 0.45)) + trv(p - vec2(0.0, 0.45))) / 6.0;
+        float ring = (trv(p + vec2(1.1, 0.0)) + trv(p - vec2(1.1, 0.0)) + trv(p + vec2(0.0, 1.1)) + trv(p - vec2(0.0, 1.1))) * 0.25;
+        float berm = max(0.0, ring - t) * 1.8;
+        return uDepth * sk * (0.88 + 0.24 * sn2(p * 0.35) - t * 0.95 + berm * 0.55);
+      }`;
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uSnow; uniform vec4 uHole; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSnow; uniform vec4 uHole; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ;\n' + FH)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+        { float e = 0.18, hx = snowH(vXZ + vec2(e, 0.0), vSk) - snowH(vXZ - vec2(e, 0.0), vSk), hz = snowH(vXZ + vec2(0.0, e), vSk) - snowH(vXZ - vec2(0.0, e), vSk);
+          vec3 wn = normalize(normalize(vGN) + vec3(-hx, 0.0, -hz) / (2.0 * e));
+          normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         if (vSk < 0.08) discard;
         if (vXZ.x > uHole.x && vXZ.x < uHole.y && vXZ.y > uHole.z && vXZ.y < uHole.w) discard;
