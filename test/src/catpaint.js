@@ -4,6 +4,7 @@
    colour, opacity and brush. Each cat gets its own per-vertex "paint" colour (RGBA) that the cat shaders mix in.
    Dabs are packed into a short text (16 bytes each) to save in the browser and to send to other players. */
 import * as THREE from 'three';
+import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';   // fast picking (MIT, test/vendor/three-mesh-bvh)
 
 export const MAX_STAMPS = 6000;
 const BRUSH = { soft: 0, hard: 1, spray: 2, erase: 3 };
@@ -200,7 +201,8 @@ export function openPaintEditor(opts) {
       const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(grid.pos, 3));
       if (mesh.geometry.index) pg.setIndex(mesh.geometry.index);
       pg.computeBoundingSphere(); pg.computeBoundingBox();
-      pick = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); pick.visible = false; c.root.add(pick);
+      pg.boundsTree = new MeshBVH(pg);   // a box tree over the triangles: each pick tests a handful instead of all of them
+      pick = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); pick.raycast = acceleratedRaycast; pick.visible = false; c.root.add(pick);
     } else pick = mesh;
     const tag = c.group.children.find((o) => o.isSprite); if (tag) tag.visible = false;
   };
@@ -247,7 +249,7 @@ export function openPaintEditor(opts) {
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
   const hitAt = (x, y) => {
     const rc = canvas.getBoundingClientRect(); ndc.set(((x - rc.left) / rc.width) * 2 - 1, -((y - rc.top) / rc.height) * 2 + 1);
-    ray.setFromCamera(ndc, cam); const h = ray.intersectObject(pick, false)[0]; if (!h) return null;
+    ray.setFromCamera(ndc, cam); ray.firstHitOnly = true; const h = ray.intersectObject(pick, false)[0]; if (!h) return null;
     const root = cat.root; root.updateMatrixWorld(true);
     const local = root.worldToLocal(h.point.clone());
     const wn = (h.face ? h.face.normal.clone() : new THREE.Vector3(0, 1, 0)).transformDirection(pick.matrixWorld);
