@@ -494,7 +494,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vC; uniform float uOpacity;')
           .replace('#include <color_fragment>', '#include <color_fragment>\n float e = smoothstep(0.0, 0.28, vC.x) * smoothstep(1.0, 0.72, vC.x); diffuseColor.a = uOpacity * e * 0.85;');
       };
-      const bed = new THREE.Mesh(strip(1.55, 0.04), bedMat); bed.renderOrder = 0;
+      const bed = new THREE.Mesh(strip(1.55, 0.09), bedMat); bed.renderOrder = 0;
       add(bed, 'creek', { receive: true });
       // the water
       const wMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: false, envMapIntensity: 1.2, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
@@ -512,7 +512,7 @@ export function createProps({ scene, heightAt, U, snowColor, clear = [] }) {
             float edge = smoothstep(0.0, 0.16, vC.x) * smoothstep(1.0, 0.84, vC.x);
             float mid = 1.0 - abs(vC.x - 0.5) * 2.0;
             float f = flowN(vC);
-            float foam = smoothstep(0.62, 0.9, f + clamp(vSteep, 0.0, 1.2) * 0.35) * (0.25 + 0.6 * clamp(vSteep * 1.5, 0.0, 1.0)) + (1.0 - smoothstep(0.0, 0.1, min(vC.x, 1.0 - vC.x))) * 0.35;
+            float foam = smoothstep(0.7, 0.95, f + clamp(vSteep, 0.0, 1.2) * 0.3) * (0.15 + 0.6 * clamp(vSteep * 1.5, 0.0, 1.0)) + (1.0 - smoothstep(0.0, 0.1, min(vC.x, 1.0 - vC.x))) * 0.35;
             vec3 deep = uColor * 0.42, shallow = uColor * 1.05 + vec3(0.04, 0.06, 0.05);
             diffuseColor.rgb = mix(mix(shallow, deep, mid), vec3(0.92, 0.95, 0.96), clamp(foam, 0.0, 0.85));
             diffuseColor.a = uOpacity * (0.45 + 0.45 * mid + 0.3 * foam) * edge;`)
