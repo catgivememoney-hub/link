@@ -28,7 +28,7 @@ export function createFlame(w, h) {
   const pg = new THREE.BufferGeometry();
   pg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); pg.setAttribute('aLife', new THREE.BufferAttribute(life, 1)); pg.setAttribute('aSeed', new THREE.BufferAttribute(seedA, 1));
   const pm = new THREE.ShaderMaterial({
-    uniforms: Object.assign({ uSize: { value: w * 0.62 } }, U), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: Object.assign({ uSize: { value: w * 0.4 } }, U), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     vertexShader: /* glsl */`
       attribute float aLife; attribute float aSeed; uniform float uSize; varying float vLife; varying float vSeed;
       void main() { vLife = aLife; vSeed = aSeed; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
@@ -41,14 +41,14 @@ export function createFlame(w, h) {
         c.x *= 1.0 + vLife * 0.9;                       // thinner as it climbs (a tongue)
         float n = fbm(c * 2.2 + vec2(vSeed * 17.0, -uTime * 2.6 - vSeed * 5.0));
         float d = length(c * vec2(1.0, 0.75)) + (n - 0.5) * 0.9;
-        float a = smoothstep(1.0, 0.15, d);
+        float a = smoothstep(0.8, 0.1, d) * smoothstep(1.0, 0.75, max(abs(c.x), abs(c.y)));
         if (a < 0.01) discard;
-        float heat = clamp(1.25 - vLife * 1.5 - d * 0.55, 0.0, 1.0);
+        float heat = clamp(1.05 - vLife * 1.7 - d * 0.6, 0.0, 1.0);
         vec3 col = mix(vec3(0.45, 0.04, 0.0), vec3(1.0, 0.33, 0.03), smoothstep(0.0, 0.35, heat));
         col = mix(col, vec3(1.0, 0.72, 0.25), smoothstep(0.35, 0.7, heat));
         col = mix(col, vec3(1.0, 0.95, 0.8), smoothstep(0.75, 1.0, heat));
         float fade = smoothstep(0.0, 0.08, vLife) * (1.0 - smoothstep(0.6, 1.0, vLife));
-        gl_FragColor = vec4(col * a * fade * 0.55 * uOn, 1.0);
+        gl_FragColor = vec4(col * a * fade * 0.42 * uOn, 1.0);
       }`
   });
   const puffs = new THREE.Points(pg, pm); puffs.frustumCulled = false; puffs.renderOrder = 4; g.add(puffs);
@@ -93,7 +93,7 @@ export function createFlame(w, h) {
         const q = P[i]; q.t += dt * q.sp * 0.95; if (q.t >= 1) { q.t -= 1; reset(q); }
         const k = q.t, pull = 1 - k * 0.75;   // puffs drift in toward the middle as they rise (a cone of flame)
         pos[i * 3] = q.x * pull + Math.sin(time * 3.1 + q.s * 9) * w * 0.05 * k;
-        pos[i * 3 + 1] = Math.pow(k, 0.85) * h * (0.8 + q.s * 0.5);
+        pos[i * 3 + 1] = Math.pow(k, 0.85) * h * (0.55 + q.s * 0.35);
         pos[i * 3 + 2] = q.z * pull + Math.cos(time * 2.7 + q.s * 7) * w * 0.04 * k;
         life[i] = k;
       }
