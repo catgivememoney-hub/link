@@ -13,12 +13,6 @@ const PREFIX = 'meow-cabin-';
 // the cat skins (Settings → Play together). The last five are modelled on Jeffy's cat photos:
 // stripe = tabby stripes, back = darker back/cap, belly = chest/belly/muzzle/paws, iris = eye colour, extras = tongue, big eyes, boots, purse
 export const SKINS = [
-  { name: 'Ginger', color: '#d9893f' }, { name: 'Tabby grey', color: '#8a8580' }, { name: 'Black', color: '#2a2624' }, { name: 'White', color: '#ece6dc' },
-  { name: 'Cream', color: '#e2c9a0' }, { name: 'Chocolate', color: '#7a5638' }, { name: 'Blue', color: '#6f7c88' }, { name: 'Calico', color: '#c9a27c' },
-  { name: 'Smokey', color: '#aaa39b', back: '#57514c', backAmt: 0.9, stripe: '#5d5751', stripeAmt: 0.35, belly: '#f1ede7', iris: '#7f97a8' },
-  { name: 'Silver tabby', color: '#cdcdca', stripe: '#3b3b3d', stripeAmt: 1, belly: '#f6f6f4', iris: '#8e9c6c' },
-  { name: 'November', color: '#ab9375', stripe: '#36291d', stripeAmt: 0.9, bodyColor: '#f7f4ef', belly: '#ffffff', fluffy: true, boots: '#c99a5c', purse: '#ec8aa3' },
-  { name: 'Blep', color: '#8d6e51', stripe: '#31241a', stripeAmt: 0.85, belly: '#f4eee5', iris: '#a9b066', tongue: true },
   { name: 'El Gato', color: '#e29b56', stripe: '#bb6529', stripeAmt: 0.6, belly: '#f8f0e5', bigEyes: true }
 ];
 
