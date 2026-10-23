@@ -325,7 +325,7 @@ function createTrail(TU) {
    ground: where you walk, the snow is pushed down to the ground and heaped up along both sides, so
    your path is a real furrow through the snow rather than a darker stripe. */
 export function createDeepSnow(scene, TU) {
-  const SIZE = 150, SEG = 220, DEPTH = 1.5;
+  const SIZE = 110, SEG = 330, DEPTH = 1.5;
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
   const P = geo.attributes.position, base = new Float32Array(P.count * 2);
   for (let i = 0; i < P.count; i++) { base[i * 2] = P.getX(i); base[i * 2 + 1] = P.getZ(i); }
@@ -340,7 +340,7 @@ export function createDeepSnow(scene, TU) {
       float sn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(sh2(i), sh2(i + vec2(1, 0)), f.x), mix(sh2(i + vec2(0, 1)), sh2(i + vec2(1, 1)), f.x), f.y); }
       // snow height above the ground at p: full depth, pressed down in the trail, heaped up beside it
       float snowH(vec2 p, float sk) {
-        float t = trv(p);
+        float t = (trv(p) * 2.0 + trv(p + vec2(0.45, 0.0)) + trv(p - vec2(0.45, 0.0)) + trv(p + vec2(0.0, 0.45)) + trv(p - vec2(0.0, 0.45))) / 6.0;   // softened
         float ring = (trv(p + vec2(1.1, 0.0)) + trv(p - vec2(1.1, 0.0)) + trv(p + vec2(0.0, 1.1)) + trv(p - vec2(0.0, 1.1))) * 0.25;
         float berm = max(0.0, ring - t) * 1.8;
         return uDepth * sk * (0.88 + 0.24 * sn2(p * 0.35) - t * 0.95 + berm * 0.55);
@@ -382,7 +382,7 @@ export function createDeepSnow(scene, TU) {
     update(x, z, snowy) {
       mesh.visible = on && snowy;
       if (!mesh.visible) return;
-      if (Math.abs(x - cx) > 30 || Math.abs(z - cz) > 30) rebuild(x, z);
+      if (Math.abs(x - cx) > 22 || Math.abs(z - cz) > 22) rebuild(x, z);
     }
   };
 }
