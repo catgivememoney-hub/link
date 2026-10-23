@@ -212,7 +212,7 @@ function furSkinMat(sk) {
 // bind-pose points on the model (three.js coords: x right, y up, -z forward)
 const SPOTS = {
   cat: { eye: [new THREE.Vector3(0.576, 4.276, -2.644), new THREE.Vector3(-0.576, 4.276, -2.644)], eyeN: [new THREE.Vector3(0.62, 0.35, -0.70), new THREE.Vector3(-0.62, 0.35, -0.70)], mouth: new THREE.Vector3(0, 3.62, -2.96), eyeR: 1, inset: 0.05 },
-  frip: { eye: [new THREE.Vector3(0.263, 4.64, -4.647), new THREE.Vector3(-0.263, 4.64, -4.645)], eyeN: [new THREE.Vector3(0.42, 0.12, -0.9), new THREE.Vector3(-0.42, 0.12, -0.9)], mouth: new THREE.Vector3(0, 4.26, -4.97), eyeR: 0.62, inset: -0.02 }
+  frip: { eye: [new THREE.Vector3(0.262, 4.49, -4.6), new THREE.Vector3(-0.262, 4.49, -4.6)], eyeN: [new THREE.Vector3(0.42, 0.12, -0.9), new THREE.Vector3(-0.42, 0.12, -0.9)], mouth: new THREE.Vector3(0, 4.26, -4.97), eyeR: 0.62, inset: -0.02 }
 };
 
 function buildModelCat(tpl, sk, name) {
