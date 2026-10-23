@@ -350,7 +350,7 @@ export function createDeepSnow(scene, TU, ground) {
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, TU, DU);
-    const H = `uniform sampler2D tTrail, tGround; uniform vec4 uTrailBox, uGroundBox; uniform vec2 uCell; uniform float uSnowLine, uWaterY, uDepth; varying float vSk; varying float vPress; varying vec2 vXZ;
+    const H = `uniform sampler2D tTrail, tGround; uniform vec4 uTrailBox, uGroundBox; uniform vec2 uCell; uniform float uSnowLine, uWaterY, uDepth; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ;
       float trv(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
       float gh(vec2 p) { return texture2D(tGround, (p - uGroundBox.xy) / uGroundBox.zw).r; }
       float sh2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -375,14 +375,16 @@ export function createDeepSnow(scene, TU, ground) {
           vec3 objectTangent = vec3(1.0, 0.0, 0.0);
         #endif`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vSk = sk; vXZ = wxz; vPress = trv(wxz);
+        vSk = sk; vXZ = wxz; vPress = trv(wxz); vWall = length(vec2(hx, hz)) / (2.0 * e);
         transformed.y = g0 + max(0.03, snowH(wxz, sk));`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uSnow; uniform vec4 uHole; varying float vSk; varying float vPress; varying vec2 vXZ;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSnow; uniform vec4 uHole; varying float vSk; varying float vPress; varying float vWall; varying vec2 vXZ;')
       .replace('#include <color_fragment>', `#include <color_fragment>
         if (vSk < 0.08) discard;
         if (vXZ.x > uHole.x && vXZ.x < uHole.y && vXZ.y > uHole.z && vXZ.y < uHole.w) discard;
-        diffuseColor.rgb = uSnow * mix(vec3(1.0), vec3(0.8, 0.86, 0.95), smoothstep(0.2, 0.9, vPress));`);
+        // the furrow reads clearly: packed blue-grey snow at the bottom, its walls in their own soft shade
+        diffuseColor.rgb = uSnow * mix(vec3(1.0), vec3(0.6, 0.68, 0.82), smoothstep(0.15, 0.85, vPress));
+        diffuseColor.rgb *= 1.0 - 0.38 * smoothstep(0.08, 0.9, vWall) * (0.5 + 0.5 * smoothstep(0.0, 0.5, vPress));`);
   };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true; mesh.castShadow = false; mesh.frustumCulled = false; mesh.visible = false;

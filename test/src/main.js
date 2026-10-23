@@ -129,8 +129,15 @@ import { createAssets } from './assets.js';
   // Settings → Play together: other players, and the doors / lights / boat / scene shared with them
   const curl = { t: 0, k: 0 };
   // camera view (Settings → Controls → View; the switch key is T unless you change it)
-  const VIEW = { mode: 0, shown: 0, t: 1, body: 0, key: 'KeyT', fromP: new THREE.Vector3(), fromQ: new THREE.Quaternion(), tp: new THREE.Vector3(), tq: new THREE.Quaternion(), v1: new THREE.Vector3(), v2: new THREE.Vector3(), e: new THREE.Euler() };
+  const VIEW = { mode: 0, shown: 0, t: 1, body: 0, dist: 9, distTo: 9, key: 'KeyT', fromP: new THREE.Vector3(), fromQ: new THREE.Quaternion(), tp: new THREE.Vector3(), tq: new THREE.Quaternion(), v1: new THREE.Vector3(), v2: new THREE.Vector3(), e: new THREE.Euler() };
   try { VIEW.mode = Math.min(1, Math.max(0, parseInt(localStorage.getItem('meow.view') || '0', 10) || 0)); VIEW.key = localStorage.getItem('meow.key.view') || 'KeyT'; } catch { /* ignore */ }
+  // third person: the scroll wheel moves the camera closer or further away
+  try { VIEW.dist = VIEW.distTo = Math.min(28, Math.max(3, +localStorage.getItem('meow.camdist') || 9)); } catch { /* ignore */ }
+  addEventListener('wheel', (e) => {
+    if (VIEW.mode !== 1 || !player.walking || !document.pointerLockElement) return;
+    VIEW.distTo = Math.min(28, Math.max(3, VIEW.distTo * Math.pow(1.0015, e.deltaY)));
+    try { localStorage.setItem('meow.camdist', VIEW.distTo.toFixed(1)); } catch { /* ignore */ }
+  }, { passive: true });
   const keyName = (c) => c.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ').replace(/^Arrow/, '').replace(/(Left|Right)$/, ' $1').trim();
   const setView = (m) => {
     VIEW.mode = m; try { localStorage.setItem('meow.view', String(m)); } catch { /* ignore */ }
@@ -592,7 +599,8 @@ import { createAssets } from './assets.js';
         // orbit: back off from the cat along the way you look, stopping short of walls
         const hx = ps.x, hy = ps.feet + EYE + 0.8, hz = ps.z;
         let d = 0;
-        for (; d < 9; d += 0.4) {
+        VIEW.dist += (VIEW.distTo - VIEW.dist) * Math.min(1, dt * 10);
+        for (; d < VIEW.dist; d += 0.4) {
           const x = hx - fwd.x * (d + 0.4), z = hz - fwd.z * (d + 0.4);
           if (physics.blocked(x, z, ps.feet, 0.4)) break;
         }
