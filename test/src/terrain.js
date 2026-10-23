@@ -383,8 +383,8 @@ export function createDeepSnow(scene, TU, ground) {
         if (vSk < 0.08) discard;
         if (vXZ.x > uHole.x && vXZ.x < uHole.y && vXZ.y > uHole.z && vXZ.y < uHole.w) discard;
         // the furrow reads clearly: packed blue-grey snow at the bottom, its walls in their own soft shade
-        diffuseColor.rgb = uSnow * mix(vec3(1.0), vec3(0.6, 0.68, 0.82), smoothstep(0.15, 0.85, vPress));
-        diffuseColor.rgb *= 1.0 - 0.38 * smoothstep(0.08, 0.9, vWall) * (0.5 + 0.5 * smoothstep(0.0, 0.5, vPress));`);
+        diffuseColor.rgb = uSnow * mix(vec3(1.0), vec3(0.5, 0.58, 0.76), smoothstep(0.12, 0.8, vPress));
+        diffuseColor.rgb *= 1.0 - 0.5 * smoothstep(0.06, 0.8, vWall) * (0.5 + 0.5 * smoothstep(0.0, 0.5, vPress));`);
   };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true; mesh.castShadow = false; mesh.frustumCulled = false; mesh.visible = false;
