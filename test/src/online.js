@@ -271,7 +271,9 @@ function buildModelCat(tpl, sk, name) {
   const real = sk.model === 'frip' || sk.model === 'cur', SP = SPOTS[sk.model || 'cat'] || SPOTS.cat;
   let fur = real ? null : furSkinMat(sk), tintU = null;
   const tintMat = (base) => {   // recolour the orange fur of the realistic cat, keep its white parts white
-    const m = base.clone(); const def = (SKINS.find((k) => k.model === sk.model) || {}).color || '';
+    const m = base.clone();
+    // the downloaded cat's material is marked see-through (for its whiskers), which punches holes in the fur: make it solid
+    m.transparent = false; m.alphaTest = 0; m.depthWrite = true; m.opacity = 1; m.alphaHash = false; m.side = THREE.FrontSide; const def = (SKINS.find((k) => k.model === sk.model) || {}).color || '';
     tintU = { uTint: { value: new THREE.Color(sk.color) }, uTintOn: { value: sk.color.toLowerCase() === def.toLowerCase() ? 0 : 1 } };
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, tintU);
