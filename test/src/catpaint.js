@@ -330,7 +330,7 @@ export function openPaintEditor(opts) {
     const w = view.clientWidth, h = view.clientHeight;
     if (canvas.width !== Math.round(w * r.getPixelRatio())) { r.setSize(w, h, false); cam.aspect = w / Math.max(1, h); cam.updateProjectionMatrix(); }
     cam.position.copy(target).add(new THREE.Vector3(0, 0, dist)); cam.lookAt(target);
-    if (hover && (!drag || drag.how === 'paint')) {
+    if (hover && st.mode === 'paint' && (!drag || drag.how === 'paint')) {
       ring.visible = true; ring.position.copy(hover.point).addScaledVector(hover.wn, 0.01);
       ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), hover.wn); ring.scale.setScalar(radius());
       ring.material.color.set(st.brush === 'erase' ? '#ffffff' : st.color); dot.material.color.set(st.brush === 'erase' ? '#ff6b6b' : '#ffffff');
