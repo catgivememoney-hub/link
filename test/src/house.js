@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three-addons/loaders/GLTFLoader.js';
 import { createBooks } from './books.js';
+import { createFlame } from './highfx.js';
 
 // where the house stands (terrain.js levels the ground here; props.js keeps a clearing)
 export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
@@ -78,7 +79,7 @@ export function createHouse({ scene }) {
   scene.add(group);
   const doors = DOORS.map(([name, angle]) => ({ name, angle, node: null, k: 0, to: 0, hinge: null, meshes: [] }));
   const byName = Object.fromEntries(doors.map((d) => [d.name, d]));
-  const H = { fire: null, ready: false, boatNode: null, onBoat: null, root: null, readyFns: [] };
+  const H = { flame: null, hiFx: false, fire: null, ready: false, boatNode: null, onBoat: null, root: null, readyFns: [] };
   let boatBlock = null;
 
   // lights: the fire (flickers), the bedside lamp, the lantern on the dock
@@ -111,7 +112,7 @@ export function createHouse({ scene }) {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aAge', new THREE.BufferAttribute(age, 1));
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, fog: true,
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tMap: { value: tex }, uColor: { value: new THREE.Color(0xc9c9c6) }, uOp: { value: 0.5 }, uScale: { value: 400 } }]),
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tMap: { value: tex }, uColor: { value: new THREE.Color(0xc9c9c6) }, uOp: { value: 0.5 }, uScale: { value: 560 } }]),
       vertexShader: 'attribute float aAge; varying float vAge; uniform float uScale;\n#include <fog_pars_vertex>\nvoid main(){ vAge = aAge; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition; gl_PointSize = uScale * (3.5 + aAge * 16.0) / -mvPosition.z;\n#include <fog_vertex>\n}',
       fragmentShader: 'uniform sampler2D tMap; uniform vec3 uColor; uniform float uOp; varying float vAge;\n#include <fog_pars_fragment>\nvoid main(){ float a = texture2D(tMap, gl_PointCoord).a * uOp * smoothstep(0.0, 0.2, vAge) * (1.0 - smoothstep(0.3, 1.0, vAge)); gl_FragColor = vec4(uColor, a);\n#include <fog_fragment>\n}'
     });
@@ -123,7 +124,7 @@ export function createHouse({ scene }) {
     return {
       points, origin,
       update(dt, time, on, wind) {
-        mat.uniforms.uOp.value = 0.32 * on;
+        mat.uniforms.uOp.value = 0.6 * on;   // thicker smoke
         if (on < 0.01) return;
         for (let i = 0; i < N; i++) {
           const p = seed[i]; p.t += dt / LIFE; if (p.t > 1) { p.t -= 1; p.dx = Math.random() - 0.5; p.dz = Math.random() - 0.5; }
@@ -175,6 +176,15 @@ export function createHouse({ scene }) {
       if (d.node) { d.node.traverse((o) => { if (o.isMesh) d.meshes.push(o); }); d.hinge = d.node.getWorldPosition(new THREE.Vector3()); }
     }
     H.fire = root.getObjectByName('Fire');
+    // a realistic shader fire sized to the fireplace's flames (shown on high graphics instead of the simple flames)
+    if (H.fire) {
+      root.updateMatrixWorld(true);
+      const bb = new THREE.Box3().setFromObject(H.fire), sz = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+      H.flame = createFlame(Math.max(sz.x, sz.z) * 1.05, Math.max(sz.y, 0.5) * 1.7);
+      const base = new THREE.Vector3(c.x, bb.min.y, c.z); group.worldToLocal(base);
+      H.flame.group.position.copy(base); H.flame.group.visible = H.hiFx; group.add(H.flame.group);
+      H.fire.visible = !H.hiFx;
+    }
     { const lamp = root.getObjectByName('Bedside_lamp') || root.getObjectByName('Bedside lamp'); if (lamp) lamp.traverse((m) => { if (m.isMesh) L.lampMeshes.push(m); }); }
     DR.node = root.getObjectByName('Drawer');
     if (DR.node) { DR.z0 = DR.node.position.z; DR.node.traverse((m) => { if (m.isMesh) DR.meshes.push(m); }); }
@@ -213,6 +223,8 @@ export function createHouse({ scene }) {
   const api = {
     group, doors,
     get ready() { return H.ready; },
+    // high graphics: the realistic shader fire instead of the simple flames
+    setFireQuality(high) { H.hiFx = !!high; if (H.flame) H.flame.group.visible = H.hiFx; if (H.fire) H.fire.visible = !H.hiFx; },
     holeBox: [1e9, 1e9, 1e9, 1e9], studyBox: [1e9, 1e9, 1e9, 1e9],
     // the boat module hooks in here (its hull is solid when you walk on the water)
     setBoatBlock(fn) { boatBlock = fn; },
@@ -334,6 +346,7 @@ export function createHouse({ scene }) {
         if (moving || SH.t > 2) { SH.t = 0; SH.lights.forEach((l) => { if (l.intensity > 0.01) l.shadow.needsUpdate = true; }); }
       }
       smoke.update(dt, time, on, 1);
+      if (H.flame && H.hiFx) H.flame.update(dt, time, on);
       if (H.fire) { const k = 0.9 + 0.12 * flick; H.fire.scale.y = k; H.fire.position.y = (FL + 0.2) * (1 - k); }   // flames lick up from their base
     }
   };

@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { heightAt, createTerrain, createWater } from './terrain.js';
 import { createSky } from './sky.js';
 import { createClouds } from './clouds.js';
+import { createRainFX } from './highfx.js';
 import { createWeather } from './weather.js';
 import { createScenes, PRESETS, SCENE_NAMES } from './scenes.js';
 import { createProps, createRipples, createFootprints } from './props.js';
@@ -70,6 +71,7 @@ import { createAssets } from './assets.js';
   /* ---------- build the world ---------- */
   const sky = createSky(scene, U);
   const clouds = createClouds(scene, U);   // Settings → Graphics → Clouds
+  const rainFx = createRainFX(scene, heightAt);   // heavy rain with splashes (high graphics)
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
   const sun = new THREE.DirectionalLight(0xffffff, 1);
   scene.add(hemi, sun, sun.target);
@@ -554,6 +556,7 @@ import { createAssets } from './assets.js';
     applyScene(time, now);
     const out = 1 - indoorK;
     weather.update(scenes.cur, camera.position, scenes.cur.look, scenes.cur.cam, water.mesh.position.y, out, dt);
+    rainFx.update(dt, time, camera.position, (scenes.cur.rain || 0) * out, water.mesh.position.y, indoorK > 0.5);
     ripples.update(scenes.cur.pRipples * out, camera.position, water.mesh.position.y);
     prints.update(Math.min(1, Math.max(0, (100 - scenes.cur.snowLine) / 80)) * out);
     // snow trails: every bit of ground you cross on snow gets pressed down (refills while it snows)
@@ -715,13 +718,13 @@ import { createAssets } from './assets.js';
   //   box: how far around you sun shadows reach, plants: grass/ferns/flowers drawn, soft: soft shadow edges
   const GFX_LEVELS = {
     //          pixels         sun shadows: cascade map size, distance, softness   lamp/fire shadows   screen-space effects
-    none:     { tex: false, name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, clouds: 0, fx: {} },
-    fast:     { tex: false, name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, fx: {} },
-    default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, fx: {} },
-    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, fx: {} },
-    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  clouds: 1, fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
-    best:     { name: 'Best',     pr: 2.0,  shadows: true,  csm: 2048, far: 260, soft: 1.6, lamps: 512,  plants: true,  clouds: 2, fx: { ao: 1, aoSamples: 12, contact: 0.6, scale: 0.75 } },
-    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  csm: 3072, far: 400, soft: 1.8, lamps: 1024, plants: true,  clouds: 2, fx: { ao: 1, aoSamples: 16, contact: 0.7, gi: 0.45, ssr: 1, rays: 1, scale: 1 } }
+    none:     { tex: false, name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, clouds: 0, hifx: 0, fx: {} },
+    fast:     { tex: false, name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: {} },
+    default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: {} },
+    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: {} },
+    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  clouds: 1, hifx: 0, fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
+    best:     { name: 'Best',     pr: 2.0,  shadows: true,  csm: 2048, far: 260, soft: 1.6, lamps: 512,  plants: true,  clouds: 2, hifx: 1, fx: { ao: 1, aoSamples: 12, contact: 0.6, scale: 0.75 } },
+    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  csm: 3072, far: 400, soft: 1.8, lamps: 1024, plants: true,  clouds: 2, hifx: 1, fx: { ao: 1, aoSamples: 16, contact: 0.7, gi: 0.45, ssr: 1, rays: 1, scale: 1 } }
   };
   const GFX_ORDER = Object.keys(GFX_LEVELS);
   const OLD = { low: 'fast', mid: 'balanced', high: 'best' };
@@ -730,7 +733,7 @@ import { createAssets } from './assets.js';
   const ADV = { res: 0, sharp: 0, custom: null };
   try { Object.assign(ADV, JSON.parse(localStorage.getItem('meow.gfxadv') || '{}')); } catch { /* ignore */ }
   const saveAdv = () => { try { localStorage.setItem('meow.gfxadv', JSON.stringify(ADV)); } catch { /* ignore */ } };
-  const customFrom = (base) => ({ name: 'Custom', clouds: base.clouds ?? 1, pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants, tex: base.tex !== false,
+  const customFrom = (base) => ({ name: 'Custom', clouds: base.clouds ?? 1, hifx: base.hifx ?? 0, pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants, tex: base.tex !== false,
     fx: Object.assign({ ao: 0, aoSamples: 12, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.75 }, base.fx) });
   const applyGfx = (lv) => {
     lv = OLD[lv] || lv; if (lv !== 'custom' && !GFX_LEVELS[lv]) lv = 'balanced';
@@ -753,6 +756,7 @@ import { createAssets } from './assets.js';
     }
     cabin.setLightShadows(G.lamps);
     clouds.setMode(G.clouds ?? 1);
+    cabin.setFireQuality(!!G.hifx); rainFx.setEnabled(!!G.hifx); fishing.setDetail(!!G.hifx);   // realistic fire, heavy rain, detailed fish
     dispatchEvent(new CustomEvent('meow:gfx', { detail: lv }));   // other players' cats pick their detail level from this
     lens.fx.configure(Object.assign({ ao: 0, aoSamples: 8, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.5 }, G.fx));
     scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
@@ -776,6 +780,7 @@ import { createAssets } from './assets.js';
     const sw = (id, on) => $(id).setAttribute('aria-checked', String(!!on));
     sw('advShadows', G.shadows); sw('advPlants', G.plants); sw('advAO', G.fx.ao > 0); sw('advContact', G.fx.contact > 0);
     if ($('advClouds')) $('advClouds').value = String(G.clouds ?? 1);
+    sw('advHiFx', !!G.hifx);
     sw('advTex', G.tex !== false); sw('advSSR', G.fx.ssr > 0); sw('advGI', G.fx.gi > 0); sw('advRays', G.fx.rays > 0);
   }
   {
@@ -790,6 +795,7 @@ import { createAssets } from './assets.js';
       const flip = (id, fn) => $(id).addEventListener('click', () => toCustom((c) => fn(c, $(id).getAttribute('aria-checked') !== 'true')));
       flip('advShadows', (c, on) => { c.shadows = on; if (!on) { c.csm = 0; c.lamps = 0; } });
       flip('advPlants', (c, on) => { c.plants = on; });
+      if ($('advHiFx')) flip('advHiFx', (c, on) => { c.hifx = on ? 1 : 0; });
       flip('advTex', (c, on) => { c.tex = on; });
       flip('advAO', (c, on) => { c.fx.ao = on ? 1 : 0; });
       flip('advContact', (c, on) => { c.fx.contact = on ? 0.65 : 0; });

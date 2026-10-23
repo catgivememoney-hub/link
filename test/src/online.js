@@ -577,6 +577,59 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
   const onStatusChange = () => dispatchEvent(new CustomEvent('meow:online'));
   const setButtons = (on) => { if (ui.leave) ui.leave.hidden = !on; if (ui.host) ui.host.hidden = on; if (ui.join) ui.join.hidden = on; };
 
+  /* ---------- chat (only when someone else is in your world) ----------
+     Enter: open the chat box · type · Enter: send · Enter on an empty box (or Esc): close */
+  const chat = (() => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:45;width:min(380px,calc(100vw - 32px));font:14px/1.35 system-ui,sans-serif;color:#fff;pointer-events:none;display:none';
+    box.innerHTML = `<div class="mc-log" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px"></div>
+      <div class="mc-bar" style="display:none;pointer-events:auto;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:14px;background:rgba(18,22,28,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.18)">
+        <input class="mc-in" maxlength="200" placeholder="Say something…" autocomplete="off" style="flex:1;min-width:0;background:none;border:0;outline:0;color:#fff;font:inherit;padding:6px 0">
+        <span style="font-size:11px;opacity:.55;white-space:nowrap">Enter ↵</span></div>
+      <div class="mc-hint" style="font-size:11px;opacity:.55;text-shadow:0 1px 3px rgba(0,0,0,.6)">Press Enter to chat</div>`;
+    document.body.appendChild(box);
+    const log = box.querySelector('.mc-log'), bar = box.querySelector('.mc-bar'), input = box.querySelector('.mc-in'), hint = box.querySelector('.mc-hint');
+    let open = false;
+    const add = (name, text, color, mine) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'align-self:flex-start;max-width:100%;padding:5px 10px;border-radius:12px;background:rgba(18,22,28,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:opacity .6s;word-wrap:break-word;text-shadow:0 1px 2px rgba(0,0,0,.4)';
+      const who = document.createElement('b'); who.textContent = (mine ? 'You' : name || 'Cat') + ': '; who.style.color = color || '#ffd9a0';
+      row.appendChild(who); row.appendChild(document.createTextNode(String(text).slice(0, 200)));
+      log.appendChild(row); while (log.children.length > 8) log.firstChild.remove();
+      row._t = performance.now();
+      fade();
+    };
+    const fade = () => [...log.children].forEach((r) => { r.style.opacity = open || performance.now() - r._t < 12000 ? '1' : '0'; });
+    setInterval(fade, 1000);
+    const close = () => { open = false; bar.style.display = 'none'; hint.style.display = ''; input.blur(); fade(); };
+    const show = () => { open = true; bar.style.display = 'flex'; hint.style.display = 'none'; dispatchEvent(new Event('blur')); input.value = ''; setTimeout(() => input.focus(), 0); fade(); };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const t = input.value.trim();
+        if (!t) { close(); return; }
+        add(me.name, t, me.color, true);
+        const d = { t: 'ev', k: 'chat', v: { name: me.name, text: t, color: me.color }, id: myId };
+        conns.forEach((c) => { if (c.open) c.send(d); });
+        input.value = '';
+      } else if (e.key === 'Escape') { e.preventDefault(); close(); }
+    });
+    input.addEventListener('keyup', (e) => e.stopPropagation());
+    addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || open || box.style.display === 'none') return;
+      const t = e.target; if (t && (/INPUT|TEXTAREA|SELECT|BUTTON/.test(t.tagName) || t.isContentEditable)) return;
+      if (document.querySelector('.mp-wrap')) return;   // the paint board is open
+      e.preventDefault(); show();
+    }, true);
+    handlers.chat = (v, id) => { if (v && v.text) add(v.name, v.text, v.color, false); };
+    return {
+      // shown only when you're in a room with at least one other cat
+      sync() { const on = !!peer && others.size > 0; box.style.display = on ? 'block' : 'none'; if (!on && open) close(); }
+    };
+  })();
+  setInterval(() => chat.sync(), 700);
+
   // the panel lives in Settings → Online
   {
     const $ = (id) => document.getElementById(id);

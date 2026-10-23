@@ -86,19 +86,42 @@ export function createFish({ scene, camera, heightAt, water }) {
 
   // each fish gets its own copy of the material with a swimming wave: a side-to-side bend that runs
   // from head to tail and grows toward the tail (the head barely moves); uWig = how hard it swims
+  const FD = { value: 0 };   // high graphics: scales and a rainbow sheen
   const wiggly = (src) => {
     const m = src.clone();
-    m.userData.u = { uTime: T, uWig: { value: 0.1 }, uFreq: { value: 9 }, uPhase: { value: Math.random() * 6.28 } };
+    m.userData.u = { uTime: T, uWig: { value: 0.1 }, uFreq: { value: 9 }, uPhase: { value: Math.random() * 6.28 }, uDetail: FD };
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, m.userData.u);
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime, uWig, uFreq, uPhase;')
+        .replace('#include <common>', '#include <common>\nuniform float uTime, uWig, uFreq, uPhase;\nvarying vec3 vFP;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
+          vFP = position;
           { float back = clamp((0.75 - position.x) / 1.95, 0.0, 1.0);          // 0 at the head, 1 at the tail tip
             float amp = uWig * (0.08 + back * back * 1.25);
             transformed.z += sin(uTime * uFreq - position.x * 3.2 + uPhase) * amp; }`);
     };
-    m.customProgramCacheKey = () => 'fishwave';
+    sh_frag: {
+      const prev = m.onBeforeCompile;
+      m.onBeforeCompile = (sh) => {
+        prev(sh);
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uDetail;\nvarying vec3 vFP;')
+          .replace('#include <color_fragment>', `#include <color_fragment>
+          if (uDetail > 0.5 && vFP.x > -0.8 && vFP.x < 0.68) {
+            // overlapping scales: offset rows of little arcs, darker at each scale's back edge
+            vec2 q = vec2(vFP.x * 34.0, (vFP.y + abs(vFP.z) * 0.4) * 30.0);
+            q.x += step(1.0, mod(floor(q.y), 2.0)) * 0.5;
+            vec2 cell = fract(q) - vec2(0.15, 0.5);
+            float edge = smoothstep(0.38, 0.55, length(cell * vec2(1.0, 0.8)));
+            diffuseColor.rgb *= 1.0 - 0.22 * edge;
+            // a faint rainbow sheen along the sides
+            float side = 1.0 - smoothstep(0.05, 0.16, abs(vFP.y + 0.01));
+            vec3 irid = 0.5 + 0.5 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + vFP.x * 1.6 + vFP.y * 3.0));
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * (0.75 + 0.6 * irid), 0.35 * side);
+          }`);
+      };
+    }
+    m.customProgramCacheKey = () => 'fishwave2';
     return m;
   };
   const fishes = [];   // every fish mesh (so a detailed model can be swapped in)
@@ -270,6 +293,8 @@ export function createFish({ scene, camera, heightAt, water }) {
   return {
     // swap in a detailed fish (assets.js); geo is in the same frame: head toward +x, about 2 long
     setModel() { /* the fish is made in code now (buildFish); downloaded models are no longer used */ },
+    // high graphics: detailed scales and sheen
+    setDetail(on) { FD.value = on ? 1 : 0; },
     makePreview() { const m = new THREE.Mesh(fishGeo, wiggly(baseMat)); m.userData.wig = (a, f) => { const u = m.material.userData.u; u.uWig.value = a; if (f) u.uFreq.value = f; }; return m; },   // (testing)
     get time() { return T; },
     get busy() { return st.mode !== 'idle'; },
