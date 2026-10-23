@@ -139,13 +139,15 @@ export function applyPaint(g, stamps, from = 0, keep = false) {   // keep: paint
   for (let s = from; s < stamps.length; s++) {
     const st = stamps[s], r = Math.max(0.005, st.r), lc = linear(st.c);
     if (st.k === BRUSH.fill) { const [a, b] = flood(g, F, st, lc); lo = Math.min(lo, a); hi = Math.max(hi, b); continue; }
-    const x0 = Math.floor((st.p[0] - r) / cell), x1 = Math.floor((st.p[0] + r) / cell);
-    const y0 = Math.floor((st.p[1] - r) / cell), y1 = Math.floor((st.p[1] + r) / cell);
-    const z0 = Math.floor((st.p[2] - r) / cell), z1 = Math.floor((st.p[2] + r) / cell);
+    const rs = r + 0.3, x0 = Math.floor((st.p[0] - rs) / cell), x1 = Math.floor((st.p[0] + rs) / cell);
+    const y0 = Math.floor((st.p[1] - rs) / cell), y1 = Math.floor((st.p[1] + rs) / cell);
+    const z0 = Math.floor((st.p[2] - rs) / cell), z1 = Math.floor((st.p[2] + rs) / cell);
     for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
       const list = map.get(x + ',' + y + ',' + z); if (!list) continue;
       for (const i of list) {
-        const dx = pos[i * 3] - st.p[0], dy = pos[i * 3 + 1] - st.p[1], dz = pos[i * 3 + 2] - st.p[2], d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const dx = pos[i * 3] - st.p[0], dy = pos[i * 3 + 1] - st.p[1], dz = pos[i * 3 + 2] - st.p[2], dn = dx * st.n[0] + dy * st.n[1] + dz * st.n[2];
+        if (Math.abs(dn) > 0.3 + r) continue;
+        const d = Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - dn * dn));
         if (d >= r) continue;
         // only the side facing the brush (an ear painted in front stays clean behind)
         const facing = nor ? nor[i * 3] * st.n[0] + nor[i * 3 + 1] * st.n[1] + nor[i * 3 + 2] * st.n[2] : 1;
@@ -184,6 +186,159 @@ export function applyPaint(g, stamps, from = 0, keep = false) {   // keep: paint
   const arr = A.array;
   for (let i = lo * 4; i <= hi * 4 + 3; i++) arr[i] = Math.max(0, Math.min(255, Math.round(F[i] * 255)));
   A.addUpdateRange(lo * 4, (hi - lo + 1) * 4); A.needsUpdate = true;
+}
+
+/* ---------- paint into a texture (the realistic cat) ----------
+   Per-vertex paint is only as sharp as the model's points are close together, so writing on a cat came out
+   as blurry blobs. The realistic cat has a texture layout (UVs), so its paint goes into a 1024×1024 picture
+   instead: each dab is drawn pixel by pixel onto the little triangles it touches, at the exact spot on the
+   body (model space) and only on the side facing the brush. Then text stays readable at any detail level. */
+export const PAINT_TEX = 1024;
+const triOfVert = (g) => {
+  if (g.userData.v2t) return g.userData.v2t;
+  const idx = g.index.array, n = g.attributes.position.count, deg = new Uint32Array(n + 1);
+  for (let i = 0; i < idx.length; i++) deg[idx[i] + 1]++;
+  for (let i = 0; i < n; i++) deg[i + 1] += deg[i];
+  const fillp = deg.slice(0, n), list = new Uint32Array(idx.length);
+  for (let i = 0; i < idx.length; i++) list[fillp[idx[i]]++] = (i / 3) | 0;
+  return (g.userData.v2t = { start: deg, list });
+};
+export function texPaintTarget(g) {
+  if (!g.attributes.uv || !g.index) return null;
+  if (!g.userData.ptex) {
+    const S = PAINT_TEX, data = new Uint8Array(S * S * 4);
+    const tex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat, THREE.UnsignedByteType);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true; tex.flipY = false; tex.needsUpdate = true;
+    g.userData.ptex = { tex, data, S };
+  }
+  return g.userData.ptex;
+}
+export function texPaint(g, stamps, from = 0, clean = false) {
+  const T = texPaintTarget(g); if (!T) return;
+  const grid = g.userData.grid; if (!grid) return;
+  const { data, S } = T, { cell, map, pos, nor } = grid, uv = g.attributes.uv, idx = g.index.array, v2t = triOfVert(g);
+  if (clean) data.fill(0);
+  const U = (i) => uv.getX(i) * S, V = (i) => uv.getY(i) * S;
+  const seen = new Set();
+  for (let s = from; s < stamps.length; s++) {
+    const st = stamps[s]; if (st.k === BRUSH.fill) continue;
+    const r = Math.max(0.005, st.r), cr = st.c, er = st.k === BRUSH.erase;
+    // triangles touched: those of the vertices near the dab (plus a margin for big triangles)
+    seen.clear();
+    const m = r + 0.45, x0 = Math.floor((st.p[0] - m) / cell), x1 = Math.floor((st.p[0] + m) / cell), y0 = Math.floor((st.p[1] - m) / cell), y1 = Math.floor((st.p[1] + m) / cell), z0 = Math.floor((st.p[2] - m) / cell), z1 = Math.floor((st.p[2] + m) / cell);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+      const list = map.get(x + ',' + y + ',' + z); if (!list) continue;
+      for (const i of list) { const dx = pos[i * 3] - st.p[0], dy = pos[i * 3 + 1] - st.p[1], dz = pos[i * 3 + 2] - st.p[2]; if (dx * dx + dy * dy + dz * dz > m * m) continue; for (let e = v2t.start[i]; e < v2t.start[i + 1]; e++) seen.add(v2t.list[e]); }
+    }
+    for (const t of seen) {
+      const a = idx[t * 3], b = idx[t * 3 + 1], c = idx[t * 3 + 2];
+      const ax = U(a), ay = V(a), bx = U(b), by = V(b), cx = U(c), cy = V(c);
+      const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy); if (Math.abs(den) < 1e-6) continue;
+      const px0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)) - 1), px1 = Math.min(S - 1, Math.ceil(Math.max(ax, bx, cx)) + 1);
+      const py0 = Math.max(0, Math.floor(Math.min(ay, by, cy)) - 1), py1 = Math.min(S - 1, Math.ceil(Math.max(ay, by, cy)) + 1);
+      if ((px1 - px0) * (py1 - py0) > 40000) continue;   // a triangle stretched over half the picture: skip (seam)
+      // how far outside a triangle a pixel may be and still count (closes hairline gaps along the seams)
+      const tol = 1.2 / Math.max(1, Math.sqrt(Math.abs(den)));
+      for (let py = py0; py <= py1; py++) for (let px = px0; px <= px1; px++) {
+        const qx = px + 0.5, qy = py + 0.5;
+        const w0 = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / den, w1 = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / den, w2 = 1 - w0 - w1;
+        if (w0 < -tol || w1 < -tol || w2 < -tol) continue;
+        const X = w0 * pos[a * 3] + w1 * pos[b * 3] + w2 * pos[c * 3], Y = w0 * pos[a * 3 + 1] + w1 * pos[b * 3 + 1] + w2 * pos[c * 3 + 1], Z = w0 * pos[a * 3 + 2] + w1 * pos[b * 3 + 2] + w2 * pos[c * 3 + 2];
+        // distance along the surface only: a lower-detail cat's skin sits a little in or out from where the dab was
+        // made (on the detailed cat), so depth along the brush direction is allowed up to a limit
+        const dx = X - st.p[0], dy = Y - st.p[1], dz = Z - st.p[2], dn = dx * st.n[0] + dy * st.n[1] + dz * st.n[2];
+        if (Math.abs(dn) > 0.3 + r) continue;
+        const d = Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - dn * dn));
+        if (d >= r) continue;
+        let facing = 1;
+        if (nor) {
+          const nx = w0 * nor[a * 3] + w1 * nor[b * 3] + w2 * nor[c * 3], ny = w0 * nor[a * 3 + 1] + w1 * nor[b * 3 + 1] + w2 * nor[c * 3 + 1], nz = w0 * nor[a * 3 + 2] + w1 * nor[b * 3 + 2] + w2 * nor[c * 3 + 2];
+          facing = (nx * st.n[0] + ny * st.n[1] + nz * st.n[2]) / Math.max(1e-4, Math.hypot(nx, ny, nz));
+        }
+        if (facing < 0.05) continue;   // only the side the brush is on (no paint soaking through to the far side)
+        const tt = d / r; let w;
+        switch (st.k) {
+          case BRUSH.hard: w = tt < 0.82 ? 1 : 1 - (tt - 0.82) / 0.18; break;
+          case BRUSH.pen: w = tt < 0.85 ? 1 : 1 - (tt - 0.85) / 0.15; break;
+          case BRUSH.marker: w = tt < 0.6 ? 1 : 1 - (tt - 0.6) / 0.4; break;
+          case BRUSH.highlighter: w = tt < 0.85 ? 1 : 1 - (tt - 0.85) / 0.15; break;
+          case BRUSH.pencil: { w = tt < 0.8 ? 1 : 1 - (tt - 0.8) / 0.2; const gr = Math.sin(px * 12.9898 + py * 78.233) * 43758.5453; w *= (gr - Math.floor(gr)) > 0.42 ? 1 : 0.18; break; }
+          default: w = (1 - tt) * (1 - tt) * (3 - 2 * (1 - tt));
+        }
+        w *= st.a * Math.min(1, (facing - 0.05) / 0.3);
+        if (w <= 0.002) continue;
+        const o = (py * S + px) * 4, a0 = data[o + 3] / 255;
+        if (er) { data[o + 3] = Math.round(a0 * (1 - w) * 255); continue; }
+        if (st.k === BRUSH.highlighter) { if (a0 < w) { const k2 = (w - a0) / Math.max(1e-4, 1 - a0); for (let q = 0; q < 3; q++) data[o + q] = Math.round(data[o + q] + (cr[q] - data[o + q]) * k2); data[o + 3] = Math.round(w * 255); } continue; }
+        const a1 = a0 + w * (1 - a0);
+        for (let q = 0; q < 3; q++) data[o + q] = Math.round(a1 > 0 ? (data[o + q] * a0 * (1 - w) + cr[q] * w) / a1 : cr[q]);
+        data[o + 3] = Math.round(a1 * 255);
+      }
+    }
+  }
+  T.tex.needsUpdate = true;
+}
+
+/* ---------- paint into a 3D grid around the cat (the realistic cat) ----------
+   The texture layout of the lighter versions of the realistic cat got squashed when they were simplified
+   (the low one uses under a fifth of the picture), so writing came out smeared and blocky in the game.
+   Now paint lives in a block of tiny cubes (a 3D texture) around the cat in its rest pose: every pixel of
+   the cat looks up the cube where it sits on the body. So the same paint shows equally sharp on every
+   detail level, whatever its triangles or texture layout, and it stays on the skin's surface. */
+export const VOX = 0.035;
+export function volPaintTarget(g) {
+  const grid = g.userData.grid; if (!grid) return null;
+  if (!g.userData.pvol) {
+    const P = grid.pos, mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], P[i + k]); mx[k] = Math.max(mx[k], P[i + k]); }
+    for (let k = 0; k < 3; k++) { mn[k] -= 0.25; mx[k] += 0.25; }
+    const n = [0, 1, 2].map((k) => Math.max(2, Math.ceil((mx[k] - mn[k]) / VOX)));
+    const data = new Uint8Array(n[0] * n[1] * n[2] * 4);
+    const tex = new THREE.Data3DTexture(data, n[0], n[1], n[2]);
+    tex.format = THREE.RGBAFormat; tex.type = THREE.UnsignedByteType; tex.minFilter = tex.magFilter = THREE.LinearFilter; tex.unpackAlignment = 1; tex.needsUpdate = true;
+    if (!g.attributes.restPos) g.setAttribute('restPos', new THREE.BufferAttribute(P, 3));
+    g.userData.pvol = { tex, data, n, min: new THREE.Vector3(...mn), size: new THREE.Vector3(n[0] * VOX, n[1] * VOX, n[2] * VOX) };
+  }
+  return g.userData.pvol;
+}
+export function volPaint(g, stamps, from = 0, clean = false) {
+  const T = volPaintTarget(g); if (!T) return;
+  const { data, n, min } = T, nx = n[0], ny = n[1], nz = n[2];
+  if (clean) data.fill(0);
+  for (let s = from; s < stamps.length; s++) {
+    const st = stamps[s]; if (st.k === BRUSH.fill) continue;
+    const r = Math.max(0.008, st.r), cr = st.c, er = st.k === BRUSH.erase;
+    // a thin layer along the skin: a little way out (fur, the brush side) and a little way in (the simpler cats' skin sits slightly inside)
+    const out = 0.22 + r * 0.3, inn = 0.12;
+    const ext = r + out;
+    const i0 = Math.max(0, Math.floor((st.p[0] - ext - min.x) / VOX)), i1 = Math.min(nx - 1, Math.ceil((st.p[0] + ext - min.x) / VOX));
+    const j0 = Math.max(0, Math.floor((st.p[1] - ext - min.y) / VOX)), j1 = Math.min(ny - 1, Math.ceil((st.p[1] + ext - min.y) / VOX));
+    const k0 = Math.max(0, Math.floor((st.p[2] - ext - min.z) / VOX)), k1 = Math.min(nz - 1, Math.ceil((st.p[2] + ext - min.z) / VOX));
+    for (let k = k0; k <= k1; k++) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const X = min.x + (i + 0.5) * VOX, Y = min.y + (j + 0.5) * VOX, Z = min.z + (k + 0.5) * VOX;
+      const dx = X - st.p[0], dy = Y - st.p[1], dz = Z - st.p[2], dn = dx * st.n[0] + dy * st.n[1] + dz * st.n[2];
+      if (dn > out || dn < -inn) continue;
+      const d = Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - dn * dn));
+      if (d >= r) continue;
+      const tt = d / r; let w;
+      switch (st.k) {
+        case BRUSH.hard: w = tt < 0.82 ? 1 : 1 - (tt - 0.82) / 0.18; break;
+        case BRUSH.pen: w = tt < 0.85 ? 1 : 1 - (tt - 0.85) / 0.15; break;
+        case BRUSH.marker: w = tt < 0.6 ? 1 : 1 - (tt - 0.6) / 0.4; break;
+        case BRUSH.highlighter: w = tt < 0.85 ? 1 : 1 - (tt - 0.85) / 0.15; break;
+        case BRUSH.pencil: { w = tt < 0.8 ? 1 : 1 - (tt - 0.8) / 0.2; const gr = Math.sin(i * 12.9898 + j * 78.233 + k * 37.719) * 43758.5453; w *= (gr - Math.floor(gr)) > 0.42 ? 1 : 0.18; break; }
+        default: w = (1 - tt) * (1 - tt) * (3 - 2 * (1 - tt));
+      }
+      w *= st.a; if (w <= 0.002) continue;
+      const o = ((k * ny + j) * nx + i) * 4, a0 = data[o + 3] / 255;
+      if (er) { data[o + 3] = Math.round(a0 * (1 - w) * 255); continue; }
+      if (st.k === BRUSH.highlighter) { if (a0 < w) { const k2 = (w - a0) / Math.max(1e-4, 1 - a0); for (let q = 0; q < 3; q++) data[o + q] = Math.round(data[o + q] + (cr[q] - data[o + q]) * k2); data[o + 3] = Math.round(w * 255); } continue; }
+      const a1 = a0 + w * (1 - a0);
+      for (let q = 0; q < 3; q++) data[o + q] = Math.round(a1 > 0 ? (data[o + q] * a0 * (1 - w) + cr[q] * w) / a1 : cr[q]);
+      data[o + 3] = Math.round(a1 * 255);
+    }
+  }
+  T.tex.needsUpdate = true;
 }
 
 // shader pieces the cat materials add (vertex: pass the paint on; fragment: lay it over the fur)

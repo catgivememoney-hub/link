@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three-addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three-addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three-addons/utils/SkeletonUtils.js';
-import { encodePaint, decodePaint, paintableGeometry, applyPaint, bakeModelSpace, openPaintEditor, PAINT_VS_HEAD, PAINT_VS_BODY, PAINT_FS_HEAD, PAINT_FS_BODY } from './catpaint.js';
+import { encodePaint, decodePaint, paintableGeometry, applyPaint, bakeModelSpace, texPaint, texPaintTarget, volPaint, volPaintTarget, openPaintEditor, PAINT_VS_HEAD, PAINT_VS_BODY, PAINT_FS_HEAD, PAINT_FS_BODY } from './catpaint.js';
 
 const PEERJS = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
 const PREFIX = 'meow-cabin-';
@@ -128,8 +128,9 @@ function buildSimpleCat(skin, name) {
   torch.position.set(0.6, 6.4, -1.2); g.add(torch); g.add(torch.target);
   const lamp = new THREE.PointLight(0xffb060, 0, 60, 1.6); lamp.position.set(0.9, 4.6, -1.6); g.add(lamp);
   let phase = 0, lt = 0, sit = 0;
+  const mouth = new THREE.Object3D(); mouth.position.set(0, -0.25, -0.85); head.add(mouth);
   return {
-    group: g,
+    group: g, mouth,
     animate(dt, speed, time) {
       const k = Math.min(1, speed / 25);
       phase += dt * (2 + speed * 0.28);
@@ -283,11 +284,11 @@ function buildModelCat(tpl, sk, name) {
     const m = base.clone();
     // the downloaded cat's material is marked see-through (for its whiskers), which punches holes in the fur: make it solid
     m.transparent = false; m.alphaTest = 0; m.depthWrite = true; m.opacity = 1; m.alphaHash = false; m.side = THREE.DoubleSide; const def = (SKINS.find((k) => k.model === sk.model) || {}).color || '';
-    tintU = { uTint: { value: new THREE.Color(sk.color) }, uTintOn: { value: sk.color.toLowerCase() === def.toLowerCase() ? 0 : 1 } };
+    tintU = { tVol: { value: null }, uVolMin: { value: new THREE.Vector3() }, uVolSize: { value: new THREE.Vector3(1, 1, 1) }, uTint: { value: new THREE.Color(sk.color) }, uTintOn: { value: sk.color.toLowerCase() === def.toLowerCase() ? 0 : 1 } };
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, tintU);
-      sh.vertexShader = PAINT_VS_HEAD + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + PAINT_VS_BODY);
-      sh.fragmentShader = PAINT_FS_HEAD + 'uniform vec3 uTint;\nuniform float uTintOn;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      sh.vertexShader = PAINT_VS_HEAD + 'attribute vec3 restPos;\nvarying vec3 vRest;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + PAINT_VS_BODY + '\nvRest = restPos;');
+      sh.fragmentShader = PAINT_FS_HEAD + 'uniform vec3 uTint;\nuniform float uTintOn;\nprecision highp sampler3D;\nuniform sampler3D tVol;\nuniform vec3 uVolMin, uVolSize;\nvarying vec3 vRest;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 c = diffuseColor.rgb; float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
           float sat = (mx - mn) / max(mx, 1e-4), lum = dot(c, vec3(0.299, 0.587, 0.114));
@@ -295,9 +296,10 @@ function buildModelCat(tpl, sk, name) {
           vec3 re = uTint * lum / dot(orig, vec3(0.299, 0.587, 0.114));
           diffuseColor.rgb = mix(c, re, smoothstep(0.18, 0.45, sat) * uTintOn);
           ` + PAINT_FS_BODY + `
+          { vec4 tp = texture(tVol, (vRest - uVolMin) / uVolSize); diffuseColor.rgb = mix(diffuseColor.rgb, pow(tp.rgb, vec3(2.2)), tp.a); }
         }`);
     };
-    m.customProgramCacheKey = () => 'meow-catrealtint'; return m;
+    m.customProgramCacheKey = () => 'meow-catrealtint3'; return m;
   };
   let pmesh = null;
   root.traverse((o) => { if (o.isSkinnedMesh) { o.geometry = paintableGeometry(o.geometry); pmesh = o; } if (o.isMesh) { if (fur) o.material = fur; else if (real) { o.material = tintMat(o.material); fur = o.material; } o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
@@ -350,6 +352,7 @@ function buildModelCat(tpl, sk, name) {
     } else e.add(at(mesh(S(0.16), dark), null, new THREE.Vector3(1, 1.15, 0.55)));
     pin('head', e, c, n);
   });
+  const mouth = new THREE.Object3D(); pin('head', mouth, SP.mouth.clone());   // where things the cat carries go
   if (sk.tongue) { const t = mesh(S(0.15), new THREE.MeshStandardMaterial({ color: 0xe8728a, roughness: 0.35 })); t.scale.set(1.0, 0.45, 1.2); t.rotation.x = 0.6; pin('head', t, SP.mouth.clone().add(new THREE.Vector3(0, -0.12, 0.02))); }
   if (sk.purse) {
     const pm = new THREE.MeshStandardMaterial({ color: sk.purse, roughness: 0.55 });
@@ -397,13 +400,17 @@ function buildModelCat(tpl, sk, name) {
   };
   const LEG = ['upperarmL', 'upperarmR', 'thighL', 'thighR'];
   const tailB = Object.keys(J).filter((k) => k.startsWith('tail')).sort();
-  if (pmesh) applyPaint(pmesh.geometry, padStamps, 0);
+  // the realistic cat paints into a texture (sharp); fill-bucket stays per-vertex underneath
+  const texOK = real && pmesh && tintU && volPaintTarget(pmesh.geometry);
+  if (texOK) { tintU.tVol.value = texOK.tex; tintU.uVolMin.value.copy(texOK.min); tintU.uVolSize.value.copy(texOK.size); }
+  const paintAll = (st) => { if (!pmesh) return; if (texOK) { applyPaint(pmesh.geometry, st.filter((q) => q.k === 8), 0); volPaint(pmesh.geometry, st, 0, true); } else applyPaint(pmesh.geometry, st, 0); };
+  paintAll(padStamps);
   let phase = 0, lt = 0, sit = 0, look = 0, bob = 0, curlK = 0, pcK = 0;
   const legA = [0, 0, 0, 0];
   return {
-    group: g, model: true, mesh: pmesh, root,
-    setPaint(st) { if (pmesh) applyPaint(pmesh.geometry, padStamps.concat(st || []), 0); },
-    addPaint(st, from) { if (pmesh) applyPaint(pmesh.geometry, st, from, true); },
+    group: g, model: true, mesh: pmesh, root, mouth,
+    setPaint(st) { paintAll(padStamps.concat(st || [])); },
+    addPaint(st, from) { if (!pmesh) return; if (texOK) { const add = st.slice(from); if (add.some((q) => q.k === 8)) applyPaint(pmesh.geometry, st.map((q, i) => (i >= from && q.k === 8 ? q : { ...q, a: 0 })), from, true); volPaint(pmesh.geometry, st, from); } else applyPaint(pmesh.geometry, st, from, true); },
     animate(dt, speed, time) {
       const k = Math.min(1, speed / 25);
       phase += dt * (2 + speed * 0.28);
@@ -454,7 +461,16 @@ function buildModelCat(tpl, sk, name) {
 }
 
 // the modelled cat when its file has loaded, otherwise the simple one made of spheres
-export const CAT_SIZE = 0.62;   // cats in the world are 38% smaller than the models (the preview shows them full size)
+export const CAT_SIZE = 0.62;
+// something carried in a cat's mouth (a bottle), made by whoever registered a maker (items.js)
+let heldMaker = null;
+export function setHeldMaker(fn) { heldMaker = fn; }
+function setHeld(cat, kind) {
+  if (!cat || !cat.mouth || (cat.heldKind || '') === (kind || '')) return;
+  if (cat.heldObj) { cat.mouth.remove(cat.heldObj); cat.heldObj = null; }
+  cat.heldKind = kind || '';
+  if (kind && heldMaker) { const m = heldMaker(kind); if (m) { m.rotation.set(0, 0, Math.PI / 2); m.scale.setScalar(1 / CAT_SIZE); cat.mouth.add(m); cat.heldObj = m; } }
+}   // cats in the world are 38% smaller than the models (the preview shows them full size)
 function buildCat(skin, name, size = CAT_SIZE) {
   const sk = typeof skin === 'string' ? { color: skin } : (skin || { color: '#999' });
   const tpl = catModel(sk.model);
@@ -525,6 +541,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     selfCat.group.position.set(s.x, s.y, s.z); selfCat.group.rotation.order = 'YXZ'; selfCat.group.rotation.y = s.yaw; selfCat.group.rotation.x = s.tilt || 0;
     selfCat.animate(s.dt, s.pose ? 0 : s.speed, s.time); selfCat.setLook(s.pitch || 0); selfCat.setSit(!!s.sit);
     if (selfCat.setPose) selfCat.setPose(s.pose || 0, s.time);
+    setHeld(selfCat, s.held || '');
   };
   addEventListener('meow:gfx', (e) => {
     const d = detailFor(e.detail); if (d === wantDetail) return;
@@ -852,6 +869,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     takenSeats() { return [...others.values()].map((o) => o.tgt.seat).filter((x) => x >= 0); },
     _recv: onData,   // (testing)
     updateSelf,
+    get id() { return myId; },
     update(dt, time) {
       // send my position
       if (peer && conns.size) {
@@ -877,6 +895,7 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
         if (t.pose === 2 && t.seatAt) { o.cat.group.position.set(t.seatAt.x, t.seatAt.y, t.seatAt.z); o.cat.group.rotation.y = 0; }
         o.cat.animate(dt, (t.seat >= 0 || t.pose) ? 0 : speed, time); o.cat.setLook(t.pitch || 0); o.cat.setLight(t.lt || 0, time); o.cat.setSit(t.seat >= 0);
         if (o.cat.setPose) o.cat.setPose(t.pose || 0, time);
+        setHeld(o.cat, t.held || '');
       });
     }
   };

@@ -28,6 +28,7 @@ import { createComputer } from './computer.js';
 import { createPortal } from './portal.js';
 import { createSSFX } from './ssfx.js';
 import { createOnline } from './online.js';
+import { createItems } from './items.js';
 import { installFootsteps } from './footsteps.js';
 installFootsteps();
 import { installSfx } from './sfx.js';
@@ -150,7 +151,7 @@ import { createAssets } from './assets.js';
   };
   {
     const kb = document.getElementById('viewKey');
-    const RESERVED = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'KeyF', 'KeyR', 'Enter', 'Escape', 'Tab'];
+    const RESERVED = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'KeyF', 'KeyR', 'KeyQ', 'Enter', 'Escape', 'Tab'];
     if (kb) {
       kb.textContent = keyName(VIEW.key);
       kb.addEventListener('click', () => {
@@ -170,9 +171,11 @@ import { createAssets } from './assets.js';
   const online = createOnline({ scene, player, scenes, toast: (m) => toastMsg(m),
     extra: () => ({ lt: hand.state === 'torch' ? 1 : hand.state === 'lamp' ? 2 : 0, seat: boat.active ? boat.seat : -1, boat: boat.snapshot() || undefined, skin: undefined,
       // 1 = curled up on the bed / sofa, 2 = sitting at the computer (then where the chair is)
-      bodyYaw: VIEW.body, visY: VIEW.visY, tilt: VIEW.tilt,
+      bodyYaw: VIEW.body, visY: VIEW.visY, tilt: VIEW.tilt, held: items.heldKind || undefined,
       pose: computer.active ? 2 : curl.k > 0.5 ? 1 : 0, ...(computer.active && cabin.chairSeat() ? { seatAt: cabin.chairSeat() } : {}) }) });
   window.MEOW_ONLINE = online;
+  // the snack bag under the house and the bottle on the coffee table (see items.js)
+  const items = createItems({ scene, terrain, physics, player, camera, cabin, scenes, water: water.mesh, online, toast: (m) => toastMsg(m) });
   setTimeout(() => { window.MEOW_DEBUG = { get portal() { return portal; }, trees, player, camera, scenes, cabin }; }, 0);   // (testing)
   boat.takenSeats = () => online.takenSeats();
   {
@@ -365,6 +368,7 @@ import { createAssets } from './assets.js';
     if (e.code === VIEW.key && !e.repeat && started && player.walking && !busy()) { e.preventDefault(); setView(VIEW.mode ? 0 : 1); toastMsg(VIEW.mode ? '🐈 Third person' : '👀 First person'); return; }
     if (e.code === 'KeyF' && !e.repeat && started && !root.classList.contains('locked')) { e.preventDefault(); hand.toggle(now); return; }
     if (busy() || !player.walking) return;
+    if (e.code === 'KeyQ' && !e.repeat) { if (items.drop(player.state, VIEW.body)) { e.preventDefault(); hover.pending = true; } return; }
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && !boat.active) player.jump(); return; }
     if (e.code === 'KeyR' && !e.repeat) { if (!boat.active && fishing.key(now)) e.preventDefault(); return; }
     if (e.code === 'KeyE' && !e.repeat) {
@@ -436,9 +440,11 @@ import { createAssets } from './assets.js';
     const sw = active && !doorHit && !pc && !boat.active && cabin.pickSwitch(rayAt(cx, cy));
     const lmp = active && !doorHit && !pc && !sw && !boat.active && cabin.pickLamp(rayAt(cx, cy));
     const drw = active && !doorHit && !pc && !sw && !lmp && !boat.active && cabin.pickDrawer(rayAt(cx, cy));
-    const door = !!doorHit || pc || sw || lmp || drw;
+    const itm = active && !doorHit && !pc && !sw && !lmp && !drw && !boat.active && items.hover(rayAt(cx, cy), player.state);
+    const door = !!doorHit || pc || sw || lmp || drw || itm;
     if (door !== doorShown) { doorShown = door; actHint.classList.toggle('show', door); }
-    if (lmp) actHint.querySelector('span').textContent = cabin.lampOn ? 'Click to turn the lamp off' : 'Click to turn the lamp on';
+    if (itm) actHint.querySelector('span').textContent = items.heldKind ? 'Click to swap (Q drops what you carry)' : 'Click to pick it up · Q to drop';
+    else if (lmp) actHint.querySelector('span').textContent = cabin.lampOn ? 'Click to turn the lamp off' : 'Click to turn the lamp on';
     else if (drw) actHint.querySelector('span').textContent = cabin.drawerOpen ? 'Click to close the drawer' : 'Click to open the drawer';
     else if (sw) actHint.querySelector('span').textContent = cabin.lightOn ? 'Click to turn the light off' : 'Click to turn the light on';
     else if (pc) actHint.querySelector('span').textContent = 'Click to use the computer';
@@ -499,6 +505,7 @@ import { createAssets } from './assets.js';
     const now = performance.now();
     // what was clicked: a biting fish, then a book, then the door, then a tree
     if (player.walking && fishing.click(now)) return;
+    if (player.walking && !boat.active && items.click(rayAt(cx, cy), player.state)) { hover.pending = true; return; }
     if (player.walking && scenes.cur.pCabin > 0.5 && indoorK > 0.5 && study.click(rayAt(cx, cy), now)) return;
     if (player.walking && !boat.active && cabin.pickSwitch(rayAt(cx, cy))) { flipLight(); return; }
     if (player.walking && !boat.active && cabin.pickLamp(rayAt(cx, cy))) { online.emit('lamp', cabin.toggleLamp()); if (window.MEOW_SOUND && window.MEOW_SOUND.click) window.MEOW_SOUND.click(); hover.pending = true; return; }
@@ -634,7 +641,8 @@ import { createAssets } from './assets.js';
         camOut.pos.lerpVectors(VIEW.fromP, tp, e); camOut.q.copy(VIEW.fromQ).slerp(tq, e);
       } else { camOut.pos.copy(tp); camOut.q.copy(tq); }
       const show = walk && (mode > 0 || VIEW.t < 1);
-      online.updateSelf(show, { x: ps.x, y: VIEW.visY ?? ps.feet, tilt: VIEW.tilt || 0, z: ps.z, yaw: VIEW.body, pitch: mode ? 0 : ps.pitch, speed: sp, dt, time, pose: curl.k > 0.5 ? 1 : 0 });
+      items.update(dt, time, ps, player.walking && VIEW.shown === 0 && VIEW.t >= 1);
+      online.updateSelf(show, { held: items.heldKind, x: ps.x, y: VIEW.visY ?? ps.feet, tilt: VIEW.tilt || 0, z: ps.z, yaw: VIEW.body, pitch: mode ? 0 : ps.pitch, speed: sp, dt, time, pose: curl.k > 0.5 ? 1 : 0 });
     }
     camera.position.copy(camOut.pos);
     camera.quaternion.copy(camOut.q);
