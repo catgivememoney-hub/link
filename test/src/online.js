@@ -247,6 +247,7 @@ function buildModelCat(tpl, sk, name) {
   let pmesh = null;
   root.traverse((o) => { if (o.isSkinnedMesh) { o.geometry = paintableGeometry(o.geometry); pmesh = o; } if (o.isMesh) { if (fur) o.material = fur; else if (real) { o.material = tintMat(o.material); fur = o.material; } o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
   g.updateMatrixWorld(true);
+  if (pmesh) pmesh.geometry.userData.toModel = root.matrixWorld.clone().invert().multiply(pmesh.matrixWorld);   // file units -> cat model units
   const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
   const S = (r, w, h) => new THREE.SphereGeometry(r, w || 24, h || 18);
   const mesh = (geo, m) => { const o = new THREE.Mesh(geo, m); o.castShadow = true; return o; };
@@ -319,7 +320,7 @@ function buildModelCat(tpl, sk, name) {
   let phase = 0, lt = 0, sit = 0, look = 0, bob = 0;
   const legA = [0, 0, 0, 0];
   return {
-    group: g, model: true, mesh: pmesh,
+    group: g, model: true, mesh: pmesh, root,
     setPaint(st) { if (pmesh) applyPaint(pmesh.geometry, st || [], 0); },
     addPaint(st, from) { if (pmesh) applyPaint(pmesh.geometry, st, from); },
     animate(dt, speed, time) {

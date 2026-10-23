@@ -49,22 +49,26 @@ export function paintableGeometry(geo) {
   g.userData.paintRGBA = new Float32Array(n * 4);   // full precision while painting
   return g;
 }
+// vertex positions and normals in the cat's model space (the files store them squashed for size; userData.toModel undoes that)
 const gridOf = (g) => {
   if (g.userData.grid) return g.userData.grid;
-  const p = g.attributes.position, cell = 0.2, map = new Map();
-  for (let i = 0; i < p.count; i++) {
-    const k = Math.floor(p.getX(i) / cell) + ',' + Math.floor(p.getY(i) / cell) + ',' + Math.floor(p.getZ(i) / cell);
+  const p = g.attributes.position, nr = g.attributes.normal, M = g.userData.toModel || new THREE.Matrix4(), NM = new THREE.Matrix3().getNormalMatrix(M);
+  const n = p.count, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), v = new THREE.Vector3(), cell = 0.2, map = new Map();
+  for (let i = 0; i < n; i++) {
+    v.fromBufferAttribute(p, i).applyMatrix4(M); pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+    if (nr) { v.fromBufferAttribute(nr, i).applyMatrix3(NM).normalize(); nor[i * 3] = v.x; nor[i * 3 + 1] = v.y; nor[i * 3 + 2] = v.z; }
+    const k = Math.floor(pos[i * 3] / cell) + ',' + Math.floor(pos[i * 3 + 1] / cell) + ',' + Math.floor(pos[i * 3 + 2] / cell);
     let a = map.get(k); if (!a) map.set(k, (a = [])); a.push(i);
   }
-  return (g.userData.grid = { cell, map });
+  return (g.userData.grid = { cell, map, pos, nor: nr ? nor : null });
 };
 const tmpC = new THREE.Color();
 const linear = (c) => { tmpC.setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace); return [tmpC.r, tmpC.g, tmpC.b]; };
 // apply stamps[from..] on top of what is there; from = 0 starts clean
 export function applyPaint(g, stamps, from = 0) {
-  const P = g.attributes.position, N = g.attributes.normal, A = g.attributes.paint, F = g.userData.paintRGBA; if (!A || !F) return;
+  const A = g.attributes.paint, F = g.userData.paintRGBA; if (!A || !F) return;
   if (from === 0) F.fill(0);
-  const { cell, map } = gridOf(g);
+  const { cell, map, pos, nor } = gridOf(g), count = pos.length / 3;
   let lo = Infinity, hi = -1;
   for (let s = from; s < stamps.length; s++) {
     const st = stamps[s], r = Math.max(0.005, st.r), lc = linear(st.c);
@@ -74,10 +78,10 @@ export function applyPaint(g, stamps, from = 0) {
     for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
       const list = map.get(x + ',' + y + ',' + z); if (!list) continue;
       for (const i of list) {
-        const dx = P.getX(i) - st.p[0], dy = P.getY(i) - st.p[1], dz = P.getZ(i) - st.p[2], d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const dx = pos[i * 3] - st.p[0], dy = pos[i * 3 + 1] - st.p[1], dz = pos[i * 3 + 2] - st.p[2], d = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (d >= r) continue;
         // only the side facing the brush (an ear painted in front stays clean behind)
-        const facing = N ? N.getX(i) * st.n[0] + N.getY(i) * st.n[1] + N.getZ(i) * st.n[2] : 1;
+        const facing = nor ? nor[i * 3] * st.n[0] + nor[i * 3 + 1] * st.n[1] + nor[i * 3 + 2] * st.n[2] : 1;
         if (facing < -0.15) continue;
         const t = d / r;
         let w = st.k === BRUSH.hard ? (t < 0.82 ? 1 : 1 - (t - 0.82) / 0.18) : (1 - t) * (1 - t) * (3 - 2 * (1 - t)) * 1.0;
@@ -94,7 +98,7 @@ export function applyPaint(g, stamps, from = 0) {
       }
     }
   }
-  if (from === 0) { lo = 0; hi = P.count - 1; }
+  if (from === 0) { lo = 0; hi = count - 1; }
   if (hi < lo) return;
   const arr = A.array;
   for (let i = lo * 4; i <= hi * 4 + 3; i++) arr[i] = Math.max(0, Math.min(255, Math.round(F[i] * 255)));
@@ -111,10 +115,10 @@ export const PAINT_FS_BODY = 'diffuseColor.rgb = mix(diffuseColor.rgb, vPaint.rg
 // opts: { build(detail) -> cat (model cat with .mesh, .paintGeo, .setPaint), stamps, color, onSave(stamps), onClose() }
 export function openPaintEditor(opts) {
   const css = `
-  .mp-wrap{position:fixed;inset:0;z-index:2147483000;display:flex;background:rgba(14,16,20,.94);color:#f3efe8;font:14px/1.3 system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none;user-select:none}
+  .mp-wrap{position:fixed;inset:0;z-index:2147483000;display:flex;background:#15171b;color:#f3efe8;font:14px/1.3 system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none;user-select:none}
   .mp-view{position:relative;flex:1;min-width:0}
   .mp-view canvas{width:100%;height:100%;display:block;cursor:none}
-  .mp-side{width:270px;max-width:46vw;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px;background:rgba(255,255,255,.04);border-left:1px solid rgba(255,255,255,.08)}
+  .mp-side{width:270px;max-width:46vw;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px;background:#1d2026;border-left:1px solid rgba(255,255,255,.08)}
   .mp-side h2{margin:0;font-size:17px;letter-spacing:.02em}
   .mp-side h4{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.6;font-weight:600}
   .mp-row{display:flex;gap:6px;flex-wrap:wrap}
@@ -221,9 +225,10 @@ export function openPaintEditor(opts) {
   const hitAt = (x, y) => {
     const rc = canvas.getBoundingClientRect(); ndc.set(((x - rc.left) / rc.width) * 2 - 1, -((y - rc.top) / rc.height) * 2 + 1);
     ray.setFromCamera(ndc, cam); const h = ray.intersectObject(mesh, false)[0]; if (!h) return null;
-    const local = mesh.worldToLocal(h.point.clone());
-    const n = h.face ? h.face.normal.clone() : new THREE.Vector3(0, 1, 0);
-    const wn = n.clone().transformDirection(mesh.matrixWorld);
+    const root = cat.root; root.updateMatrixWorld(true);
+    const local = root.worldToLocal(h.point.clone());
+    const wn = (h.face ? h.face.normal.clone() : new THREE.Vector3(0, 1, 0)).transformDirection(mesh.matrixWorld);
+    const n = wn.clone().transformDirection(root.matrixWorld.clone().invert());
     return { point: h.point, local, n, wn };
   };
   let last = null;
@@ -231,7 +236,7 @@ export function openPaintEditor(opts) {
     if (stamps.length >= MAX_STAMPS) return;
     const rad = radius(), col = new THREE.Color(st.color), c = [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)];
     // the radius in the cat's own units (the cat may be shown scaled)
-    const s = mesh.matrixWorld.getMaxScaleOnAxis(), R = rad / s;
+    const R = rad / cat.root.matrixWorld.getMaxScaleOnAxis();
     if (!first && last && last.distanceTo(h.local) < R * (st.brush === 'spray' ? 0.6 : 0.28)) return;
     const from = stamps.length;
     const base = { n: [h.n.x, h.n.y, h.n.z], c, a: st.alpha / 100, k: BRUSH[st.brush] };
