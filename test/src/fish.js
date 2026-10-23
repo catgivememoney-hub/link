@@ -6,31 +6,79 @@
    · Fishing: from the dock or the shore (not from the boat). Aim the dot at the water and
      press R to cast. When the float dips, click (or press R) quickly. R while waiting reels in. */
 import * as THREE from 'three';
-import { Parts, M } from './kit.js';
+import { mergeGeometries } from 'three-addons/utils/BufferGeometryUtils.js';
 
 export function createFish({ scene, camera, heightAt, water }) {
   const t$ = (k, f, v) => (window.MEOW_I18N ? window.MEOW_I18N.t(k, v) : f);
   const snd = (name, ...a) => { const S = window.MEOW_SOUND; if (S && S[name]) S[name](...a); };
   const T = { value: 0 };
 
-  /* ---------- a fish (body, fins, eyes); head toward +x, about 2 long ---------- */
-  let fishGeo = (() => {
-    const P = new Parts();
-    const body = new THREE.SphereGeometry(1, 18, 12);
-    P.add(body, { m: M(0, 0, 0, 0, 0, 0, 1.0, 0.36, 0.28), color: (v) => { const top = v.y > 0.05 ? 0.55 : 0.85; const spot = Math.sin(v.x * 30) * Math.sin(v.z * 40) > 0.6 && v.y > 0 ? 0.8 : 1; return [top * 0.78 * spot, top * 0.84 * spot, top * 0.8 * spot]; } });
-    P.add(new THREE.ConeGeometry(0.3, 0.45, 4), { m: M(-1.05, 0, 0, 0, 0, Math.PI / 2, 1, 1, 0.25), color: () => [0.42, 0.46, 0.44] });
-    P.add(new THREE.ConeGeometry(0.16, 0.4, 4), { m: M(0.05, 0.38, 0, 0, 0, -0.4, 1, 1, 0.2), color: () => [0.42, 0.46, 0.44] });
-    [-1, 1].forEach((s) => {
-      P.add(new THREE.SphereGeometry(0.07, 8, 6), { m: M(0.72, 0.08, s * 0.17), color: () => [0.95, 0.95, 0.92] });
-      P.add(new THREE.SphereGeometry(0.04, 8, 6), { m: M(0.76, 0.085, s * 0.21), color: () => [0.05, 0.05, 0.05] });
+  /* ---------- the fish (made from scratch): a trout, head toward +x, about 2.2 long ----------
+     Body: rings of points along the fish whose height and width follow a fish profile (blunt head,
+     deepest just behind the head, thin before the tail). Colours painted per point: dark olive back
+     with black spots, silver sides with a pink stripe, white belly. Then a forked tail, fins and eyes. */
+  const buildFish = () => {
+    const parts = [];
+    const col = (geo, fn) => { const p = geo.attributes.position, c = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) { const v = fn(p.getX(i), p.getY(i), p.getZ(i)); c[i * 3] = v[0]; c[i * 3 + 1] = v[1]; c[i * 3 + 2] = v[2]; } geo.setAttribute('color', new THREE.BufferAttribute(c, 3)); return geo; };
+    // body
+    const X0 = -0.82, X1 = 1.0, RING = 28, SEG = 48;
+    const prof = (u) => { const k = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.72)), 0.85); return 0.05 + 0.31 * k; };   // u: 0 tail end .. 1 nose
+    const pos = [], idx = [];
+    for (let i = 0; i <= SEG; i++) {
+      const u = i / SEG, x = X0 + (X1 - X0) * u, h = prof(u) * (u > 0.96 ? Math.sqrt(Math.max(0, (1 - u) / 0.04)) : 1), w = h * 0.52;
+      for (let j = 0; j <= RING; j++) {
+        const a = (j / RING) * Math.PI * 2, sy = Math.sin(a), cz = Math.cos(a);
+        pos.push(x, sy * h * (sy < 0 ? 0.92 : 1) - 0.02 * u, cz * w * (1 - 0.15 * Math.abs(sy)));
+      }
+    }
+    for (let i = 0; i < SEG; i++) for (let j = 0; j < RING; j++) { const a = i * (RING + 1) + j, b = a + RING + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+    const body = new THREE.BufferGeometry(); body.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); body.setIndex(idx); body.computeVertexNormals();
+    const spot = (x, y, z) => { const s = Math.sin(x * 37.0 + z * 11.0) * Math.sin(y * 41.0 - x * 13.0) * Math.sin(z * 29.0 + y * 7.0); return s > 0.55; };
+    col(body, (x, y, z) => {
+      const hh = prof(Math.min(1, Math.max(0, (x - X0) / (X1 - X0)))) || 0.05, ty = y / hh;
+      let c = ty > 0.25 ? [0.22, 0.27, 0.16] : ty > -0.35 ? [0.72, 0.75, 0.73] : [0.93, 0.92, 0.88];
+      if (ty > 0.05 && ty < 0.45) c = [c[0] * 0.5 + 0.36, c[1] * 0.5 + 0.38, c[2] * 0.5 + 0.34];          // soft blend into the sides
+      if (Math.abs(ty + 0.02) < 0.16 && x < 0.75) c = [0.86, 0.52, 0.56];                               // the pink stripe
+      if (ty > -0.15 && x < 0.8 && spot(x, y, z)) c = [0.08, 0.08, 0.07];                               // black spots
+      if (x > 0.72 && ty > -0.3) c = [c[0] * 0.85, c[1] * 0.85, c[2] * 0.8];                            // darker head
+      return c;
     });
-    P.add(new THREE.TorusGeometry(0.07, 0.025, 6, 12), { m: M(0.99, -0.02, 0, 0, Math.PI / 2, 0), color: () => [0.35, 0.22, 0.24] });
-    return P.geometry();
-  })();
-  let baseMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    parts.push(body);
+    const fin = (pts, color, z = 0, rx = 0, ry = 0) => {
+      const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+      const g = new THREE.ShapeGeometry(sh, 6); g.rotateX(rx); g.rotateY(ry); g.translate(0, 0, z);
+      return col(g, (x, y) => { const k = 0.75 + 0.25 * Math.sin(x * 40.0 + y * 20.0); return [color[0] * k, color[1] * k, color[2] * k]; });
+    };
+    const finC = [0.36, 0.38, 0.28];
+    // forked tail (moves the most when swimming)
+    parts.push(fin([[-0.78, 0.07], [-1.22, 0.46], [-1.12, 0.05], [-1.06, 0.0], [-1.12, -0.05], [-1.22, -0.44], [-0.78, -0.07]], finC));
+    // dorsal fin and the little adipose fin, on the back
+    parts.push(fin([[-0.05, 0.3], [0.04, 0.52], [0.22, 0.47], [0.33, 0.3]], finC));
+    parts.push(fin([[-0.52, 0.16], [-0.46, 0.25], [-0.38, 0.15]], finC));
+    // anal fin and the pelvic fins, underneath
+    parts.push(fin([[-0.48, -0.15], [-0.42, -0.33], [-0.26, -0.3], [-0.22, -0.16]], finC));
+    [-1, 1].forEach((s2) => {
+      parts.push(fin([[0.02, -0.24], [-0.06, -0.38], [0.12, -0.3]], finC, s2 * 0.1, 0, s2 * 0.4));
+      parts.push(fin([[0.62, -0.1], [0.42, -0.3], [0.5, -0.12]], finC, s2 * 0.15, 0, s2 * 0.6));   // pectoral fins behind the gills
+    });
+    // eyes: gold ring, black pupil
+    [-1, 1].forEach((s2) => {
+      const e = new THREE.SphereGeometry(0.058, 12, 10); e.translate(0.78, 0.07, s2 * 0.115); parts.push(col(e, () => [0.85, 0.68, 0.25]));
+      const p2 = new THREE.SphereGeometry(0.034, 10, 8); p2.translate(0.81, 0.072, s2 * 0.14); parts.push(col(p2, () => [0.02, 0.02, 0.02]));
+    });
+    // a gill line
+    const gill = new THREE.TorusGeometry(0.2, 0.012, 6, 20, Math.PI * 0.9); gill.rotateY(Math.PI / 2); gill.rotateZ(Math.PI / 2 + 0.25); gill.translate(0.62, -0.01, 0);
+    parts.push(col(gill, () => [0.3, 0.22, 0.2]));
+    parts.forEach((g) => { if (g.index) return; });
+    const merged = mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)), false);
+    merged.computeVertexNormals();
+    return merged;
+  };
+  let fishGeo = buildFish();
+  let baseMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.18, side: THREE.DoubleSide });
 
-  // each fish gets its own copy of the material with a swimming tail: the back half of the body
-  // bends side to side, more toward the tail; uWig = how hard it swims
+  // each fish gets its own copy of the material with a swimming wave: a side-to-side bend that runs
+  // from head to tail and grows toward the tail (the head barely moves); uWig = how hard it swims
   const wiggly = (src) => {
     const m = src.clone();
     m.userData.u = { uTime: T, uWig: { value: 0.1 }, uFreq: { value: 9 }, uPhase: { value: Math.random() * 6.28 } };
@@ -39,11 +87,11 @@ export function createFish({ scene, camera, heightAt, water }) {
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime, uWig, uFreq, uPhase;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
-          { float bw = smoothstep(0.45, -1.1, position.x);
-            transformed.z += sin(uTime * uFreq - position.x * 2.8 + uPhase) * uWig * bw;
-            transformed.z += sin(uTime * uFreq * 0.5 + uPhase) * uWig * 0.25 * (1.0 - bw); }`);
+          { float back = clamp((0.75 - position.x) / 1.95, 0.0, 1.0);          // 0 at the head, 1 at the tail tip
+            float amp = uWig * (0.08 + back * back * 1.25);
+            transformed.z += sin(uTime * uFreq - position.x * 3.2 + uPhase) * amp; }`);
     };
-    m.customProgramCacheKey = () => 'fishwig';
+    m.customProgramCacheKey = () => 'fishwave';
     return m;
   };
   const fishes = [];   // every fish mesh (so a detailed model can be swapped in)
@@ -214,10 +262,9 @@ export function createFish({ scene, camera, heightAt, water }) {
 
   return {
     // swap in a detailed fish (assets.js); geo is in the same frame: head toward +x, about 2 long
-    setModel(geo, mat) {
-      fishGeo = geo; baseMat = mat;
-      fishes.forEach((m) => { const u = m.material.userData.u; m.geometry = geo; m.material = wiggly(mat); Object.assign(m.material.userData.u, { uWig: u.uWig, uFreq: u.uFreq, uPhase: u.uPhase }); });
-    },
+    setModel() { /* the fish is made in code now (buildFish); downloaded models are no longer used */ },
+    makePreview() { const m = new THREE.Mesh(fishGeo, wiggly(baseMat)); m.userData.wig = (a, f) => { const u = m.material.userData.u; u.uWig.value = a; if (f) u.uFreq.value = f; }; return m; },   // (testing)
+    get time() { return T; },
     get busy() { return st.mode !== 'idle'; },
     reset() { end(); catchFish.visible = false; setHint(''); },
     // R: cast, reel in, or strike when a fish bites

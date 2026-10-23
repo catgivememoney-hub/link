@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { heightAt, createTerrain, createWater } from './terrain.js';
 import { createSky } from './sky.js';
+import { createClouds } from './clouds.js';
 import { createWeather } from './weather.js';
 import { createScenes, PRESETS, SCENE_NAMES } from './scenes.js';
 import { createProps, createRipples, createFootprints } from './props.js';
@@ -68,6 +69,7 @@ import { createAssets } from './assets.js';
 
   /* ---------- build the world ---------- */
   const sky = createSky(scene, U);
+  const clouds = createClouds(scene, U);   // Settings → Graphics → Clouds
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
   const sun = new THREE.DirectionalLight(0xffffff, 1);
   scene.add(hemi, sun, sun.target);
@@ -532,6 +534,8 @@ import { createAssets } from './assets.js';
     const fov = (innerWidth < 700 ? 62 : 50) - (player.mode === 'home' ? gal.focus * 6 - gal.pulse * 1.5 : 0);
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     sky.position.copy(camera.position);
+    { const c = scenes.cur, starry = c.stars || 0;   // cloud cover from the scene: rain and snow skies are thick, clear starry nights thin
+      clouds.update(camera.position, frameDt, Math.min(0.95, 0.42 + (c.rain || 0) * 0.42 + (c.snow || 0) * 0.3 + (c.mist || 0) * 0.12 - starry * 0.25), Math.min(1, (c.rain || 0) * 0.8)); }
     // keep turning while the mouse rests at the left / right edge (when the pointer isn't hidden)
     if (!locked() && player.walking && look.inside && !look.ui && !drag && !busy() && full() && look.y > innerHeight * 0.15 && look.y < innerHeight * 0.85) {
       const edge = Math.max(30, innerWidth * 0.04);
@@ -711,13 +715,13 @@ import { createAssets } from './assets.js';
   //   box: how far around you sun shadows reach, plants: grass/ferns/flowers drawn, soft: soft shadow edges
   const GFX_LEVELS = {
     //          pixels         sun shadows: cascade map size, distance, softness   lamp/fire shadows   screen-space effects
-    none:     { tex: false, name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, fx: {} },
-    fast:     { tex: false, name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
-    default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
-    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  fx: {} },
-    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
-    best:     { name: 'Best',     pr: 2.0,  shadows: true,  csm: 2048, far: 260, soft: 1.6, lamps: 512,  plants: true,  fx: { ao: 1, aoSamples: 12, contact: 0.6, scale: 0.75 } },
-    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  csm: 3072, far: 400, soft: 1.8, lamps: 1024, plants: true,  fx: { ao: 1, aoSamples: 16, contact: 0.7, gi: 0.45, ssr: 1, rays: 1, scale: 1 } }
+    none:     { tex: false, name: 'None',     pr: 0.5,  shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: false, clouds: 0, fx: {} },
+    fast:     { tex: false, name: 'Fast',     pr: 0.75, shadows: false, csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, fx: {} },
+    default:  { name: 'Default',  pr: 1.0,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, fx: {} },
+    balanced: { name: 'Balanced', pr: 1.5,  shadows: true,  csm: 0,    far: 0,   soft: 0,   lamps: 0,    plants: true,  clouds: 1, fx: {} },
+    fancy:    { name: 'Fancy',    pr: 1.5,  shadows: true,  csm: 1024, far: 160, soft: 1.0, lamps: 0,    plants: true,  clouds: 1, fx: { ao: 0.8, aoSamples: 8, scale: 0.5 } },
+    best:     { name: 'Best',     pr: 2.0,  shadows: true,  csm: 2048, far: 260, soft: 1.6, lamps: 512,  plants: true,  clouds: 2, fx: { ao: 1, aoSamples: 12, contact: 0.6, scale: 0.75 } },
+    extreme:  { name: 'Extreme',  pr: 3.0,  shadows: true,  csm: 3072, far: 400, soft: 1.8, lamps: 1024, plants: true,  clouds: 2, fx: { ao: 1, aoSamples: 16, contact: 0.7, gi: 0.45, ssr: 1, rays: 1, scale: 1 } }
   };
   const GFX_ORDER = Object.keys(GFX_LEVELS);
   const OLD = { low: 'fast', mid: 'balanced', high: 'best' };
@@ -726,7 +730,7 @@ import { createAssets } from './assets.js';
   const ADV = { res: 0, sharp: 0, custom: null };
   try { Object.assign(ADV, JSON.parse(localStorage.getItem('meow.gfxadv') || '{}')); } catch { /* ignore */ }
   const saveAdv = () => { try { localStorage.setItem('meow.gfxadv', JSON.stringify(ADV)); } catch { /* ignore */ } };
-  const customFrom = (base) => ({ name: 'Custom', pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants, tex: base.tex !== false,
+  const customFrom = (base) => ({ name: 'Custom', clouds: base.clouds ?? 1, pr: base.pr, shadows: base.shadows, csm: base.csm, far: base.far || 260, soft: base.soft || 1.6, lamps: base.lamps, plants: base.plants, tex: base.tex !== false,
     fx: Object.assign({ ao: 0, aoSamples: 12, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.75 }, base.fx) });
   const applyGfx = (lv) => {
     lv = OLD[lv] || lv; if (lv !== 'custom' && !GFX_LEVELS[lv]) lv = 'balanced';
@@ -748,6 +752,7 @@ import { createAssets } from './assets.js';
       sunCSM.shadow.bias = -0.0003; sunCSM.shadow.normalBias = 0.12;
     }
     cabin.setLightShadows(G.lamps);
+    clouds.setMode(G.clouds ?? 1);
     dispatchEvent(new CustomEvent('meow:gfx', { detail: lv }));   // other players' cats pick their detail level from this
     lens.fx.configure(Object.assign({ ao: 0, aoSamples: 8, contact: 0, gi: 0, ssr: 0, rays: 0, scale: 0.5 }, G.fx));
     scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
@@ -770,6 +775,7 @@ import { createAssets } from './assets.js';
     $('advSun').value = String(G.csm || 0); $('advLamps').value = String(G.lamps || 0);
     const sw = (id, on) => $(id).setAttribute('aria-checked', String(!!on));
     sw('advShadows', G.shadows); sw('advPlants', G.plants); sw('advAO', G.fx.ao > 0); sw('advContact', G.fx.contact > 0);
+    if ($('advClouds')) $('advClouds').value = String(G.clouds ?? 1);
     sw('advTex', G.tex !== false); sw('advSSR', G.fx.ssr > 0); sw('advGI', G.fx.gi > 0); sw('advRays', G.fx.rays > 0);
   }
   {
@@ -780,6 +786,7 @@ import { createAssets } from './assets.js';
       $('advSharp').addEventListener('input', (e) => { ADV.sharp = +e.target.value; saveAdv(); $('advSharpVal').textContent = ADV.sharp + '%'; lens.LU.uSharp.value = ADV.sharp / 100; });
       $('advSun').addEventListener('change', (e) => toCustom((c) => { c.csm = +e.target.value; if (c.csm) c.shadows = true; }));
       $('advLamps').addEventListener('change', (e) => toCustom((c) => { c.lamps = +e.target.value; if (c.lamps) c.shadows = true; }));
+      if ($('advClouds')) $('advClouds').addEventListener('change', (e) => toCustom((c) => { c.clouds = +e.target.value; }));
       const flip = (id, fn) => $(id).addEventListener('click', () => toCustom((c) => fn(c, $(id).getAttribute('aria-checked') !== 'true')));
       flip('advShadows', (c, on) => { c.shadows = on; if (!on) { c.csm = 0; c.lamps = 0; } });
       flip('advPlants', (c, on) => { c.plants = on; });
