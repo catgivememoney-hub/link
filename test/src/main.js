@@ -176,7 +176,7 @@ import { createAssets } from './assets.js';
   window.MEOW_ONLINE = online;
   // the snack bag under the house and the bottle on the coffee table (see items.js)
   const items = createItems({ scene, terrain, physics, player, camera, cabin, scenes, water: water.mesh, online, toast: (m) => toastMsg(m) });
-  setTimeout(() => { window.MEOW_DEBUG = { get portal() { return portal; }, trees, player, camera, scenes, cabin }; }, 0);   // (testing)
+  setTimeout(() => { window.MEOW_DEBUG = { get portal() { return portal; }, trees, player, camera, scenes, cabin, items, terrain }; }, 0);   // (testing)
   boat.takenSeats = () => online.takenSeats();
   {
     const S = () => window.MEOW_SOUND || {};

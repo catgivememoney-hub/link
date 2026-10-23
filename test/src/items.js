@@ -223,7 +223,8 @@ export function createItems({ scene, terrain, physics, player, camera, cabin, sc
       } else B.t = 0;
     },
     // someone joined: tell them where the bottle is
-    share() { if (B.owner) sync(); }
+    share() { if (B.owner) sync(); },
+    _B: B   // (testing)
   };
   return api;
 }
