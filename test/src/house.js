@@ -295,7 +295,7 @@ export function createHouse({ scene }) {
     blocked(x, z, pad, feet) {
       const [X, Y] = toLocal(x, z);
       if (X < -6.5 || X > 21.5 || Y < -5 || Y > 5.5) return boatBlock ? boatBlock(x, z, feet) : false;
-      const f = lz(feet), r = 0.2 + (pad || 0) / S;
+      const f = lz(feet), r = 0.13 + (pad || 0) / S;   // a cat is slim
       // no crawling under the house, decks, stairs or dock
       // under the house, the decks and the stairs: a cat fits wherever there's head room
       if (f < FL - STEP - 0.05 && f + CAT_H > FL - 0.15 && (ROOMS.some((q) => inR(X, Y, q, r)) || DECKS.some((q) => inR(X, Y, q, r)))) return true;
@@ -320,7 +320,13 @@ export function createHouse({ scene }) {
           }
         }
       }
-      if (f > -0.6 && f < 3) for (const [axis, at, a, b] of RAILS) if (nearSeg(axis, at, a, b, X, Y, 0.05 + r)) return true;
+      for (const [axis, at, a, b] of RAILS) {
+        if (!nearSeg(axis, at, a, b, X, Y, 0.05 + r)) continue;
+        // a stair's railing only stands along the steps: under the stairs (or past its end post) a cat walks freely
+        const st = STAIRS.find((q) => axis === 'X' && at > q.r[2] - 0.2 && at < q.r[3] + 0.2 && Math.min(a, b) >= Math.min(q.xt, q.xb) - 0.01 && Math.max(a, b) <= Math.max(q.xt, q.xb) + 0.01);
+        if (st) { const rz = rampZ(st, Math.min(Math.max(X, Math.min(a, b)), Math.max(a, b))); if (f > rz - CAT_H && f < rz + 1.2) return true; continue; }
+        if (f > -0.6 && f < 3) return true;
+      }
       return boatBlock ? boatBlock(x, z, feet) : false;
     },
     // where a cat sits at the computer: the chair seat (world position) and which way it faces

@@ -267,11 +267,16 @@ export function createWater(scene, U) {
    so trails far behind you fade off it). Every step on snow presses a soft round dent; while it snows
    the dents fill in again, slowly (about a minute in a full snowfall). */
 function createTrail(TU) {
-  const N = 512, SIZE = 320, CELL = SIZE / N;
-  const data = new Uint8Array(N * N);
-  const tex = new THREE.DataTexture(data, N, N, THREE.RedFormat, THREE.UnsignedByteType);
-  tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
-  TU.tTrail.value = tex;
+  let N = 512, CELL; const SIZE = 320;
+  let data, tex;
+  const make = (n) => {
+    N = n; CELL = SIZE / N; data = new Uint8Array(N * N);
+    if (tex) tex.dispose();
+    tex = new THREE.DataTexture(data, N, N, THREE.RedFormat, THREE.UnsignedByteType);
+    tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+    TU.tTrail.value = tex;
+  };
+  make(512);
   let x0 = -SIZE / 2, z0 = -SIZE / 2, dirty = false, acc = 0, any = false;
   const box = () => TU.uTrailBox.value.set(x0, z0, SIZE, SIZE);
   box();
@@ -315,7 +320,9 @@ function createTrail(TU) {
       } else if (acc > 0.5) acc = 0;
       if (dirty) { tex.needsUpdate = true; dirty = false; }
     },
-    clear() { data.fill(0); any = false; tex.needsUpdate = true; }
+    clear() { data.fill(0); any = false; tex.needsUpdate = true; },
+    // sharper trails (more detail in the pressure map); clears the trails you've made
+    setRes(n) { if (n !== N) { make(n); box(); any = false; } }
   };
 }
 
@@ -344,8 +351,10 @@ export function createDeepSnow(scene, TU, ground) {
   const cell = new THREE.Vector2((maxX - minX) / (NX - 1), (maxZ - minZ) / (NZ - 1));
   const box = new THREE.Vector4(minX - cell.x / 2, minZ - cell.y / 2, (maxX - minX) + cell.x, (maxZ - minZ) + cell.y);
 
-  const SIZE = 110, SEG = 330, DEPTH = 1.5, STEP = SIZE / SEG;
-  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
+  // quality 1..5: how fine the snow grid is, and how sharp the trail map (fewer = faster)
+  const Q = [null, { size: 90, seg: 180, trail: 512 }, { size: 100, seg: 250, trail: 768 }, { size: 110, seg: 330, trail: 1024 }, { size: 120, seg: 440, trail: 1536 }, { size: 130, seg: 560, trail: 2048 }];
+  const DEPTH = 1.5; let STEP = 110 / 330;
+  let geo = new THREE.PlaneGeometry(110, 110, 330, 330).rotateX(-Math.PI / 2);
   const DU = { uDepth: { value: DEPTH }, tGround: { value: hTex }, uGroundBox: { value: box }, uCell: { value: cell } };
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   mat.onBeforeCompile = (sh) => {
@@ -383,14 +392,21 @@ export function createDeepSnow(scene, TU, ground) {
         if (vSk < 0.08) discard;
         if (vXZ.x > uHole.x && vXZ.x < uHole.y && vXZ.y > uHole.z && vXZ.y < uHole.w) discard;
         // the furrow reads clearly: packed blue-grey snow at the bottom, its walls in their own soft shade
-        diffuseColor.rgb = uSnow * mix(vec3(1.0), vec3(0.5, 0.58, 0.76), smoothstep(0.12, 0.8, vPress));
-        diffuseColor.rgb *= 1.0 - 0.5 * smoothstep(0.06, 0.8, vWall) * (0.5 + 0.5 * smoothstep(0.0, 0.5, vPress));`);
+        diffuseColor.rgb = uSnow * mix(vec3(1.0), vec3(0.64, 0.71, 0.84), smoothstep(0.12, 0.8, vPress));
+        diffuseColor.rgb *= 1.0 - 0.36 * smoothstep(0.06, 0.8, vWall) * (0.5 + 0.5 * smoothstep(0.0, 0.5, vPress));`);
   };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true; mesh.castShadow = false; mesh.frustumCulled = false; mesh.visible = false;
   scene.add(mesh);
-  let on = false;
+  let on = false, quality = 0;
   return {
+    setQuality(q, trail) {
+      q = Math.max(1, Math.min(5, q | 0)); if (q === quality) return; quality = q;
+      const c = Q[q]; STEP = c.size / c.seg;
+      const g2 = new THREE.PlaneGeometry(c.size, c.size, c.seg, c.seg).rotateX(-Math.PI / 2);
+      mesh.geometry.dispose(); mesh.geometry = g2; geo = g2;
+      if (trail) trail.setRes(c.trail);
+    },
     setEnabled(v) { on = !!v; if (!on) mesh.visible = false; },
     get enabled() { return on; },
     // show it around (x, z) when the scene has snow on the ground near you (snapped to the grid so it doesn't shimmer)

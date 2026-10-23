@@ -78,6 +78,12 @@ import { createAssets } from './assets.js';
   scene.fog = new THREE.FogExp2(0xcccccc, 0.004);
   const terrain = createTerrain(scene);
   const deepSnow = createDeepSnow(scene, terrain.TU, terrain.mesh);   // thick 3D snow you plough through (a graphics option)
+  {
+    let q = 3; try { q = Math.min(5, Math.max(1, +localStorage.getItem('meow.deepq') || 3)); } catch { /* ignore */ }
+    deepSnow.setQuality(q, terrain.trail);
+    const sel = document.getElementById('advDeepQ');
+    if (sel) { sel.value = String(q); sel.addEventListener('change', () => { const v = +sel.value; deepSnow.setQuality(v, terrain.trail); try { localStorage.setItem('meow.deepq', String(v)); } catch { /* ignore */ } }); }
+  }
   const water = createWater(scene, U);
   // the spots the home views look from stay clear of rocks and grass
   const CLEAR = [[0, 105], [0, 140], [-38, 112], [24, 78], [0, 92], [30, 102], [0, 125]].map(([x, z]) => ({ x, z, r: 42 }));
@@ -650,15 +656,22 @@ import { createAssets } from './assets.js';
     // snow trails: every bit of ground you cross on snow gets pressed down (refills while it snows)
     terrain.trail.update(dt, scenes.cur.snow || 0);
     deepSnow.update(ps.x, ps.z, scenes.cur.snowLine < heightAt(ps.x, ps.z) + 60);
-    if (player.walking && !inside && !ps.air) {
-      const dx = ps.x - trailAt.x, dz = ps.z - trailAt.z, d = Math.hypot(dx, dz);
-      if (d > 0.8) {
-        const gh = heightAt(ps.x, ps.z), sl = scenes.cur.snowLine;
-        const snowy = Math.min(1, Math.max(0, (gh - (sl - 12)) / 24)) > 0.35 && gh > water.mesh.position.y + 0.6 && ps.feet < gh + 1.5;
-        if (snowy && d < 80) { const n = Math.ceil(d / 0.8);   // fill the whole gap, even after a slow frame (a bigger jump is a teleport)
-          for (let i = 1; i <= n; i++) terrain.trail.stamp(trailAt.x + dx * i / n, trailAt.z + dz * i / n, 1.15); }
-        trailAt.x = ps.x; trailAt.z = ps.z;
+    if (player.walking && !inside) {
+      // only where your paws touch: a jump or a leap leaves the snow untouched until you land
+      const ground = physics.groundAt(ps.x, ps.z), touching = !ps.air || ps.feet < ground + 0.5;
+      if (!touching) { trailAt.x = ps.x; trailAt.z = ps.z; }
+      else {
+        const dx = ps.x - trailAt.x, dz = ps.z - trailAt.z, d = Math.hypot(dx, dz);
+        if (d > 0.5) {
+          const gh = heightAt(ps.x, ps.z), sl = scenes.cur.snowLine;
+          // (on a slope the floor you stand on is a little above the exact ground height: compare with that)
+          const snowy = Math.min(1, Math.max(0, (gh - (sl - 12)) / 24)) > 0.35 && gh > water.mesh.position.y + 0.6 && ps.feet < ground + 1.5;
+          if (snowy && d < 80) { const n = Math.ceil(d / 0.5);   // fill the whole gap, even after a slow frame (a bigger jump is a teleport)
+            for (let i = 1; i <= n; i++) terrain.trail.stamp(trailAt.x + dx * i / n, trailAt.z + dz * i / n, 1.15); }
+          trailAt.x = ps.x; trailAt.z = ps.z;
+        }
       }
+    }
     }
     if (stepped && !inside) {
       const gh = heightAt(ps.x, ps.z);
