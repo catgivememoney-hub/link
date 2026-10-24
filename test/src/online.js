@@ -629,8 +629,13 @@ export function createOnline({ scene, player, scenes, toast, extra }) {
     peer.on('open', (id) => {
       myId = id; setButtons(true);
       if (asHost) { Object.assign(world, hostWorld); status(`Hosting · room ${code} · share this code`); if (ui.code) ui.code.value = code; }
+      else {
+        // join the host's room (this line used to sit in the wrong "else", so joining never started)
+        const c = peer.connect(PREFIX + code, { reliable: true }); wire(c);
+        const me = peer;
+        setTimeout(() => { if (peer === me && !c.open) status(`Still connecting to room ${code}… if this stays, check the code, or one of your networks may be blocking direct connections`); }, 15000);
+      }
       refreshList(); if (ui.syncWorld) ui.syncWorld();
-      else wire(peer.connect(PREFIX + code, { reliable: true }));
     });
     peer.on('connection', (c) => { if (host) wire(c); else c.close(); });
     peer.on('error', (e) => {
