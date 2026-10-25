@@ -302,7 +302,7 @@ export function createItems({ scene, terrain, physics, player, camera, cabin, sc
           // where is it now?
           B.where = inHearth(B.pos) ? 'fire' : (iceOn() && terrain.surfaceAt(B.pos.x, B.pos.z) < wy() - 0.25) ? 'ice' : (terrain.surfaceAt(B.pos.x, B.pos.z) < wy() - 0.25 && B.pos.y < wy() + 0.4) ? 'water' : 'ground';
           // asleep once still
-          if (B.v.lengthSq() < 0.04 && B.w.lengthSq() < 0.04 && B.where !== 'water') { B.still += dt; if (B.still > 0.6) { B.awake = false; B.v.set(0, 0, 0); B.w.set(0, 0, 0); sync(B); } } else B.still = 0;
+          if (B.v.lengthSq() < 0.3 && B.w.lengthSq() < 0.3 && B.where !== 'water') { B.still += dt; if (B.still > 0.6) { B.awake = false; B.v.set(0, 0, 0); B.w.set(0, 0, 0); sync(B); } } else B.still = 0;
           B.sendT += dt; if (B.sendT > 0.12) { B.sendT = 0; sync(B); }
           if (B.pos.y < -60) { B.pos.set(TABLE.x, TABLE.y + 1, TABLE.z); B.v.set(0, 0, 0); }   // fell out of the world: back to the table
         }
