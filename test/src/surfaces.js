@@ -99,14 +99,17 @@ const GLSL_F_HEAD = `
   uniform vec2 uSR[4];   // roughness range
   uniform vec3 uSA[4];   // the photo's average colour
   uniform float uSurfOn;
-  vec3 sW;
-  vec4 tri(sampler2D t, vec3 p) { return texture2D(t, p.zy) * sW.x + texture2D(t, p.xz) * sW.y + texture2D(t, p.xy) * sW.z; }
+  vec3 sW; bool sSwap;
+  // from above, the photo is turned to run down the slope (so a roof's ribs and a ramp's planks follow the fall line)
+  vec2 sTop(vec3 p) { return sSwap ? p.zx : p.xz; }
+  vec4 tri(sampler2D t, vec3 p) { return texture2D(t, p.zy) * sW.x + texture2D(t, sTop(p)) * sW.y + texture2D(t, p.xy) * sW.z; }
   vec4 sD(vec3 p) { if (vSlot == 0) return tri(tSD0, p); if (vSlot == 1) return tri(tSD1, p); if (vSlot == 2) return tri(tSD2, p); return tri(tSD3, p); }
   vec3 sNx(sampler2D t, vec3 p, vec3 n) {
-    vec4 a = texture2D(t, p.zy), b = texture2D(t, p.xz), c = texture2D(t, p.xy);
+    vec4 a = texture2D(t, p.zy), b = texture2D(t, sTop(p)), c = texture2D(t, p.xy);
     vec2 A = a.xy * 2.0 - 1.0, B = b.xy * 2.0 - 1.0, C = c.xy * 2.0 - 1.0;
-    return vec3(0.0, A.y, A.x) * sign(n.x) * sW.x + vec3(B.x, 0.0, B.y) * sign(n.y) * sW.y + vec3(C.x, C.y, 0.0) * sign(n.z) * sW.z; }
-  float sRx(sampler2D t, vec3 p) { return texture2D(t, p.zy).z * sW.x + texture2D(t, p.xz).z * sW.y + texture2D(t, p.xy).z * sW.z; }
+    vec3 top = sSwap ? vec3(B.y, 0.0, B.x) : vec3(B.x, 0.0, B.y);
+    return vec3(0.0, A.y, A.x) * sign(n.x) * sW.x + top * sign(n.y) * sW.y + vec3(C.x, C.y, 0.0) * sign(n.z) * sW.z; }
+  float sRx(sampler2D t, vec3 p) { return texture2D(t, p.zy).z * sW.x + texture2D(t, sTop(p)).z * sW.y + texture2D(t, p.xy).z * sW.z; }
   vec3 sN(vec3 p, vec3 n) { if (vSlot == 0) return sNx(tSN0, p, n); if (vSlot == 1) return sNx(tSN1, p, n); if (vSlot == 2) return sNx(tSN2, p, n); return sNx(tSN3, p, n); }
   float sR(vec3 p) { if (vSlot == 0) return sRx(tSN0, p); if (vSlot == 1) return sRx(tSN1, p); if (vSlot == 2) return sRx(tSN2, p); return sRx(tSN3, p); }
   vec4 sP() { return vSlot == 0 ? uSP[0] : vSlot == 1 ? uSP[1] : vSlot == 2 ? uSP[2] : uSP[3]; }
@@ -132,7 +135,7 @@ function surfaceMaterial(base, slots) {
       vSWN = normalize(mat3(modelMatrix) * objectNormal);`);
     sh.fragmentShader = GLSL_F_HEAD + sh.fragmentShader
       .replace('#include <color_fragment>', `#include <color_fragment>
-        vec4 sp = sP(); vec3 sn = normalize(vSWN); sW = pow(abs(sn), vec3(4.0)); sW /= (sW.x + sW.y + sW.z);
+        vec4 sp = sP(); vec3 sn = normalize(vSWN); sW = pow(abs(sn), vec3(8.0)); sW /= (sW.x + sW.y + sW.z); sSwap = abs(sn.x) > abs(sn.z) + 0.05;
         vec3 spos = vSWP * sp.x;
         vec3 sAlb = sD(spos).rgb;
         diffuseColor.rgb *= mix(vec3(1.0), clamp(sAlb / max(sA(), vec3(0.02)), 0.0, 2.2), sp.y * uSurfOn);`)
@@ -141,7 +144,7 @@ function surfaceMaterial(base, slots) {
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         { vec3 bw = sN(spos, sn) * sp.z * uSurfOn; normal = normalize(normal + (viewMatrix * vec4(bw, 0.0)).xyz); }`);
   };
-  m.customProgramCacheKey = () => 'meow-surface-v1';
+  m.customProgramCacheKey = () => 'meow-surface-v2';
   return m;
 }
 
