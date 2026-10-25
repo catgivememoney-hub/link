@@ -305,7 +305,7 @@ import { createAssets } from './assets.js';
     scene.fog.color.copy(s.fog); scene.fog.density = s.fogDensity * (1 + gal.focus * 0.35) * (1 - 0.85 * indoorK);
     terrain.TU.uHole.value.copy(FAR); water.WU.uStudy.value.copy(FAR);   // no hole in the ground: the new house stands on stilts
     terrain.TU.uLow.value.copy(s.low); terrain.TU.uHigh.value.copy(s.high); terrain.TU.uSnow.value.copy(s.snowC);
-    terrain.TU.uSnowLine.value = s.snowLine; terrain.TU.uSand.value = s.sand;
+    terrain.TU.uSnowLine.value = s.snowLine; terrain.TU.uSand.value = s.sand; terrain.TU.uLeaves.value = s.leaves || 0;
     water.mesh.position.y = s.water; water.mat.color.copy(s.waterC); water.mat.roughness = Math.max(0.3, s.waterRough) + (0.1 - Math.max(0.3, s.waterRough)) * (s.ice || 0); water.mat.envMapIntensity = 0.35 + 0.5 * (s.ice || 0);
     water.WU.uIce.value = s.ice || 0; water.mat.metalness = 0.1 * (1 - (s.ice || 0));
     water.WU.uLevel.value = s.water; terrain.TU.uWaterY.value = s.water; terrain.TU.uWaterC.value.copy(s.waterC);

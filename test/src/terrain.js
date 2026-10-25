@@ -64,7 +64,11 @@ export function createTerrain(scene) {
     // fine grass detail up close (assets/textures/grass-detail.jpg, CC-BY 3.0, see README)
     tDetail: { value: lateTexture('assets/textures/grass-detail.jpg', [97, 97, 97]) },
     // CC0 Poly Haven ground (grass) and rock, used up close when Textures are on (Settings → Graphics)
-    tGrassD: { value: lateTexture('test/assets/tex/grass_diff.jpg', [110, 110, 90]) }, tRockD: { value: lateTexture('test/assets/tex/rock_diff.jpg', [128, 128, 128]) }, tRockN: { value: lateTexture('test/assets/tex/rock_nor_gl.jpg', [128, 128, 255]) }, uTexOn: TEXON,
+    tGrassD: { value: lateTexture('test/assets/tex/grass_diff.jpg', [110, 110, 90]) },
+    // more CC0 Poly Haven ground (test/assets/pbr): pine forest floor, beach sand, snow, autumn leaf litter
+    tForestD: { value: lateTexture('test/assets/pbr/forest_ground_04_diff.webp', [100, 90, 70]) }, tSandD: { value: lateTexture('test/assets/pbr/coast_sand_01_diff.webp', [128, 128, 128]) },
+    tSnowD: { value: lateTexture('test/assets/pbr/snow_02_diff.webp', [128, 128, 128]) }, tSnowN: { value: lateTexture('test/assets/pbr/snow_02_nor.webp', [128, 128, 255]) },
+    tLeavesD: { value: lateTexture('test/assets/pbr/brown_mud_leaves_01_diff.webp', [110, 80, 50]) }, uLeaves: { value: 0 }, tRockD: { value: lateTexture('test/assets/tex/rock_diff.jpg', [128, 128, 128]) }, tRockN: { value: lateTexture('test/assets/tex/rock_nor_gl.jpg', [128, 128, 255]) }, uTexOn: TEXON,
     // snow trails: a pressure map that follows you (see createTrail below)
     tTrail: { value: null }, uTrailBox: { value: new THREE.Vector4(0, 0, 1, 1) } };
   const trail = createTrail(TU);
@@ -82,7 +86,7 @@ export function createTerrain(scene) {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = position.y; vSlope = 1.0 - normal.y; vXZ = position.xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; uniform sampler2D tDetail, tGrassD, tRockD, tRockN; uniform float uTexOn; uniform sampler2D tContact; uniform vec4 uContactBox, uContactStr; varying float vH; varying float vSlope; varying vec2 vXZ;
+        uniform vec3 uLow, uHigh, uSnow, uWaterC; uniform float uSnowLine, uSand, uWaterY; uniform vec4 uHole; uniform sampler2D tDetail, tGrassD, tRockD, tRockN, tForestD, tSandD, tSnowD, tSnowN, tLeavesD; uniform float uTexOn, uLeaves; uniform sampler2D tContact; uniform vec4 uContactBox, uContactStr; varying float vH; varying float vSlope; varying vec2 vXZ;
         uniform sampler2D tTrail; uniform vec4 uTrailBox;
         float trl(vec2 p) { vec2 uv = (p - uTrailBox.xy) / uTrailBox.zw; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0; return texture2D(tTrail, uv).r; }
         float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -111,11 +115,20 @@ export function createTerrain(scene) {
             float steep = smoothstep(0.32, 0.62, vSlope);
             land *= mix(1.0, mix(0.55 + gl * 1.6, 0.45 + rl * 1.5, steep), tnear);
             land = mix(land, land * vec3(0.95, 0.93, 0.9), steep * tnear);
+            // patches of pine-needle forest floor among the grass (the real photo, slightly tinted to the scene)
+            float fp = smoothstep(0.52, 0.72, tn(vXZ * 0.018) * 0.7 + tn(vXZ * 0.07 + 3.0) * 0.3) * (1.0 - steep) * tnear;
+            vec3 ff = texture2D(tForestD, vXZ * 0.09).rgb;
+            land = mix(land, ff * mix(vec3(1.0), uLow * 2.2, 0.25) * 1.05, fp * 0.85);
+            // autumn: fallen leaves over the ground
+            float lp = uLeaves * smoothstep(0.35, 0.6, tn(vXZ * 0.03 + 9.0)) * (1.0 - steep) * tnear;
+            land = mix(land, texture2D(tLeavesD, vXZ * 0.08).rgb * 1.1, lp * 0.9);
           }
         }
         land = mix(land, land * vec3(0.92, 0.88, 0.84), smoothstep(0.35, 0.75, vSlope));
         float beach = (1.0 - smoothstep(uWaterY + 1.2, uWaterY + 3.5, vH)) * smoothstep(uWaterY - 3.0, uWaterY - 0.5, vH) * uSand;
-        land = mix(land, vec3(0.93, 0.85, 0.66) * (0.9 + 0.12 * d3), beach);
+        vec3 sandC = vec3(0.93, 0.85, 0.66) * (0.9 + 0.12 * d3);
+        if (uTexOn > 0.5) { float sn2 = smoothstep(220.0, 20.0, length(vec3(vXZ.x, vH, vXZ.y) - cameraPosition)); sandC = mix(sandC, sandC * (0.45 + 1.4 * dot(texture2D(tSandD, vXZ * 0.12).rgb, vec3(0.33))), sn2); }   // real beach sand
+        land = mix(land, sandC, beach);
         // where land meets water: a wet, darker band, then the lake bed tinted by the water
         float wet = smoothstep(uWaterY + 2.2, uWaterY + 0.1, vH) * (0.75 + 0.25 * d2);
         land *= mix(1.0, 0.7, wet);
@@ -124,6 +137,7 @@ export function createTerrain(scene) {
         snow *= 1.0 - smoothstep(uWaterY + 0.6, uWaterY - 0.4, vH);
         float drift = sin(vXZ.x * 0.55 + vXZ.y * 0.18 + d1 * 7.0) * 0.5 + 0.5;
         vec3 snowCol = uSnow * (0.93 + 0.05 * d2 + 0.04 * drift) * mix(vec3(0.94, 0.97, 1.0), vec3(1.0), d1);
+        if (uTexOn > 0.5) { float snn = smoothstep(200.0, 15.0, length(vec3(vXZ.x, vH, vXZ.y) - cameraPosition)); snowCol *= mix(1.0, 0.8 + 0.35 * dot(texture2D(tSnowD, vXZ * 0.1).rgb, vec3(0.33)), snn); }   // real snow grain
         diffuseColor.rgb = mix(land, snowCol, snow);
         {
           // contact shadows baked into the ground (contact.js): under rocks, logs, trees, the cabin
@@ -145,6 +159,10 @@ export function createTerrain(scene) {
             float b0 = BMP(vXZ);
             vec3 bw = vec3(-(BMP(vXZ + vec2(e, 0.0)) - b0), 0.0, -(BMP(vXZ + vec2(0.0, e)) - b0)) / e * 0.55 * near;
             normal = normalize(normal + (viewMatrix * vec4(bw, 0.0)).xyz);
+          }
+          if (uTexOn > 0.5 && snow > 0.01) {   // the snow's own crust and grain
+            vec3 sn3 = texture2D(tSnowN, vXZ * 0.1).xyz * 2.0 - 1.0;
+            normal = normalize(normal + (viewMatrix * vec4(sn3.x, 0.0, sn3.y, 0.0)).xyz * 0.5 * snow * near);
           }
           // the trail is a groove: its sides catch the light
           if (snow > 0.01) {

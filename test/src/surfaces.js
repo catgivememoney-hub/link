@@ -10,6 +10,7 @@
    · The paint colour stays (the texture adds grain, bumps and shine around it), so the house keeps its look.
    · Roughness is packed into the normal map's blue channel, so each surface costs two textures. */
 import * as THREE from 'three';
+import { TEXON } from './kit.js';
 
 const ROOT = 'test/assets/pbr/';
 // surface → texture set, metres per tile, how much the photo's own light/dark shows, bump strength, roughness range, metalness
@@ -60,7 +61,7 @@ const BY_PART = {
 };
 
 // on / off (Settings → Graphics → Textures): off = the plain painted look
-export const SURF_ON = { value: 1 };
+export const SURF_ON = TEXON;   // the same switch as the ground and tree textures
 
 /* ---------- loading: colour map + (normal xy, roughness) packed into one image ---------- */
 const sets = {};
@@ -73,7 +74,8 @@ function textureSet(name) {
   D.colorSpace = THREE.SRGBColorSpace;
   const S = { D, N, avg: new THREE.Vector3(0.2195, 0.2195, 0.2195), ready: false };   // (the grey placeholder's own average, so nothing changes until the photo arrives)
   sets[name] = S;
-  Promise.all([loadImg(`${ROOT}${name}_diff.jpg`), loadImg(`${ROOT}${name}_nor.jpg`), loadImg(`${ROOT}${name}_rough.jpg`)]).then(([d, n, r]) => {
+  // (the normal map file already carries the roughness in its blue channel: packed when the textures were added)
+  Promise.all([loadImg(`${ROOT}${name}_diff.webp`), loadImg(`${ROOT}${name}_nor.webp`)]).then(([d, n]) => {
     if (d) {
       D.image = d; D.anisotropy = 8; D.generateMipmaps = true; D.minFilter = THREE.LinearMipmapLinearFilter; D.needsUpdate = true;
       // the photo's average colour (linear), so it adds grain without changing the house's colours
@@ -82,14 +84,7 @@ function textureSet(name) {
       for (let i = 0; i < px.length; i += 4) { a += Math.pow(px[i] / 255, 2.2); b += Math.pow(px[i + 1] / 255, 2.2); c += Math.pow(px[i + 2] / 255, 2.2); }
       S.avg.set(a / 256, b / 256, c / 256);
     }
-    if (n) {
-      const W = n.width, H = n.height, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-      const g = cv.getContext('2d'); g.drawImage(n, 0, 0); const nd = g.getImageData(0, 0, W, H);
-      if (r) { const c2 = document.createElement('canvas'); c2.width = W; c2.height = H; const g2 = c2.getContext('2d'); g2.drawImage(r, 0, 0, W, H); const rd = g2.getImageData(0, 0, W, H).data; for (let i = 0; i < nd.data.length; i += 4) nd.data[i + 2] = rd[i + 1]; }
-      else for (let i = 0; i < nd.data.length; i += 4) nd.data[i + 2] = 160;
-      g.putImageData(nd, 0, 0);
-      N.image = cv; N.anisotropy = 8; N.needsUpdate = true;
-    }
+    if (n) { N.image = n; N.anisotropy = 8; N.generateMipmaps = true; N.minFilter = THREE.LinearMipmapLinearFilter; N.needsUpdate = true; }
     S.ready = true;
   });
   return S;

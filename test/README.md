@@ -76,3 +76,4 @@ Update 5 (graphics):
 
 - Footsteps: cut from the user-supplied freesound recording "footsteps in wet coarse sand" (test/assets/audio/steps.mp3).
 - Textures in test/assets/tex (bark = "Pine Bark", log = "Bark Willow", rock = "Rock Face", grass = "Aerial Grass Rock", wood = "Wood Planks"): Poly Haven, CC0 (https://polyhaven.com), resized to 512 px.
+- Textures in test/assets/pbr (CC0, Poly Haven, https://polyhaven.com; 1024 px WebP, roughness packed into the normal map's blue channel): rough_wood, weathered_planks, wood_floor_deck, raw_plank_wall, old_wood_floor, fine_grained_wood, white_planks_clean, castle_brick_02_white, concrete_floor_worn_001, box_profile_metal_sheet, metal_plate, metal_plate_02, rough_linen, knitted_fleece, poly_wool_herringbone, velour_velvet, wool_boucle, hessian_230, forest_ground_04, coast_sand_01, snow_02, mossy_rock, brown_mud_leaves_01, pine_bark. Used by src/surfaces.js (house, dock, boat) and src/terrain.js (ground).
