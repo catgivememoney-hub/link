@@ -135,6 +135,7 @@ import { createAssets } from './assets.js';
   const boat = createBoat({ scene, house: cabin, physics });
   // Settings → Play together: other players, and the doors / lights / boat / scene shared with them
   const curl = { t: 0, k: 0 };
+  const CAMFX = { lastYaw: 0, turn: 0, lat: 0, land: 0, landV: 0, t: 0, q: new THREE.Quaternion(), e: new THREE.Euler(0, 0, 0, 'XYZ') };
   const peerTrail = new Map();
   // camera view (Settings → Controls → View; the switch key is T unless you change it)
   const VIEW = { mode: 0, shown: 0, t: 1, body: 0, dist: 9, distTo: 9, key: 'KeyT', fromP: new THREE.Vector3(), fromQ: new THREE.Quaternion(), tp: new THREE.Vector3(), tq: new THREE.Quaternion(), v1: new THREE.Vector3(), v2: new THREE.Vector3(), e: new THREE.Euler() };
@@ -663,6 +664,26 @@ import { createAssets } from './assets.js';
       const show = walk && (mode > 0 || VIEW.t < 1);
       items.update(dt, time, ps, player.walking && VIEW.shown === 0 && VIEW.t >= 1);
       online.updateSelf(show, { held: items.heldKind, x: ps.x, y: VIEW.visY ?? ps.feet, tilt: VIEW.tilt || 0, z: ps.z, yaw: VIEW.body, pitch: mode ? 0 : ps.pitch, speed: sp, dt, time, pose: curl.k > 0.5 ? 1 : 0 });
+    }
+    // camera sway (Settings → Motion: full): you lean into turns and sideways steps, dip when you land, and
+    // breathe a little standing still — like eyes in a moving body, not a camera on rails
+    {
+      const ps = player.state, F = CAMFX;
+      const on = player.walking && full() && !computer.active && !(portal && portal.active);
+      const k = on ? (VIEW.shown === 1 ? 0.45 : 1) : 0;
+      let dyaw = ps.yaw - F.lastYaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw)); F.lastYaw = ps.yaw;
+      const rate = dt > 0 ? Math.max(-4, Math.min(4, dyaw / dt)) : 0;
+      F.turn += (rate - F.turn) * (1 - Math.exp(-dt * 5));
+      const rx = Math.cos(ps.yaw), rz = -Math.sin(ps.yaw), lat = ((ps.vx || 0) * rx + (ps.vz || 0) * rz) / 24;
+      F.lat += (lat - F.lat) * (1 - Math.exp(-dt * 5));
+      if (ps.landK) { F.landV -= ps.landK * 7; ps.landK = 0; }
+      F.landV += (-F.land * 110 - F.landV * 13) * Math.min(dt, 0.05); F.land += F.landV * Math.min(dt, 0.05);
+      F.t += dt;
+      const sp = Math.min(1, Math.hypot(ps.vx || 0, ps.vz || 0) / 24), still = 1 - sp;
+      const roll = (-F.turn * 0.022 - F.lat * 0.04 + Math.sin(F.t * 0.83) * 0.004 * still) * k;
+      const pitch = (Math.sin(F.t * 1.25) * 0.005 * still + F.land * 0.08) * k;
+      camOut.pos.y += (F.land * 0.55 + Math.sin(F.t * 1.25) * 0.025 * still) * k;
+      camOut.q.multiply(F.q.setFromEuler(F.e.set(pitch, 0, roll)));
     }
     camera.position.copy(camOut.pos);
     camera.quaternion.copy(camOut.q);

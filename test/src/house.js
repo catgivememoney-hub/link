@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three-addons/loaders/GLTFLoader.js';
 import { createBooks } from './books.js';
 import { createFlame } from './highfx.js';
+import { applySurfaces } from './surfaces.js';
 
 // where the house stands (terrain.js levels the ground here; props.js keeps a clearing)
 export const CABIN = { x: 112, z: -119, y: 4.5, yaw: -Math.PI / 2, S: 4.5 };
@@ -166,7 +167,13 @@ export function createHouse({ scene }) {
       } else if (n === 'Glass') {
         m.transparent = true; m.opacity = 0.14; m.depthWrite = false; m.side = THREE.DoubleSide; m.roughness = 0.05; m.metalness = 0.1;
         o.castShadow = false; o.renderOrder = 2;
-      } else { m.envMapIntensity = 0.6; }
+      } else {
+        // real surfaces (wood, stone, metal, fabric…) instead of flat paint: see surfaces.js
+        let part = o; while (part.parent && part.parent !== root && !/[A-Za-z]{3}/.test((part.name || '').replace(/_\d+$/, ''))) part = part.parent;
+        const pn = (part.name || o.name || '').replace(/_\d+$/, '').replace(/_/g, ' ');
+        const ONE = { 'Drawer wood': 'wood', 'Boat seat': 'uphol', 'Boat seat frame': 'wood', 'Monitor body': 'plastic', 'Dock lamp metal': 'steel', 'Cyan box': 'plastic' };
+        if (!((n === 'Cabin Vertex' || n === 'Metal') ? applySurfaces(o, pn) : ONE[n] ? applySurfaces(o, pn, ONE[n]) : false)) m.envMapIntensity = 0.6;
+      }
     });
     group.add(root);
     root.updateMatrixWorld(true);

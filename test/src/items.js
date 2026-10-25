@@ -112,50 +112,47 @@ export function buildBottle(kind) {
   return g;
 }
 
-// how each thing sits when it's put down, and how big it is
-const SHAPES = {
-  bottle: { half: 0.47, lie: 0.15 },
-  mimi: { half: 0.39, lie: 0.09 }
+/* ---------- real physics ----------
+   Each thing is a rigid body made of a few spheres (a bottle: a row of them along its length, so it rolls
+   like a cylinder; the snack bag: its corners, so it lands flat and slides). Every step: gravity, then each
+   sphere that sinks into the ground, a floor, a table, a rock or the ice is pushed back out and given an
+   impulse (a bounce, and friction along the surface, which is what makes things roll and tumble) at that
+   point, so the body also starts spinning. Slippery on ice, floats on open water, bumps off furniture and
+   walls, gets nudged by cats walking into it, and goes to sleep once it's still. */
+const G = 44;   // gravity (world units / s², the same as for your cat)
+const BODIES = {
+  bottle: { mass: 0.55, I: [0.045, 0.012, 0.045], pts: [[0, -0.42, 0, 0.15], [0, -0.14, 0, 0.152], [0, 0.14, 0, 0.15], [0, 0.34, 0, 0.12], [0, 0.48, 0, 0.07]], e: 0.28, mu: 0.55 },
+  mimi: { mass: 0.06, I: [0.004, 0.003, 0.006], pts: [[-0.3, -0.35, 0, 0.05], [0.3, -0.35, 0, 0.05], [-0.3, 0.35, 0, 0.05], [0.3, 0.35, 0, 0.05], [0, 0, 0.05, 0.05], [0, 0, -0.05, 0.05]], e: 0.1, mu: 0.8 }
 };
+const bodyOf = (kind) => (kind === 'mimi' ? BODIES.mimi : BODIES.bottle);
 const buildItem = (kind) => (kind === 'mimi' ? buildBag() : buildBottle(kind));
-const shapeOf = (kind) => (kind === 'mimi' ? SHAPES.mimi : SHAPES.bottle);
+const HEARTH = { x0: 107.0, x1: 110.8, z0: -106.2, z1: -104.0 };   // the fire's bed, inside the fireplace
+const inHearth = (p) => p.x > HEARTH.x0 && p.x < HEARTH.x1 && p.z > HEARTH.z0 && p.z < HEARTH.z1 && p.y < 11;
 
 export function createItems({ scene, terrain, physics, player, camera, cabin, scenes, water, online, toast }) {
-  // the things in the world: { id, kind, obj, pos, lying, held, where, t, pop, yaw, lean }
   const LIST = [
-    { id: 'bottle', kind: 'water', pos: TABLE.clone(), where: 'table' },
-    { id: 'mimi', kind: 'mimi', pos: new THREE.Vector3(), where: 'stilt' }
-  ].map((o) => Object.assign({ obj: null, lying: false, held: '', t: 0, pop: null, owner: false, yaw: 0 }, o));
+    { id: 'bottle', kind: 'water' },
+    { id: 'mimi', kind: 'mimi' }
+  ].map((o) => Object.assign({ obj: null, held: '', where: '', t: 0, owner: false, awake: false, still: 0,
+    pos: new THREE.Vector3(), q: new THREE.Quaternion(), v: new THREE.Vector3(), w: new THREE.Vector3(),
+    tgtP: new THREE.Vector3(), tgtQ: new THREE.Quaternion(), net: false, sendT: 0 }, o));
   const byId = (id) => LIST.find((o) => o.id === id);
   const holderMesh = new THREE.Group(); camera.add(holderMesh); holderMesh.position.set(0.05, -0.42, -1.05);
   if (!camera.parent) scene.add(camera);
-  const place = (B) => {
-    if (!B.obj) return;
-    B.obj.visible = !B.held;
-    B.obj.position.copy(B.pos);
-    const sh = shapeOf(B.kind);
-    if (B.where === 'stilt') { B.obj.rotation.set(0.22, Math.PI, 0.04); return; }   // the bag leaning on the post
-    if (B.lying) {
-      if (B.kind === 'mimi') { B.obj.rotation.set(-Math.PI / 2, 0, B.yaw || 0); B.obj.position.y += sh.lie; }
-      else { B.obj.rotation.set(0, B.yaw || 0, Math.PI / 2); B.obj.position.y += sh.lie; }
-    } else { B.obj.rotation.set(0, B.yaw || 0, 0); B.obj.position.y += sh.half; }
-  };
-  const setObj = (B) => {
-    if (B.obj) { scene.remove(B.obj); B.obj = null; }
-    B.obj = buildItem(B.kind); scene.add(B.obj); place(B);
-  };
-  // the bag's spot, leaning on the stilt's footing (ground from the terrain as drawn)
-  { const M = byId('mimi'), gy = terrain.surfaceAt(STILT.x, STILT.z - STILT.half - 0.3); M.pos.set(STILT.x + 0.05, gy + 0.38, STILT.z - STILT.half - 0.17); }
+  const show = (B) => { if (!B.obj) return; B.obj.visible = !B.held; B.obj.position.copy(B.pos); B.obj.quaternion.copy(B.q); };
+  const setObj = (B) => { if (B.obj) scene.remove(B.obj); B.obj = buildItem(B.kind); scene.add(B.obj); show(B); };
+
+  // starting spots: the bottle standing on the coffee table, the bag leaning on the stilt's footing
+  { const B = byId('bottle'); B.pos.set(TABLE.x, TABLE.y + 0.47, TABLE.z); B.where = 'table'; }
+  { const M = byId('mimi'), gy = terrain.surfaceAt(STILT.x, STILT.z - STILT.half - 0.3); M.pos.set(STILT.x + 0.05, gy + 0.38, STILT.z - STILT.half - 0.17); M.q.setFromEuler(new THREE.Euler(0.22, Math.PI, 0.04)); M.where = 'stilt'; }
   LIST.forEach(setObj);
-  // the bottle stands on the table's real top (found by looking straight down at the table once the house is in)
   cabin.whenReady((root) => {
     const B = byId('bottle'); if (B.where !== 'table') return;
     const rc = new THREE.Raycaster(new THREE.Vector3(TABLE.x, TABLE.y + 3, TABLE.z), new THREE.Vector3(0, -1, 0));
     const hit = rc.intersectObject(root, true).find((h) => h.object.visible);
-    if (hit) { B.pos.y = hit.point.y; place(B); }
+    if (hit) { B.pos.y = hit.point.y + 0.47; show(B); }
   });
   setHeldMaker((k) => { const m = buildItem(k); if (k === 'mimi') m.rotation.set(0, Math.PI / 2, 0); return m; });
-  // what you carry in first person: sideways across your view, low
   let fpKind = '';
   const showFP = (kind, firstPerson) => {
     const want = firstPerson ? kind : '';
@@ -164,25 +161,104 @@ export function createItems({ scene, terrain, physics, player, camera, cabin, sc
     if (want) { const m = buildItem(want); if (want === 'mimi') m.rotation.set(0.2, 0.5, 0); else m.rotation.set(0.15, 0.2, Math.PI / 2); holderMesh.add(m); }
   };
 
-  const ray = new THREE.Raycaster();
-  const sync = (B) => online.emit('item', { id: B.id, k: B.kind, p: [B.pos.x, B.pos.y, B.pos.z], l: B.lying ? 1 : 0, h: B.held, w: B.where, y: B.yaw || 0, pop: B.pop ? 1 : 0 });
+  /* --- the world as the things feel it --- */
+  const wy = () => water.position.y;
+  const iceOn = () => (scenes.cur.ice || 0) > 0.5;
+  // the surface under (x, z) for something at height y: floors, tables, rocks… or the ground exactly as drawn
+  const surfaceY = (x, z, y) => {
+    const f = physics.floor(x, z, y, 0.35);
+    let h = f.y;
+    if (!f.built && Math.abs(h - physics.groundAt(x, z)) < 0.05) h = terrain.surfaceAt(x, z);   // (walking uses a smoothed ground)
+    if (iceOn() && terrain.surfaceAt(x, z) < wy() - 0.25) h = Math.max(h, wy() + 0.02);         // the frozen lake
+    return h;
+  };
+  const tmp = { r: new THREE.Vector3(), p: new THREE.Vector3(), n: new THREE.Vector3(), vp: new THREE.Vector3(), t: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), m: new THREE.Matrix3(), m2: new THREE.Matrix3(), q: new THREE.Quaternion() };
+  // world inverse inertia × vector
+  const invI = (B, R, v, out) => {
+    const I = bodyOf(B.kind).I;
+    out.copy(v).applyMatrix3(tmp.m2.copy(R).transpose());
+    out.set(out.x / I[0], out.y / I[1], out.z / I[2]).applyMatrix3(R);
+    return out;
+  };
+  const step = (B, dt) => {
+    const body = bodyOf(B.kind), R = tmp.m.setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(B.q));
+    B.v.y -= G * dt;
+    // open water: things float (the bottle bobs on its side)
+    if (!iceOn() && terrain.surfaceAt(B.pos.x, B.pos.z) < wy() - 0.25 && B.pos.y < wy() + 0.05) {
+      const sub = Math.min(1, (wy() + 0.05 - B.pos.y) / 0.3);
+      B.v.y += G * 1.6 * sub * dt; B.v.multiplyScalar(1 - Math.min(1, 2.5 * dt)); B.w.multiplyScalar(1 - Math.min(1, 2.5 * dt));
+    }
+    B.pos.addScaledVector(B.v, dt);
+    // turn by the spin
+    const w = B.w, ang = w.length() * dt;
+    if (ang > 1e-6) { tmp.q.setFromAxisAngle(tmp.a.copy(w).normalize(), ang); B.q.premultiply(tmp.q).normalize(); }
+    R.setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(B.q));
+    const icy = iceOn() && terrain.surfaceAt(B.pos.x, B.pos.z) < wy() - 0.25, mu = icy ? 0.04 : body.mu;
+    // contacts
+    for (const [lx, ly, lz, rad] of body.pts) {
+      tmp.r.set(lx, ly, lz).applyMatrix3(R); tmp.p.copy(B.pos).add(tmp.r);
+      const h = surfaceY(tmp.p.x, tmp.p.z, tmp.p.y);
+      const pen = h + rad - tmp.p.y;
+      if (pen <= 0) continue;
+      // the surface's slope (so things roll downhill)
+      const e = 0.3, hx = surfaceY(tmp.p.x + e, tmp.p.z, tmp.p.y) - surfaceY(tmp.p.x - e, tmp.p.z, tmp.p.y), hz = surfaceY(tmp.p.x, tmp.p.z + e, tmp.p.y) - surfaceY(tmp.p.x, tmp.p.z - e, tmp.p.y);
+      const n = tmp.n.set(-hx / (2 * e), 1, -hz / (2 * e)).normalize();
+      if (Math.abs(hx) > 0.5 || Math.abs(hz) > 0.5) n.set(0, 1, 0);   // a ledge (table edge, step): push straight up
+      B.pos.addScaledVector(n, pen * 0.85);
+      // velocity of this point
+      const vp = tmp.vp.copy(B.w).cross(tmp.r).add(B.v), vn = vp.dot(n);
+      if (vn < 0) {
+        const rn = tmp.a.copy(tmp.r).cross(n), k = 1 / body.mass + invI(B, R, rn, tmp.b).cross(tmp.r).dot(n);
+        const j = -(1 + (vn < -3 ? body.e : 0)) * vn / k;
+        B.v.addScaledVector(n, j / body.mass); B.w.add(invI(B, R, tmp.a.copy(tmp.r).cross(n).multiplyScalar(j), tmp.b));
+        // friction
+        tmp.vp.copy(B.w).cross(tmp.r).add(B.v); const vt = tmp.t.copy(tmp.vp).addScaledVector(n, -tmp.vp.dot(n)), vtl = vt.length();
+        if (vtl > 1e-4) {
+          vt.multiplyScalar(1 / vtl);
+          const rt = tmp.a.copy(tmp.r).cross(vt), kt = 1 / body.mass + invI(B, R, rt, tmp.b).cross(tmp.r).dot(vt);
+          const jt = -Math.min(vtl / kt, mu * j);
+          B.v.addScaledVector(vt, jt / body.mass); B.w.add(invI(B, R, tmp.a.copy(tmp.r).cross(vt).multiplyScalar(jt), tmp.b));
+        }
+      }
+    }
+    // rolling resistance and air
+    B.w.multiplyScalar(1 - Math.min(1, (icy ? 0.2 : 1.2) * dt)); B.v.multiplyScalar(1 - Math.min(1, 0.15 * dt));
+    // walls and furniture: bounce off (but things can go into the fireplace)
+    if (!inHearth(B.pos) && physics.blocked(B.pos.x, B.pos.z, B.pos.y - 0.2, -0.75)) {
+      B.pos.x -= B.v.x * dt * 1.2; B.pos.z -= B.v.z * dt * 1.2; B.v.x *= -0.35; B.v.z *= -0.35;
+    }
+  };
+  const nudge = (B, x, z, vx, vz, r) => {   // a cat walking into it
+    const dx = B.pos.x - x, dz = B.pos.z - z, d = Math.hypot(dx, dz);
+    if (d > r || d < 1e-3) return false;
+    const push = (r - d) / r, nx = dx / d, nz = dz / d, sp = Math.max(0, vx * nx + vz * nz);
+    if (sp < 0.5 && push < 0.3) return false;
+    B.v.x += nx * (sp * 0.9 + push * 6) * 0.25; B.v.z += nz * (sp * 0.9 + push * 6) * 0.25; B.v.y += 0.4;
+    B.w.x += (Math.random() - 0.5) * 3; B.w.z += (Math.random() - 0.5) * 3;
+    return true;
+  };
+
+  /* --- sharing with the room: whoever last touched a thing runs its physics and tells the others --- */
+  const sync = (B) => online.emit('item', { id: B.id, k: B.kind, p: B.pos.toArray().map((x) => +x.toFixed(3)), q: B.q.toArray().map((x) => +x.toFixed(4)), h: B.held, w: B.where, a: B.awake ? 1 : 0 });
   online.on('item', (v) => {
     if (!v) return;
     const B = byId(v.id || 'bottle'); if (!B) return;
-    const kindChanged = v.k !== B.kind; B.kind = v.k; B.pos.set(v.p[0], v.p[1], v.p[2]); B.lying = !!v.l; B.held = v.h || ''; B.where = v.w || ''; B.yaw = v.y || 0; B.t = 0; B.owner = false;
-    if (kindChanged) setObj(B); else place(B);
-    if (v.pop) B.pop = { t: 0, from: FIRE.clone(), to: FIRE_OUT.clone() };
+    if (v.k !== B.kind) { B.kind = v.k; setObj(B); }
+    B.held = v.h || ''; B.where = v.w || ''; B.owner = false; B.awake = false; B.t = 0;
+    B.tgtP.fromArray(v.p); if (v.q) B.tgtQ.fromArray(v.q); B.net = true;
+    if (!v.a) { B.pos.copy(B.tgtP); B.q.copy(B.tgtQ); }
+    show(B);
   });
-  // anyone new in the room: tell them where everything is (whoever moved a thing last tells)
   online.on('hello', () => LIST.forEach((B) => { if (B.owner) sync(B); }));
   const me = () => online.id || 'me';
   const mine = () => LIST.find((o) => o.held === me());
+  const ray = new THREE.Raycaster();
   const aimed = (r, ps) => {
     ray.ray.copy(r.ray);
     let best = null, bd = Infinity;
     for (const B of LIST) {
-      if (!B.obj || B.held || B.pop || !B.obj.visible) continue;
-      if (Math.hypot(ps.x - B.obj.position.x, ps.z - B.obj.position.z) > 7 || Math.abs(ps.feet - B.obj.position.y) > 6) continue;
+      if (!B.obj || B.held || !B.obj.visible) continue;
+      if (Math.hypot(ps.x - B.pos.x, ps.z - B.pos.z) > 7 || Math.abs(ps.feet - B.pos.y) > 6) continue;
       const h = ray.intersectObject(B.obj, true)[0];
       if (h && h.distance < bd) { bd = h.distance; best = B; }
     }
@@ -192,62 +268,58 @@ export function createItems({ scene, terrain, physics, player, camera, cabin, sc
   const api = {
     get heldKind() { const B = mine(); return B ? B.kind : ''; },
     hover(r, ps) { return !!aimed(r, ps); },
-    // pick up what's under the dot (if you carry something already, it's put down where you stand first)
     click(r, ps, yaw) {
       const B = aimed(r, ps); if (!B) return false;
       if (mine()) api.drop(ps, yaw);
-      B.held = me(); B.where = 'mouth'; B.t = 0; B.owner = true; place(B); sync(B);
+      B.held = me(); B.where = 'mouth'; B.t = 0; B.owner = true; B.awake = false; show(B); sync(B);
       const S2 = window.MEOW_SOUND; if (S2 && S2.click) S2.click();
       return true;
     },
-    // the drop key: put it down in front of you (on the ice, in the fire, on the floor, anywhere)
+    // the drop key: it falls from your mouth with your speed and a little toss forward, then physics takes over
     drop(ps, yaw) {
       const B = mine(); if (!B) return false;
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-      const x = ps.x + fx * 1.3, z = ps.z + fz * 1.3;
-      B.yaw = yaw + Math.PI / 2; B.lying = true; B.owner = true; B.t = 0;
-      if (B.kind !== 'mimi' && Math.hypot(x - FIRE.x, z - FIRE.z) < 3.6 && Math.abs(ps.feet - 8.88) < 1.5) { B.pos.copy(FIRE); B.where = 'fire'; }
-      else {
-        let y = physics.floor(x, z, ps.feet + 1).y;
-        const wy = water.position.y, ground = terrain.surfaceAt(x, z);
-        if ((scenes.cur.ice || 0) > 0.5 && ground < wy - 0.25 && ps.feet < wy + 1) { y = wy + 0.02; B.where = 'ice'; }
-        else if (ground < wy - 0.25 && y <= wy + 0.05) { y = wy; B.where = 'water'; }
-        else { B.where = 'ground'; if (!physics.floor(x, z, ps.feet + 1).built && Math.abs(y - physics.groundAt(x, z)) < 0.05) y = Math.max(wy, ground); }   // on the hillside as it's drawn
-        B.pos.set(x, y, z);
-      }
-      B.held = ''; place(B); sync(B);
-      if (B.where === 'ice' && B.kind === 'water') toast && toast('🧊 Leave it on the ice…');
-      if (B.where === 'fire' && B.kind === 'ice') toast && toast('🔥 Into the fire…');
+      B.pos.set(ps.x + fx * 1.15, ps.feet + 1.7, ps.z + fz * 1.15);
+      B.q.setFromEuler(new THREE.Euler(0, yaw, B.kind === 'mimi' ? 0 : Math.PI / 2, 'YXZ'));
+      B.v.set((ps.vx || 0) * 0.8 + fx * 3, 2, (ps.vz || 0) * 0.8 + fz * 3);
+      B.w.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+      B.held = ''; B.where = 'air'; B.owner = true; B.awake = true; B.still = 0; B.t = 0;
+      show(B); sync(B);
       return true;
     },
     update(dt, time, ps, firstPerson) {
       const H2 = mine(); showFP(H2 ? H2.kind : '', firstPerson);
+      dt = Math.min(dt, 0.05);
       for (const B of LIST) {
-        if (!B.obj) continue;
-        // the tea popping out of the fire: a little arc onto the floor
-        if (B.pop) {
-          B.pop.t += dt / 0.9; const k = Math.min(1, B.pop.t);
-          B.obj.visible = true;
-          B.obj.position.lerpVectors(B.pop.from, B.pop.to, k); B.obj.position.y += Math.sin(Math.PI * k) * 3.2 + 0.15;
-          B.obj.rotation.set(0, 0, Math.PI / 2 + k * 6.3);
-          if (k >= 1) { B.pop = null; B.pos.copy(FIRE_OUT); B.where = 'ground'; B.lying = true; place(B); if (B.owner) sync(B); }
-          continue;
+        if (!B.obj || B.held) continue;
+        // other people's things glide to where they say
+        if (!B.owner && B.net) { B.pos.lerp(B.tgtP, 1 - Math.exp(-dt * 12)); B.q.slerp(B.tgtQ, 1 - Math.exp(-dt * 12)); show(B); }
+        // you walk into it: it's knocked along (and you run its physics now)
+        if (player.walking && !ps.air && Math.abs(ps.feet - B.pos.y) < 1.6 && nudge(B, ps.x, ps.z, ps.vx || 0, ps.vz || 0, 1.0)) { B.owner = true; B.awake = true; B.still = 0; if (B.where === 'stilt' || B.where === 'table') B.where = 'ground'; }
+        if (B.owner && B.awake) {
+          const n = 4; for (let i = 0; i < n; i++) step(B, dt / n);
+          show(B);
+          // where is it now?
+          B.where = inHearth(B.pos) ? 'fire' : (iceOn() && terrain.surfaceAt(B.pos.x, B.pos.z) < wy() - 0.25) ? 'ice' : (terrain.surfaceAt(B.pos.x, B.pos.z) < wy() - 0.25 && B.pos.y < wy() + 0.4) ? 'water' : 'ground';
+          // asleep once still
+          if (B.v.lengthSq() < 0.04 && B.w.lengthSq() < 0.04 && B.where !== 'water') { B.still += dt; if (B.still > 0.6) { B.awake = false; B.v.set(0, 0, 0); B.w.set(0, 0, 0); sync(B); } } else B.still = 0;
+          B.sendT += dt; if (B.sendT > 0.12) { B.sendT = 0; sync(B); }
+          if (B.pos.y < -60) { B.pos.set(TABLE.x, TABLE.y + 1, TABLE.z); B.v.set(0, 0, 0); }   // fell out of the world: back to the table
         }
-        if (B.held) continue;
-        if (B.where === 'ice' && B.kind === 'water' && (scenes.cur.ice || 0) > 0.5) {
-          // the water bottle freezing on the ice (everyone sees the frost creep up; the owner makes the change)
+        // the water bottle freezing on the ice, the iced bottle in the fire
+        if (B.where === 'ice' && B.kind === 'water' && iceOn() && !B.awake) {
           B.t += dt;
-          if (B.t > 10 && B.owner) { B.kind = 'ice'; B.t = 0; setObj(B); sync(B); toast && toast('🧊 It froze into an iced bottle!'); const S2 = window.MEOW_SOUND; if (S2 && S2.click) S2.click(); }
+          if (B.t > 10 && B.owner) { B.kind = 'ice'; B.t = 0; const p = B.pos.clone(), q = B.q.clone(); setObj(B); B.pos.copy(p); B.q.copy(q); show(B); sync(B); toast && toast('🧊 It froze into an iced bottle!'); const S2 = window.MEOW_SOUND; if (S2 && S2.click) S2.click(); }
         } else if (B.where === 'fire' && B.kind === 'ice') {
           B.t += dt;
           B.obj.position.x = B.pos.x + Math.sin(time * 40) * 0.03 * Math.min(1, B.t);
           if (B.t > 5 && B.owner) {
-            B.kind = 'tea'; B.t = 0; setObj(B); B.pop = { t: 0, from: FIRE.clone(), to: FIRE_OUT.clone() };
-            sync(B); toast && toast('🍋 冰红茶!'); const S2 = window.MEOW_SOUND; if (S2 && S2.whoosh) S2.whoosh();
+            // it pops out of the flames as tea: a real jump, out into the room
+            B.kind = 'tea'; B.t = 0; const p = B.pos.clone(); setObj(B); B.pos.copy(p); B.pos.y += 0.4;
+            B.v.set((Math.random() - 0.5) * 2, 15, -9); B.w.set(6, 0, 3); B.awake = true; B.still = 0; B.where = 'air';
+            show(B); sync(B); toast && toast('🍋 冰红茶!'); const S2 = window.MEOW_SOUND; if (S2 && S2.whoosh) S2.whoosh();
           }
-        } else if (B.where === 'water') {
-          B.obj.position.y = B.pos.y + shapeOf(B.kind).lie * 0.8 + Math.sin(time * 1.6) * 0.04;   // bobbing
-        } else B.t = 0;
+        } else if (B.where !== 'fire') B.t = (B.where === 'ice' && B.kind === 'water') ? B.t : 0;
       }
     },
     _L: LIST, get _B() { return byId('bottle'); }   // (testing)

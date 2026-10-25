@@ -138,6 +138,7 @@ export function createPlayer({ physics, trees }) {
       const fl = physics.floor(p.x, p.z, Math.max(p.feet, p.feet - p.vy * dt)).y;
       if (p.feet <= fl) {
         p.feet = fl; p.air = false;
+        if (p.vy < -4) p.landK = Math.min(1.3, -p.vy / 24);   // how hard you landed (the camera dips with it)
         if (p.vy < -8) { p.bob.amp = Math.min(1.4, p.bob.amp + 0.5); const s = surface(scenes, water); snd('step', s, 1.5); setTimeout(() => snd('step', s, 1.1), 70); }
         p.vy = 0;
       }

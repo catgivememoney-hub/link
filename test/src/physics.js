@@ -23,17 +23,17 @@ export function createPhysics({ trees, props, cabin, scenes, water }) {
   return {
     groundAt,
     // the surface you'd be standing on: { y, built } (built = a floor of the house, dock or porch)
-    floor(x, z, feet) {
+    floor(x, z, feet, step = STEP_UP) {
       cand.length = 0; built.length = 0;
       if (cabinOn()) cabin.floors(x, z, built);
-      const under = built.some((c) => c.under && c.y <= feet + STEP_UP);   // below the house you're on the ground, not its floor
+      const under = built.some((c) => c.under && c.y <= feet + step);   // below the house you're on the ground, not its floor
       // inside the house or down in the library the built floors are all there is
       if (!under) {
         cand.push(groundAt(x, z));
         props.tops(x, z, scenes.cur, cand);
       }
       let best = -Infinity, isBuilt = false;
-      const consider = (y, b) => { if (y <= feet + STEP_UP && y > best) { best = y; isBuilt = b; } };
+      const consider = (y, b) => { if (y <= feet + step && y > best) { best = y; isBuilt = b; } };
       cand.forEach((y) => consider(y, false));
       built.forEach((c) => consider(c.y, true));
       if (best === -Infinity) {
