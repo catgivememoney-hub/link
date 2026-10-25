@@ -28,10 +28,10 @@ export const SURFACES = {
   brass:    { set: 'metal_plate',             m: 0.35, detail: 0.35, n: 0.3, r: [0.22, 0.45], metal: 1 },
   steel:    { set: 'metal_plate_02',          m: 0.5, detail: 0.35, n: 0.4, r: [0.25, 0.5],  metal: 0.9 },
   plastic:  { set: 'metal_plate_02',          m: 0.3, detail: 0.12, n: 0.12, r: [0.35, 0.55], metal: 0 },
-  linen:    { set: 'rough_linen',             m: 0.35, detail: 0.6, n: 1.0, r: [0.8, 1.0],   metal: 0 },
+  linen:    { set: 'rough_linen',             m: 0.3, detail: 0.8, n: 1.6, r: [0.8, 1.0],   metal: 0 },
   fleece:   { set: 'knitted_fleece',          m: 0.35, detail: 0.7, n: 1.0, r: [0.85, 1.0],  metal: 0 },
-  uphol:    { set: 'poly_wool_herringbone',   m: 0.4, detail: 0.6,  n: 1.0, r: [0.8, 1.0],   metal: 0 },
-  velvet:   { set: 'velour_velvet',           m: 0.35, detail: 0.6, n: 0.8, r: [0.7, 1.0],   metal: 0 },
+  uphol:    { set: 'poly_wool_herringbone',   m: 0.3, detail: 0.9,  n: 1.8, r: [0.8, 1.0],   metal: 0 },
+  velvet:   { set: 'velour_velvet',           m: 0.3, detail: 0.8, n: 1.4, r: [0.7, 1.0],   metal: 0 },
   rug:      { set: 'wool_boucle',             m: 0.5, detail: 0.7,  n: 1.2, r: [0.85, 1.0],  metal: 0 },
   rope:     { set: 'hessian_230',             m: 0.25, detail: 0.7, n: 1.0, r: [0.8, 1.0],   metal: 0 },
   canvas:   { set: 'rough_linen',             m: 0.8, detail: 0.4,  n: 0.6, r: [0.7, 0.95],  metal: 0 },
@@ -117,7 +117,11 @@ const GLSL_F_HEAD = `
   vec3 sA() { return vSlot == 0 ? uSA[0] : vSlot == 1 ? uSA[1] : vSlot == 2 ? uSA[2] : uSA[3]; }
 `;
 function surfaceMaterial(base, slots) {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.75, side: base.side, name: base.name });
+  // cloth catches a soft rim of light at grazing angles (sheen) — what makes a sofa read as fabric, not rubber
+  const cloth = slots.some((k) => ['linen', 'fleece', 'uphol', 'velvet', 'rug', 'canvas'].includes(k));
+  const m = cloth
+    ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.6, side: base.side, name: base.name, sheen: 0.8, sheenRoughness: 0.55, sheenColor: new THREE.Color(0.9, 0.9, 0.92) })
+    : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.75, side: base.side, name: base.name });
   const ss = slots.map((k) => SURFACES[k]), T = ss.map((s) => textureSet(s.set));
   while (T.length < 4) { T.push(T[0]); ss.push(ss[0]); }
   const U = {
@@ -144,7 +148,7 @@ function surfaceMaterial(base, slots) {
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         { vec3 bw = sN(spos, sn) * sp.z * uSurfOn; normal = normalize(normal + (viewMatrix * vec4(bw, 0.0)).xyz); }`);
   };
-  m.customProgramCacheKey = () => 'meow-surface-v2';
+  m.customProgramCacheKey = () => 'meow-surface-v2' + (cloth ? 'c' : '');
   return m;
 }
 
